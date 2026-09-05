@@ -1,0 +1,112 @@
+{{- include "kanban.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kanban.fullname" . }}
+  labels: {{- include "kanban.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "kanban.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "kanban.selectorLabels" . | nindent 8 }}
+      {{- /* No checksum/db-secret annotation. Re-rendering secret.yaml here
+             evaluates the password helper a second time, so on a generated
+             password the hash described a Secret that was never installed and
+             the first upgrade always rolled the pod for nothing. The Secret is
+             stable by design now, so there is nothing for a checksum to catch. */}}
+      {{- with .Values.podAnnotations }}
+      annotations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if and (eq .Values.storage "postgres") .Values.postgres.enabled }}
+      # The app exits when the database is unreachable at startup rather than
+      # retrying, so without this the first install spends a minute in
+      # CrashLoopBackOff waiting for Postgres to finish initialising.
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h {{ include "kanban.postgresFullname" . }} -p 5432 -U {{ .Values.postgres.user | quote }} -d {{ .Values.postgres.database | quote }}; do
+                echo "waiting for postgres"; sleep 2
+              done
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+      {{- end }}
+      containers:
+        - name: kanban
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            - name: SERVER_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: STORAGE
+              value: {{ .Values.storage | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.app.logLevel | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.app.logFormat | quote }}
+            - name: AUTO_MIGRATE
+              value: {{ .Values.app.autoMigrate | quote }}
+            {{- if eq .Values.storage "postgres" }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.postgres.enabled }}
+                  name: {{ include "kanban.postgresFullname" . }}
+                  key: url
+                  {{- else if .Values.externalDatabase.existingSecret }}
+                  name: {{ .Values.externalDatabase.existingSecret }}
+                  key: {{ .Values.externalDatabase.existingSecretKey }}
+                  {{- else }}
+                  name: {{ include "kanban.fullname" . }}-db
+                  key: url
+                  {{- end }}
+            {{- end }}
+            {{- with .Values.app.extraEnv }}{{- toYaml . | nindent 12 }}{{- end }}
+          # /healthz answers as soon as the process is up; /readyz additionally
+          # checks the store, so it is the one that gates traffic.
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          # readOnlyRootFilesystem is on and the binary is static, but Go still
+          # wants somewhere to put temporary files.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}

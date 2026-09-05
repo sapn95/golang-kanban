@@ -1,0 +1,91 @@
+# Storage backend: postgres or memory.
+#
+# memory keeps everything in the pod and loses it on restart. It needs no
+# database and is the fastest way to look at the app; use it for a demo, never
+# for anything you want to keep.
+storage: postgres
+
+image:
+  repository: ghcr.io/nicolashaas/golang-kanban
+  tag: ""          # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+# The app holds no state of its own, but two replicas against one Postgres are
+# only safe once the store is proven under concurrency. Keep this at 1 unless
+# you have tested otherwise.
+
+service:
+  type: ClusterIP
+  port: 17808
+  # nodePort: 30808   # honoured when type is NodePort
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: kanban.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Bundled Postgres. Convenience for a test cluster, not a production database:
+# one replica, no backups, no failover. Point externalDatabase at a real server
+# for anything that matters.
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  user: kanban
+  database: kanban
+  # password: ""     # generated and stored in a Secret when left empty
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+# Used when postgres.enabled is false. existingSecret wins over url.
+externalDatabase:
+  url: ""
+  existingSecret: ""
+  existingSecretKey: url
+
+app:
+  logLevel: info      # debug | info | warn | error
+  logFormat: json     # text | json
+  autoMigrate: true
+  extraEnv: []
+
+resources:
+  requests: {cpu: 25m, memory: 32Mi}
+  limits: {memory: 128Mi}
+
+# The image is gcr.io/distroless/static-debian12:nonroot, which runs as uid
+# 65532 and carries no shell and no package manager.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

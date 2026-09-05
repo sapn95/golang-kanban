@@ -1,0 +1,18 @@
+apiVersion: v2
+name: kanban
+description: A self-hosted kanban board — single static binary, Postgres or in-memory storage
+type: application
+version: 0.1.0
+# The image tag this chart pulls by default. 0.1.0 was never published;
+# ghcr.io/nicolashaas/golang-kanban has 1.0.0 and 1.0.1.
+appVersion: "1.0.1"
+home: https://github.com/NicolasHaas/golang-kanban
+sources:
+  - https://github.com/NicolasHaas/golang-kanban
+maintainers:
+  - name: sapn95
+    url: https://github.com/sapn95
+keywords:
+  - kanban
+  - board
+  - selfhosted

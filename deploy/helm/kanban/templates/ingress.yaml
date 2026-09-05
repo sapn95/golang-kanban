@@ -1,0 +1,34 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.ingress.hosts }}{{- fail "ingress.enabled needs at least one entry in ingress.hosts" }}{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "kanban.fullname" . }}
+  labels: {{- include "kanban.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ required "every ingress.hosts entry needs a host" .host | quote }}
+      http:
+        paths:
+          {{- if not .paths }}{{- fail (printf "ingress host %s has no paths" .host) }}{{- end }}
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "kanban.fullname" $ }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

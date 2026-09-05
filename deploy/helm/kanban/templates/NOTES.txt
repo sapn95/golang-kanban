@@ -1,0 +1,29 @@
+{{ include "kanban.fullname" . }} is installed with storage={{ .Values.storage }}.
+
+{{- if eq .Values.storage "memory" }}
+
+  Everything lives in the pod. A restart loses the board.
+{{- end }}
+
+Reach it:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else if eq .Values.service.type "NodePort" }}
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "kanban.fullname" . }} -o jsonpath='{.spec.ports[0].nodePort}'
+  then http://<node-ip>:<that-port>
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kanban.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  then http://localhost:{{ .Values.service.port }}
+{{- end }}
+
+{{- if and (eq .Values.storage "postgres") .Values.postgres.enabled }}
+
+The database volume and the Secret holding its password both survive
+`helm uninstall`, on purpose — one is useless without the other. To remove them:
+  kubectl -n {{ .Release.Namespace }} delete pvc,secret -l app.kubernetes.io/instance={{ .Release.Name }}
+{{- end }}
+
+There is no authentication in this release. Do not expose it beyond a network
+you trust.
