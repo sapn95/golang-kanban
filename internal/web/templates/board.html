@@ -1,0 +1,58 @@
+{{define "content"}}
+<div class="flex justify-center mb-8">
+  <button type="button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105" onclick="showModal('addCardModal')">
+    <i class="bi bi-plus mr-2"></i>Add New Card
+  </button>
+</div>
+
+<div class="flex gap-6 overflow-x-auto pb-4 items-start">
+  {{range .Columns}}
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 min-w-[20rem] flex-1">
+    <h3 class="text-xl font-bold text-center mb-4 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2 flex justify-center items-center gap-2">
+      <span>{{.Column.Name}}</span>
+      <span class="text-sm font-normal text-gray-500 dark:text-gray-400{{if .OverLimit}} text-red-500{{end}}"
+        data-count-for="{{.Column.ID}}" data-limit="{{.Column.WIPLimit}}">{{if .Column.WIPLimit}}{{.Count}} / {{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
+    </h3>
+    <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="space-y-3 min-h-[200px] max-h-[70vh] overflow-y-auto pr-2">
+      {{range .Cards}}{{template "card" .}}{{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+
+<div class="modal" id="addCardModal">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="addCardForm" hx-post="/b/{{.Board.Slug}}/cards" hx-swap="none" onsubmit="return prepareSubtasks(this)">
+        <div class="p-6 border-b border-gray-200 dark:border-gray-600">
+          <div class="flex justify-between items-center">
+            <h5 class="text-xl font-bold text-gray-900 dark:text-white">Add New Card</h5>
+            <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" onclick="hideModal('addCardModal')">
+              <i class="bi bi-x text-2xl"></i>
+            </button>
+          </div>
+        </div>
+        <div class="p-6">
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Column</label>
+            <select name="column" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+              {{range .Columns}}<option value="{{.Column.ID}}">{{.Column.Name}}</option>{{end}}
+            </select>
+          </div>
+          {{template "card_fields" .EmptyCard}}
+        </div>
+        <div class="p-6 border-t border-gray-200 dark:border-gray-600 flex justify-end space-x-3">
+          <button type="button" class="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-lg" onclick="hideModal('addCardModal')">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Add Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="editCardModal">
+  <div class="modal-dialog">
+    <div class="modal-content" id="editCardModalContent"></div>
+  </div>
+</div>
+{{end}}

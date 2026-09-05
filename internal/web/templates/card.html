@@ -1,0 +1,34 @@
+{{define "card"}}
+<div class="bg-white dark:bg-gray-700 rounded-lg p-4 shadow-md border border-gray-200 dark:border-gray-600 cursor-move hover:shadow-lg transition-all duration-200" id="card-{{.Card.ID}}" data-id="{{.Card.ID}}">
+  <h5 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{.Card.Title}}</h5>
+  {{if or .Labels .Due}}
+  <div class="flex flex-wrap gap-1 mb-2 text-xs">
+    {{range .Labels}}<span class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600"{{with .Color}} style="background-color: {{.}}; color: white"{{end}}>{{.Name}}</span>{{end}}
+    {{if .Due}}<span class="px-2 py-0.5 rounded-full {{if .Overdue}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200{{else}}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200{{end}}"><i class="bi bi-calendar-event mr-1"></i>{{.Due}}</span>{{end}}
+  </div>
+  {{end}}
+  {{if .Card.Description}}
+    <p class="text-gray-600 dark:text-gray-300 text-sm mb-3 whitespace-pre-wrap">{{.Card.Description}}</p>
+  {{end}}
+  {{if .Card.Subtasks}}
+    <ul class="space-y-1 mb-3">
+      {{range .Card.Subtasks}}
+      <li class="flex items-center text-sm">
+        <i class="bi bi-check-square{{if .Done}}-fill text-green-500{{else}} text-gray-400{{end}} mr-2"></i>
+        <span class="{{if .Done}}line-through text-gray-500{{else}}text-gray-700 dark:text-gray-300{{end}}">{{.Title}}</span>
+      </li>
+      {{end}}
+    </ul>
+  {{end}}
+  <div class="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-600">
+    <button type="button" class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900 rounded-lg transition-colors duration-200"
+      hx-get="/cards/{{.Card.ID}}/edit" hx-target="#editCardModalContent" hx-swap="innerHTML" title="Edit">
+      <i class="bi bi-pencil text-sm"></i>
+    </button>
+    <button type="button" class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg transition-colors duration-200"
+      hx-post="/cards/{{.Card.ID}}/delete" hx-target="#card-{{.Card.ID}}" hx-swap="delete" hx-confirm="Delete this card?" title="Delete">
+      <i class="bi bi-trash text-sm"></i>
+    </button>
+  </div>
+</div>
+{{end}}

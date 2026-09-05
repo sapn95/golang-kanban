@@ -1,0 +1,31 @@
+{{define "layout"}}<!DOCTYPE html>
+<html class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <script src="/assets/vendor/tailwindcss/tailwind.js"></script>
+  <script>tailwind.config = { darkMode: 'class' }</script>
+  <link rel="stylesheet" href="/assets/vendor/bootstrap-icons/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/vendor/htmx/htmx.min.js"></script>
+  <script src="/assets/vendor/sortablejs/Sortable.min.js"></script>
+  <script src="/assets/app.js" defer></script>
+</head>
+<body class="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200"{{with .BoardSlug}} data-board="{{.}}"{{end}}>
+<div class="container mx-auto py-8 px-4">
+  <div class="flex justify-between items-center mb-8">
+    <h1 class="text-4xl font-bold text-center flex-1 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+      {{.Title}}
+    </h1>
+    <button id="darkModeToggle" type="button"
+      class="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200"
+      title="Toggle dark mode">
+      <i class="bi bi-sun text-xl dark:hidden"></i>
+      <i class="bi bi-moon text-xl hidden dark:inline"></i>
+    </button>
+  </div>
+  {{template "content" .}}
+</div>
+</body>
+</html>{{end}}

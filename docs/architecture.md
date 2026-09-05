@@ -45,10 +45,10 @@ Numbers in brackets below point at them.
 └── deploy/                (Phase 6) compose profiles, haproxy, helm, terraform, unraid
 ```
 
-Only the packages Phase 0 needs are created in Phase 0 (`cmd/kanban`,
-`assets`, `config`, `model`, `store` + `memory` + `postgres` + `storetest`,
-`service`, `web`). The others are listed so their place is agreed now; empty
-directories are not committed.
+Only the packages Phase 0 needs exist today (`cmd/kanban`, `assets`,
+`config`, `model`, `store` + `memory` + `postgres` + `storetest`, `service`,
+`web`). The others are listed so their place is agreed now; empty directories
+are not committed.
 
 ## Dependency direction
 
@@ -182,15 +182,18 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   `gcr.io/distroless/static`, non-root, `VOLUME /data` (for SQLite in Phase 1).
 - `lint.yml` reads the Go version from `go.mod` (`go-version-file`) instead of
   pinning 1.21 while `go.mod` says 1.24; a `test` job runs `go test ./...`.
-- `go mod tidy` drops `godotenv`, which is required but not imported.
+- `test.yml` runs `go test ./... -race -coverpkg=./...` against a Postgres
+  service container and fails below 80% total coverage.
+- `godotenv` is gone from `go.mod`; it was required but never imported.
 
 ## What the restructure does not change
 
 - Postgres users keep their connection variables. Their `cards` table is
   migrated, not abandoned; see [0002](adr/0002-board-column-card-model.md) for
   exactly what happens to it.
-- The look of the board. Templates move and get a layout file, but the markup
-  and the dark-mode toggle are carried over as they are. The question of how
-  Tailwind is shipped without a CDN is separate; see the open decisions in the
-  roadmap.
+- The look of the board. Templates moved and got a layout file, but the markup
+  and the dark-mode toggle are carried over as they were. Tailwind is served as
+  the vendored Play build for now (`assets/VERSIONS`); whether to keep that,
+  compile once with the standalone CLI, or move to Bootstrap is an open
+  decision for the UX phase.
 - The port, the Docker image name, the `docker run` one-liner.

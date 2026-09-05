@@ -1,14 +1,19 @@
-FROM golang:1.24-alpine
-
-WORKDIR /app
-
+# Build a static, CGO-free binary and ship it in a distroless image.
+FROM golang:1.24-alpine AS build
+WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-
 COPY . .
+ARG VERSION=dev
+ARG COMMIT=unknown
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+    -o /kanban ./cmd/kanban
 
-RUN go build -o kanban
-
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=build /kanban /kanban
+ENV SERVER_PORT=17808
 EXPOSE 17808
-
-CMD ["./kanban"]
+VOLUME ["/data"]
+ENTRYPOINT ["/kanban"]
+CMD ["serve"]

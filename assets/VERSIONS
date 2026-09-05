@@ -1,0 +1,12 @@
+# Vendored front-end files. Update by replacing the file and this line.
+# name              version   licence   source
+htmx                2.0.4     0BSD      https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js
+sortablejs          1.15.6    MIT       https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.6/Sortable.min.js
+tailwindcss (play)  3.4.17    MIT       https://cdn.tailwindcss.com/3.4.17   (runtime JIT build; interim until the Phase 2 decision)
+bootstrap-icons     1.10.5    MIT       https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.5/font/
+062719b100219061c8a11fff201d9a98f3794ab45bddf1c1f2d16c9ea440c279  bootstrap-icons/bootstrap-icons.min.css
+e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447  htmx/htmx.min.js
+6d0a831fc19b4bae851797ad3393157e861afb7862459c11226359b27e2c4337  sortablejs/Sortable.min.js
+176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15  tailwindcss/tailwind.js
+999550fafbfbc0e0474b3b5c945df287b079d2a23dc07dcc6240a7d2f18e081d  bootstrap-icons/fonts/bootstrap-icons.woff
+cfe45b981d1b91b173361a34cfce5f60893dbd1ac4af2c3ac11fc17552c5401f  bootstrap-icons/fonts/bootstrap-icons.woff2

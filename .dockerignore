@@ -1,0 +1,13 @@
+# The build stage does COPY . . — keep the context to the source it needs.
+.git
+.github
+.gitignore
+.dockerignore
+
+# Local build and test output; a host-built binary must never reach the image.
+/kanban
+coverage.out
+
+docs
+readme.md
+assets/Screenshot_v1.0.0.png

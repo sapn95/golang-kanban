@@ -2,78 +2,71 @@
 A no-nonsense, lightweight Kanban board built with Golang and HTMX. I couldn’t find a reasonable self-hosted Kanban board that wasn’t using some JavaScript monstrosity like Node or Next.js, I don't need the next [9.1 CVE](https://github.com/advisories/GHSA-f82v-jwr5-mffw) on my server — so I decided to build my own. This project is my sweet little solution to manage tasks simply while learning and sharing a project with the community.
 
 ### Overview
-This project provides a clean, minimalistic Kanban board with the following technologies:
+Backend: Go, standard library `net/http`, one static binary with everything embedded.
 
-Backend: Golang
+Frontend: HTMX, Tailwind, SortableJS — vendored, nothing is loaded from a CDN, so it works air-gapped.
 
-Frontend: HTMX, Bootstrap 5, and SortableJS
-
-Database: PostgreSQL
-
-It’s designed to be simple to deploy and maintain without the extra bloat of modern JavaScript frameworks.
+Database: PostgreSQL (SQLite is next on the list).
 
 ### Features
-- Minimalistic Design: A straightforward Kanban board to manage your tasks.
-- Dynamic Interactivity: Partial page updates using HTMX for a smooth user experience.
-- Drag-and-Drop: Rearrange cards effortlessly using SortableJS.
+- Boards with as many columns as you like, each with an optional WIP limit.
+- Cards with description, due date, labels and a subtask checklist.
+- Drag-and-drop between columns with SortableJS; partial updates with HTMX.
+- Dark mode.
+- Schema migrations run on start; an existing single-table database is imported automatically.
 
 ### How it looks
-![Screenshot](assets/Screenshot_v1.0.0.png "Screenshot")
+![Screenshot](docs/img/screenshot-v1.0.0.png "Screenshot")
 
 ### Using Docker Compose
-A sample docker-compose.yml is provided, just use `docker-compose up --build`
-This command will build and run both the PostgreSQL and Kanban services.
+A sample docker-compose.yml is provided, just use `docker compose up --build`.
+This starts PostgreSQL and the board on http://localhost:17808.
 
 ### Using the Pre-built Docker Image
-Alternatively, you can pull the pre-built Docker image from GitHub Container Registry:
-
 ``` bash
 docker pull ghcr.io/nicolashaas/golang-kanban:latest
-docker run -p 17808:17808 ghcr.io/nicolashaas/golang-kanban:latest
+docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/nicolashaas/golang-kanban:latest
 ```
 
 ### Prerequisites
-PostgreSQL: The only external dependency required. If you don’t have a PostgreSQL instance, you can easily run one using Docker.
+PostgreSQL is the only external dependency. Create a database and a user that owns it; the tables are created by the app on first start (or with `kanban migrate`).
 
-Create a PostgreSQL database and table. That could look something like this:
 ``` sql
--- Create user and database
 CREATE USER kanban WITH PASSWORD 'your_password_here';
-CREATE DATABASE kanban_db OWNER kanban;
-
--- Connect to the new database (you'll need to do this manually in psql)
--- \c kanban_db
-
--- Once connected as postgres to kanban_db, transfer schema ownership
-GRANT ALL ON SCHEMA public TO kanban;
-ALTER SCHEMA public OWNER TO kanban;
-
--- Connect as kanban user to kanban_db and run this to create the table
-CREATE TABLE IF NOT EXISTS cards (
-    id SERIAL PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    subtasks TEXT,
-    status VARCHAR(20) NOT NULL DEFAULT 'todo',
-    card_order INTEGER NOT NULL DEFAULT 0
-);
-
+CREATE DATABASE kanban OWNER kanban;
 ```
 
-### Environment Variables:
+Upgrading from a version that used the single `cards` table? Take a `pg_dump` first. The old table is imported into a default board on the first start and then dropped.
+
+### Environment Variables
 ``` bash
-DB_USER=your_db_user
-DB_PASS=your_db_password
-DB_HOST=localhost
+SERVER_PORT=17808          # or LISTEN_ADDR=0.0.0.0:17808
+STORAGE=postgres           # postgres | memory (memory: nothing is saved, handy for a demo)
+DATABASE_URL=              # full DSN; wins over the DB_* variables below
+DB_USER=user
+DB_PASS=password
+DB_HOST=postgres
 DB_PORT=5432
 DB_NAME=kanban
-SERVER_PORT=17808
+DB_SSLMODE=disable
+AUTO_MIGRATE=true          # false: run `kanban migrate` yourself
+LOG_LEVEL=info             # debug | info | warn | error
+LOG_FORMAT=text            # text | json
+```
+
+`kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban version` prints the version. `/healthz` says the process is up, `/readyz` says the database answers.
+
+### Building from source
+``` bash
+go build ./cmd/kanban
+go test ./...                       # memory backend only
+KANBAN_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/kanban_test?sslmode=disable go test ./...
 ```
 
 #### Todo's
 If I feel like it I might work on some of these things:
-- [ ] darkmode
-- [ ] remove/add/edit collums
+- [x] darkmode
+- [ ] remove/add/edit collums (the data model has them; the UI is next)
 - [ ] make it pretty
 - [ ] add sqlite option for people too lazy to setup a db
 - [ ] tls

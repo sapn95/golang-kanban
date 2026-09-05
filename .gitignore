@@ -1,0 +1,5 @@
+# Build output
+/kanban
+
+# Test output
+coverage.out
