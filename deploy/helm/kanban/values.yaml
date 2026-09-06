@@ -59,6 +59,74 @@ externalDatabase:
   existingSecret: ""
   existingSecretKey: url
 
+# Sign-in in front of the board, and TLS with it.
+#
+# oauth2-proxy runs as a sidecar. With auth.enabled the Service stops pointing at
+# the app and points at the proxy instead, so the board is only reachable through
+# a session the proxy issued; the app itself is then bound to the pod only.
+#
+# The app has no notion of users. This gates who gets in — every visitor who does
+# get in shares the same boards.
+auth:
+  enabled: false
+
+  # entra | github | oidc
+  provider: entra
+
+  image: quay.io/oauth2-proxy/oauth2-proxy:v7.13.0
+
+  # Where the provider sends the browser back. oauth2-proxy serves the callback
+  # at <proxyPrefix>/callback, so this is your external URL plus /oauth2/callback.
+  # Required: the provider rejects a mismatch, and there is no sane default.
+  redirectURL: ""
+
+  # Supply these directly, or name a Secret that already holds them under the
+  # keys client-id, client-secret and (optionally) cookie-secret.
+  clientID: ""
+  clientSecret: ""
+  existingSecret: ""
+
+  # Who may sign in. "*" means anyone the provider authenticates, which for a
+  # public GitHub app is everyone with a GitHub account — narrow it.
+  emailDomains: ["*"]
+
+  entra:
+    # A directory (tenant) id, or "common" for any Microsoft account,
+    # "organizations" for any work or school account.
+    tenant: common
+
+  github:
+    org: ""        # restrict to members of this organisation
+    team: ""       # ... and this team within it
+    repo: ""       # ... or collaborators on this repository
+    users: []      # always allow these logins regardless of the above
+
+  oidc:
+    issuerURL: ""  # for provider: oidc
+
+  cookie:
+    # Generated and kept in the Secret when empty, exactly like the database
+    # password. Must be 16, 24 or 32 bytes if you set it yourself.
+    secret: ""
+    # Browsers drop a Secure cookie sent over plain HTTP, so a sign-in loop that
+    # never completes is usually this set to true without TLS in front.
+    secure: true
+
+  # oauth2-proxy terminates TLS itself. This is the whole reason it can replace a
+  # separate reverse proxy: one component does the sign-in and the certificate.
+  tls:
+    enabled: false
+    # A kubernetes.io/tls Secret. Create it however you like:
+    #   kubectl create secret tls kanban-tls --cert=cert.pem --key=key.pem
+    existingSecret: ""
+    minVersion: TLS1.2
+
+  extraArgs: []
+
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {memory: 192Mi}
+
 app:
   logLevel: info      # debug | info | warn | error
   logFormat: json     # text | json

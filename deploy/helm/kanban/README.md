@@ -45,6 +45,57 @@ Set `ingress.enabled=true` and fill in `ingress.hosts` for anything permanent.
 **There is no authentication in this release.** Anyone who can reach the
 service can read and change every board. Keep it on a network you trust.
 
+## Sign-in, and TLS with it
+
+`auth.enabled` puts oauth2-proxy in the pod as a sidecar and moves the Service
+onto it. From then on nothing reaches the board without a session the proxy
+issued, and the app is bound to the pod only. The app itself is unchanged and
+knows nothing about any of this — everyone who gets in still shares the same
+boards. This decides *who may enter*, not *whose board it is*.
+
+Three providers are pre-wired:
+
+| `auth.provider` | What it needs |
+|---|---|
+| `entra` | `auth.entra.tenant` (a directory id, or `common`), client id and secret |
+| `github` | client id and secret, and normally `auth.github.org` or `auth.github.users` |
+| `oidc` | `auth.oidc.issuerURL`, client id and secret |
+
+`auth.redirectURL` is your external URL plus `/oauth2/callback`, and it has to
+match what you registered with the provider exactly.
+
+```sh
+helm install kanban ./deploy/helm/kanban \
+  --set auth.enabled=true --set auth.provider=github \
+  --set auth.github.org=my-org \
+  --set auth.clientID=... --set auth.clientSecret=... \
+  --set auth.redirectURL=https://board.example.com/oauth2/callback \
+  --set auth.tls.enabled=true --set auth.tls.existingSecret=kanban-tls
+```
+
+### TLS
+
+oauth2-proxy terminates TLS itself, which is why one component covers both jobs.
+Point `auth.tls.existingSecret` at a `kubernetes.io/tls` Secret:
+
+```sh
+kubectl create secret tls kanban-tls --cert=cert.pem --key=key.pem
+```
+
+TLS **without** sign-in goes through `ingress.tls` instead — the sidecar that
+would terminate it only runs when `auth.enabled`. The chart says so rather than
+rendering something that cannot work.
+
+One trap the chart refuses rather than lets you find at 2am: `auth.cookie.secure`
+is on by default, and a browser silently drops a Secure cookie sent over plain
+HTTP, which shows up as a sign-in loop that never completes. Enabling auth with
+neither `auth.tls` nor `ingress.tls` therefore fails at template time. Set
+`auth.cookie.secure=false` if you really are trialling over HTTP.
+
+The client secret and the generated cookie secret live in a Secret that carries
+`helm.sh/resource-policy: keep`, for the same reason the database Secret does:
+losing the cookie secret signs out every open session.
+
 ## The bundled Postgres
 
 It is a convenience for a test cluster: one replica, no backups, no failover,

@@ -86,6 +86,67 @@ Fail early on a values combination that would deploy something broken.
 {{- fail "storage=memory keeps state in the pod: replicaCount must be 1, or use postgres" -}}
 {{- end -}}
 {{- include "kanban.validateDSNParts" . -}}
+{{- include "kanban.validateAuth" . -}}
+{{- end -}}
+
+{{- define "kanban.authFullname" -}}
+{{- printf "%s-auth" (include "kanban.fullname" . | trunc 58 | trimSuffix "-") | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+The port the Service should send traffic to. This is the whole switch: with auth
+off it is the app, with auth on it is the proxy, and the app is then reachable
+only from inside the pod.
+*/}}
+{{- define "kanban.servicePortName" -}}
+{{- if .Values.auth.enabled -}}{{- if .Values.auth.tls.enabled -}}https{{- else -}}auth{{- end -}}{{- else -}}http{{- end -}}
+{{- end -}}
+
+{{/*
+The cookie secret, on the same terms as the database password: read the live
+Secret when there is one, generate only when there is not. oauth2-proxy demands
+16, 24 or 32 bytes, so this generates 32.
+*/}}
+{{- define "kanban.cookieSecret" -}}
+{{- if .Values.auth.cookie.secret -}}
+{{- .Values.auth.cookie.secret -}}
+{{- else -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace (include "kanban.authFullname" .) -}}
+{{- if and $existing $existing.data (index $existing.data "cookie-secret") -}}
+{{- index $existing.data "cookie-secret" | b64dec -}}
+{{- else -}}
+{{- randAlphaNum 32 -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "kanban.validateAuth" -}}
+{{- if .Values.auth.enabled -}}
+{{- if not (has .Values.auth.provider (list "entra" "github" "oidc")) -}}
+{{- fail (printf "auth.provider must be entra, github or oidc, got %q" .Values.auth.provider) -}}
+{{- end -}}
+{{- if not .Values.auth.redirectURL -}}
+{{- fail "auth.enabled needs auth.redirectURL: the provider rejects a callback it was not registered with. Set it to your external URL plus /oauth2/callback." -}}
+{{- end -}}
+{{- if and (not .Values.auth.existingSecret) (or (not .Values.auth.clientID) (not .Values.auth.clientSecret)) -}}
+{{- fail "auth.enabled needs auth.clientID and auth.clientSecret, or auth.existingSecret holding client-id and client-secret" -}}
+{{- end -}}
+{{- if and (eq .Values.auth.provider "oidc") (not .Values.auth.oidc.issuerURL) -}}
+{{- fail "auth.provider=oidc needs auth.oidc.issuerURL" -}}
+{{- end -}}
+{{- if and .Values.auth.cookie.secret (not (has (len .Values.auth.cookie.secret) (list 16 24 32))) -}}
+{{- fail (printf "auth.cookie.secret must be 16, 24 or 32 bytes, got %d" (len .Values.auth.cookie.secret)) -}}
+{{- end -}}
+{{- if and .Values.auth.tls.enabled (not .Values.auth.tls.existingSecret) -}}
+{{- fail "auth.tls.enabled needs auth.tls.existingSecret naming a kubernetes.io/tls Secret" -}}
+{{- end -}}
+{{- if and .Values.auth.cookie.secure (not .Values.auth.tls.enabled) (not .Values.ingress.tls) -}}
+{{- fail "auth.cookie.secure sends the session cookie only over HTTPS, and nothing here terminates TLS: enable auth.tls, or ingress.tls, or set auth.cookie.secure=false for a plain-HTTP trial" -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.auth.tls.enabled (not .Values.auth.enabled) -}}
+{{- fail "auth.tls is terminated by the oauth2-proxy sidecar, which only runs when auth.enabled: use ingress.tls for TLS without sign-in" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

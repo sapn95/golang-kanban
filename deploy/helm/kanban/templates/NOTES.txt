@@ -25,5 +25,13 @@ The database volume and the Secret holding its password both survive
   kubectl -n {{ .Release.Namespace }} delete pvc,secret -l app.kubernetes.io/instance={{ .Release.Name }}
 {{- end }}
 
+{{- if .Values.auth.enabled }}
+
+Sign-in is on, via {{ .Values.auth.provider }}. The board is reachable only
+through the proxy; make sure {{ .Values.auth.redirectURL }} is registered with
+the provider, or the callback will be rejected.
+{{- else }}
+
 There is no authentication in this release. Do not expose it beyond a network
-you trust.
+you trust. Set auth.enabled=true for sign-in.
+{{- end }}

@@ -98,9 +98,93 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+        {{- if .Values.auth.enabled }}
+        {{- $sec := .Values.auth.existingSecret | default (include "kanban.authFullname" .) }}
+        - name: oauth2-proxy
+          image: {{ .Values.auth.image | quote }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --provider={{ ternary "entra-id" .Values.auth.provider (eq .Values.auth.provider "entra") }}
+            {{- if eq .Values.auth.provider "entra" }}
+            - --azure-tenant={{ .Values.auth.entra.tenant }}
+            - --oidc-issuer-url=https://login.microsoftonline.com/{{ .Values.auth.entra.tenant }}/v2.0
+            {{- else if eq .Values.auth.provider "oidc" }}
+            - --oidc-issuer-url={{ .Values.auth.oidc.issuerURL }}
+            {{- else if eq .Values.auth.provider "github" }}
+            {{- with .Values.auth.github.org }}- --github-org={{ . }}{{ end }}
+            {{- with .Values.auth.github.team }}
+            - --github-team={{ . }}
+            {{- end }}
+            {{- with .Values.auth.github.repo }}
+            - --github-repo={{ . }}
+            {{- end }}
+            {{- range .Values.auth.github.users }}
+            - --github-user={{ . }}
+            {{- end }}
+            {{- end }}
+            {{- range .Values.auth.emailDomains }}
+            - --email-domain={{ . }}
+            {{- end }}
+            - --redirect-url={{ .Values.auth.redirectURL }}
+            {{- /* The app is the only upstream and it never leaves the pod. */}}
+            - --upstream=http://127.0.0.1:{{ .Values.service.port }}
+            {{- if .Values.auth.tls.enabled }}
+            - --https-address=0.0.0.0:4443
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-key-file=/tls/tls.key
+            - --tls-min-version={{ .Values.auth.tls.minVersion }}
+            {{- else }}
+            {{- /* The default is 127.0.0.1:4180, which no other pod could reach. */}}
+            - --http-address=0.0.0.0:4180
+            {{- end }}
+            - --cookie-secure={{ .Values.auth.cookie.secure }}
+            - --reverse-proxy=true
+            - --skip-provider-button=true
+            - --silence-ping-logging=true
+            {{- with .Values.auth.extraArgs }}{{- toYaml . | nindent 12 }}{{- end }}
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom: {secretKeyRef: {name: {{ $sec }}, key: client-id}}
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $sec }}, key: client-secret}}
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $sec }}, key: cookie-secret}}
+          ports:
+            {{- if .Values.auth.tls.enabled }}
+            - name: https
+              containerPort: 4443
+            {{- else }}
+            - name: auth
+              containerPort: 4180
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: {{ ternary "https" "auth" .Values.auth.tls.enabled }}
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.auth.tls.enabled }}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ ternary "https" "auth" .Values.auth.tls.enabled }}
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.auth.tls.enabled }}
+            periodSeconds: 5
+          resources: {{- toYaml .Values.auth.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.auth.tls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
+        {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if and .Values.auth.enabled .Values.auth.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.auth.tls.existingSecret }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}

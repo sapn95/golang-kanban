@@ -7,7 +7,8 @@ spec:
   type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
-      targetPort: http
+      {{- /* The switch: auth on and the Service stops at the proxy. */}}
+      targetPort: {{ include "kanban.servicePortName" . }}
       protocol: TCP
       name: http
       {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
