@@ -98,7 +98,7 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-        {{- if .Values.auth.enabled }}
+        {{- if (.Values.auth | default dict).enabled }}
         {{- $sec := .Values.auth.existingSecret | default (include "kanban.authFullname" .) }}
         - name: oauth2-proxy
           image: {{ .Values.auth.image | quote }}
@@ -180,7 +180,7 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if and .Values.auth.enabled .Values.auth.tls.enabled }}
+        {{- if and (.Values.auth | default dict).enabled ((.Values.auth | default dict).tls | default dict).enabled }}
         - name: tls
           secret:
             secretName: {{ .Values.auth.tls.existingSecret }}

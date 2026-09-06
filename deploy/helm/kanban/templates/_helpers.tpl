@@ -99,7 +99,13 @@ off it is the app, with auth on it is the proxy, and the app is then reachable
 only from inside the pod.
 */}}
 {{- define "kanban.servicePortName" -}}
-{{- if .Values.auth.enabled -}}{{- if .Values.auth.tls.enabled -}}https{{- else -}}auth{{- end -}}{{- else -}}http{{- end -}}
+{{- /* default dict, because `helm upgrade --reuse-values` carries the values the
+       release was installed with and ignores defaults the chart has gained
+       since. On a release older than the auth section .Values.auth is nil, and
+       a bare field access aborts the upgrade instead of taking the default. */ -}}
+{{- $auth := .Values.auth | default dict -}}
+{{- $tls := $auth.tls | default dict -}}
+{{- if $auth.enabled -}}{{- if $tls.enabled -}}https{{- else -}}auth{{- end -}}{{- else -}}http{{- end -}}
 {{- end -}}
 
 {{/*
@@ -121,30 +127,32 @@ Secret when there is one, generate only when there is not. oauth2-proxy demands
 {{- end -}}
 
 {{- define "kanban.validateAuth" -}}
-{{- if .Values.auth.enabled -}}
-{{- if not (has .Values.auth.provider (list "entra" "github" "oidc")) -}}
-{{- fail (printf "auth.provider must be entra, github or oidc, got %q" .Values.auth.provider) -}}
+{{- $auth := .Values.auth | default dict -}}
+{{- $tls := $auth.tls | default dict -}}
+{{- if $auth.enabled -}}
+{{- if not (has $auth.provider (list "entra" "github" "oidc")) -}}
+{{- fail (printf "auth.provider must be entra, github or oidc, got %q" $auth.provider) -}}
 {{- end -}}
-{{- if not .Values.auth.redirectURL -}}
+{{- if not $auth.redirectURL -}}
 {{- fail "auth.enabled needs auth.redirectURL: the provider rejects a callback it was not registered with. Set it to your external URL plus /oauth2/callback." -}}
 {{- end -}}
-{{- if and (not .Values.auth.existingSecret) (or (not .Values.auth.clientID) (not .Values.auth.clientSecret)) -}}
+{{- if and (not $auth.existingSecret) (or (not $auth.clientID) (not $auth.clientSecret)) -}}
 {{- fail "auth.enabled needs auth.clientID and auth.clientSecret, or auth.existingSecret holding client-id and client-secret" -}}
 {{- end -}}
-{{- if and (eq .Values.auth.provider "oidc") (not .Values.auth.oidc.issuerURL) -}}
+{{- if and (eq $auth.provider "oidc") (not ($auth.oidc | default dict).issuerURL) -}}
 {{- fail "auth.provider=oidc needs auth.oidc.issuerURL" -}}
 {{- end -}}
-{{- if and .Values.auth.cookie.secret (not (has (len .Values.auth.cookie.secret) (list 16 24 32))) -}}
-{{- fail (printf "auth.cookie.secret must be 16, 24 or 32 bytes, got %d" (len .Values.auth.cookie.secret)) -}}
+{{- if and ($auth.cookie | default dict).secret (not (has (len ($auth.cookie | default dict).secret) (list 16 24 32))) -}}
+{{- fail (printf "auth.cookie.secret must be 16, 24 or 32 bytes, got %d" (len ($auth.cookie | default dict).secret)) -}}
 {{- end -}}
-{{- if and .Values.auth.tls.enabled (not .Values.auth.tls.existingSecret) -}}
+{{- if and $tls.enabled (not $tls.existingSecret) -}}
 {{- fail "auth.tls.enabled needs auth.tls.existingSecret naming a kubernetes.io/tls Secret" -}}
 {{- end -}}
-{{- if and .Values.auth.cookie.secure (not .Values.auth.tls.enabled) (not .Values.ingress.tls) -}}
+{{- if and ($auth.cookie | default dict).secure (not $tls.enabled) (not .Values.ingress.tls) -}}
 {{- fail "auth.cookie.secure sends the session cookie only over HTTPS, and nothing here terminates TLS: enable auth.tls, or ingress.tls, or set auth.cookie.secure=false for a plain-HTTP trial" -}}
 {{- end -}}
 {{- end -}}
-{{- if and .Values.auth.tls.enabled (not .Values.auth.enabled) -}}
+{{- if and $tls.enabled (not $auth.enabled) -}}
 {{- fail "auth.tls is terminated by the oauth2-proxy sidecar, which only runs when auth.enabled: use ingress.tls for TLS without sign-in" -}}
 {{- end -}}
 {{- end -}}
