@@ -65,6 +65,14 @@
       new Sortable(container, {
         group: 'kanban',
         animation: 150,
+        // On a touch screen a drag and a scroll begin with the same gesture, so
+        // a card has to be held before it starts moving. Without this the board
+        // cannot be scrolled on a phone at all: the first touch always picks a
+        // card up instead. delayOnTouchOnly keeps the mouse immediate, and the
+        // threshold lets a finger wobble during the hold without cancelling it.
+        delay: 200,
+        delayOnTouchOnly: true,
+        touchStartThreshold: 5,
         onEnd: function (evt) { postOrder(evt.to); }
       });
     });

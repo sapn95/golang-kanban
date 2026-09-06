@@ -7,7 +7,7 @@
 
 <div class="flex gap-6 overflow-x-auto pb-4 items-start">
   {{range .Columns}}
-  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 min-w-[20rem] flex-1">
+  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 min-w-[85vw] sm:min-w-[20rem] flex-1">
     <h3 class="text-xl font-bold text-center mb-4 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2 flex justify-center items-center gap-2">
       <span>{{.Column.Name}}</span>
       <span class="text-sm font-normal text-gray-500 dark:text-gray-400{{if .OverLimit}} text-red-500{{end}}"
