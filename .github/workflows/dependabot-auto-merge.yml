@@ -1,0 +1,237 @@
+# Every Dependabot update merges itself once every check on that exact commit
+# is green — majors included, as of 2026-08-26. The checks are the review a
+# dependency bump actually gets: every major this workflow ever held back was
+# eventually merged by a person whose whole contribution was pressing the
+# button after the checks had already answered. A pull request that genuinely
+# needs a person first gets the `no-automerge` label; it is read when a run
+# starts and once a day by the sweep, and while it is on, nothing here touches
+# the pull request.
+#
+# This file is deliberately identical in every repository here, and deliberately
+# NOT a reusable workflow pulled from sapn95/.github: a workflow that merges to
+# main on its own should not take its definition from somewhere else, or
+# compromising one repository would compromise all of them.
+#
+# What decides "green" is GitHub's rollup for the commit, not check names
+# written into this file — hardcoding those is how the copies of this file
+# stop being one file. mergeStateStatus alone is not enough: it speaks for the
+# required checks, and on a repository without branch protection (the tap) it
+# speaks for nothing, so the merge additionally waits until every check that
+# is not this workflow's own has passed or been skipped.
+#
+# Nothing from the pull request is checked out or executed, so `pull_request`
+# (not the riskier `pull_request_target`) is the right trigger. Dependabot runs
+# start from a read-only token, which the permissions block below raises —
+# GitHub's documented recipe for this job.
+name: dependabot auto-merge
+
+on:
+  pull_request:
+  # The daily catch-up, see the `reconcile` job.
+  schedule:
+    - cron: "23 5 * * *"
+
+# One poll per pull request: a new push supersedes the running job rather than
+# racing it.
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: auto-merge
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      !contains(github.event.pull_request.labels.*.name, 'no-automerge')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write # to merge
+      pull-requests: write # `gh pr merge` needs it alongside contents
+      checks: read # `gh pr checks` reads the rollup
+    steps:
+      # Anyone with push access can add a commit to a Dependabot branch, and
+      # that commit would then ride into main on Dependabot's ticket. So check
+      # the authorship of every commit and bail out if one is not Dependabot's.
+      # The author login comes from the commit's email, which anyone with push
+      # access could set to Dependabot's — so require a valid signature too.
+      # Dependabot signs all of its commits.
+      - name: who wrote the commits on this branch
+        id: commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # One page of up to 100; a Dependabot PR has one or two commits. NOT
+          # --paginate: with --jq that filters per page and prints one line per
+          # page, which would never equal the single expected author.
+          commits="$(gh api "repos/$REPO/pulls/$PR/commits?per_page=100" || echo '[]')"
+          # Require the list to END at the SHA we later merge, so a force-push
+          # between the two calls cannot make us vet one history and merge
+          # another.
+          head_sha="$(jq -r '.[-1].sha // ""' <<<"$commits")"
+          authors="$(jq -r '[.[] | .author.login // "unknown"] | unique | join(",")' <<<"$commits")"
+          signed="$(jq -r '[.[] | .commit.verification.verified] | all' <<<"$commits")"
+          if [ "$head_sha" = "$SHA" ] && [ "$authors" = 'dependabot[bot]' ] && [ "$signed" = 'true' ]; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Not auto-merging: head=$head_sha (expected $SHA),"
+            echo "::notice::authors=$authors, all signed=$signed. Merge it by hand."
+          fi
+
+      - name: wait until every other check is green
+        id: ci
+        if: steps.commits.outputs.clean == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 110); do   # ~30 min, inside the job timeout
+            # A transient API error must not kill the job: no further
+            # pull_request event would fire for this PR, so it would never be
+            # retried until the daily sweep.
+            state="$(gh pr view "$PR" --repo "$REPO" --json mergeStateStatus \
+              --jq .mergeStateStatus || echo UNKNOWN)"
+            # Everything that is not this workflow's own two jobs. They are
+            # check runs on the same commit, and the one doing the waiting can
+            # never be green before it merges — so a pull request whose only
+            # unhappy check is this job is a pull request that is ready.
+            # bucket, not state: state is whatever GitHub happens to call it,
+            # and it does not call it one thing — a check run and a commit
+            # status posted by an app report different words for the same idea.
+            # bucket is gh's own normalisation into pass / fail / pending /
+            # skipping / cancel, which is the question being asked here. Only
+            # pass and skipping count as through, so a cancelled check holds
+            # the pull request open rather than being waved past.
+            #
+            # And whose check: excluding by name alone would also skip a check
+            # called auto-merge that belongs to some other workflow, and a red
+            # one of those would be waved through. $GITHUB_WORKFLOW is this
+            # workflow's own name, so renaming it does not quietly break the
+            # match.
+            others="$(gh pr checks "$PR" --repo "$REPO" --json name,workflow,bucket \
+              | jq --arg wf "$GITHUB_WORKFLOW" '
+              [ .[] | select((.workflow == $wf and (.name == "auto-merge" or .name == "reconcile")) | not)
+                    | select(.bucket != "pass" and .bucket != "skipping") ] | length' || true)"
+            case "$state" in
+              CLEAN | UNSTABLE)
+                # Mergeable. CLEAN vouches for the required checks and UNSTABLE
+                # for even less, so both wait for the rollup: merge only when
+                # nothing but this job is still unhappy.
+                if [ "${others:-1}" = "0" ]; then
+                  echo "green=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                ;;
+              BEHIND | DIRTY | DRAFT)
+                # BEHIND only exists where branch protection insists on an
+                # up-to-date branch, which it deliberately does not here: a
+                # GITHUB_TOKEN push runs no checks and Dependabot ignores
+                # rebase commands from bots, so a strict rule would park every
+                # second grouped update until Dependabot's next weekly run.
+                echo "::notice::$state — leaving the pull request open."
+                echo "green=false" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+            esac
+            # BLOCKED means both "a required check has not finished" and "one
+            # of them failed", so ask the checks themselves whether anything is
+            # already red rather than polling a lost cause for half an hour.
+            failed="$(gh pr checks "$PR" --repo "$REPO" --json name,workflow,bucket \
+              | jq --arg wf "$GITHUB_WORKFLOW" '
+              [ .[] | select((.workflow == $wf and (.name == "auto-merge" or .name == "reconcile")) | not)
+                    | select(.bucket == "fail") ] | length' || true)"
+            if [ -n "$failed" ] && [ "$failed" != "0" ]; then
+              echo "::notice::$failed check(s) red on this commit — leaving the pull request open."
+              echo "green=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::notice::The checks did not finish in time — the daily sweep will pick this up."
+          echo "green=false" >> "$GITHUB_OUTPUT"
+
+      - name: merge
+        if: steps.ci.outputs.green == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        # --match-head-commit: merge exactly the commit whose authorship and
+        # checks were verified. Anything pushed during the poll aborts the merge
+        # instead of riding in unchecked.
+        run: gh pr merge --squash --delete-branch --match-head-commit "$SHA" "$PR_URL"
+
+  # A pull request whose checks finished after the poll gave up — or that went
+  # green only on a later re-run — gets no further pull_request event, so
+  # nothing would ever merge it. This sweeps up those leftovers once a day:
+  # every open Dependabot pull request without the `no-automerge` label, under
+  # the same rules — authorship, signatures and the checks are all re-checked
+  # here.
+  reconcile:
+    name: reconcile
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      checks: read
+    steps:
+      - name: merge every Dependabot pull request that is already green
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          prs="$(gh pr list --repo "$REPO" --author 'app/dependabot' \
+            --state open --limit 100 --json number,headRefOid,labels |
+            jq -r '.[] | select(any(.labels[]; .name == "no-automerge") | not)
+                       | "\(.number) \(.headRefOid)"')"
+          if [ -z "$prs" ]; then
+            echo "Nothing open without a hold."
+            exit 0
+          fi
+          # Every pull request is handled independently: one rebased-mid-sweep or
+          # otherwise unmergeable PR must not stop the rest of the batch.
+          while read -r pr sha; do
+            [ -n "$pr" ] || continue
+            commits="$(gh api "repos/$REPO/pulls/$pr/commits?per_page=100" </dev/null || echo '[]')"
+            head_sha="$(jq -r '.[-1].sha // ""' <<<"$commits")"
+            authors="$(jq -r '[.[] | .author.login // "unknown"] | unique | join(",")' <<<"$commits")"
+            signed="$(jq -r '[.[] | .commit.verification.verified] | all' <<<"$commits")"
+            if [ "$head_sha" != "$sha" ] || [ "$authors" != 'dependabot[bot]' ] || [ "$signed" != 'true' ]; then
+              echo "::notice::PR #$pr: head=$head_sha (listed $sha),"
+              echo "::notice::authors=$authors, all signed=$signed — left for review."
+              continue
+            fi
+            state="$(gh pr view "$pr" --repo "$REPO" --json mergeStateStatus \
+              --jq .mergeStateStatus </dev/null || echo UNKNOWN)"
+            # CLEAN and UNSTABLE both defer to the rollup — see the same
+            # reasoning in the auto-merge job above.
+            if [ "$state" = 'CLEAN' ] || [ "$state" = 'UNSTABLE' ]; then
+              others="$(gh pr checks "$pr" --repo "$REPO" --json name,workflow,bucket </dev/null \
+                | jq --arg wf "$GITHUB_WORKFLOW" '
+                [ .[] | select((.workflow == $wf and (.name == "auto-merge" or .name == "reconcile")) | not)
+                      | select(.bucket != "pass" and .bucket != "skipping") ] | length' || true)"
+              [ "${others:-1}" = "0" ] && state=READY
+            fi
+            if [ "$state" = 'READY' ]; then
+              # A rebase between listing and merging makes this fail by design —
+              # note it and move on to the next one.
+              gh pr merge --repo "$REPO" --squash --delete-branch --match-head-commit "$sha" "$pr" </dev/null ||
+                echo "::notice::PR #$pr could not be merged right now (head moved?) — the next sweep will retry."
+            else
+              echo "PR #$pr: $state"
+            fi
+          done <<<"$prs"

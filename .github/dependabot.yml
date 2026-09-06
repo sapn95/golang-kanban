@@ -1,0 +1,30 @@
+version: 2
+# One grouped pull request per ecosystem per week. Every update merges itself
+# once the checks are green — majors included; the `no-automerge` label is the
+# manual hold. See .github/workflows/dependabot-auto-merge.yml for both halves
+# of that, and https://github.com/sapn95/.github/blob/main/CI.md for the rest.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        patterns: ["*"]
+
+  # The build stage's golang image and the distroless runtime.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]

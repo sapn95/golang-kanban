@@ -1,0 +1,147 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [homelab]
+  schedule:
+    # Weekly, so a new Go release or a moved dependency is caught without commits.
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Nothing here pushes, and `pull_request` runs code from strangers.
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          # go.mod is the single source of the version, so there is no second
+          # pin here to drift away from it.
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.5
+
+  workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: actionlint
+        uses: raven-actions/actionlint@v2.2.0
+        env:
+          # shellcheck's info and style notes are advisory here; a warning or
+          # worse blocks.
+          SHELLCHECK_OPTS: --severity=warning
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      # The Postgres store is tested against a real Postgres, not a mock. The
+      # database is named kanban_test because the suite refuses to drop tables
+      # in a database whose name does not end in _test.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kanban
+          POSTGRES_PASSWORD: kanban
+          POSTGRES_DB: kanban_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kanban -d kanban_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: go test
+        env:
+          KANBAN_TEST_POSTGRES_URL: postgres://kanban:kanban@localhost:5432/kanban_test?sslmode=disable
+        run: go test ./... -race -coverpkg=./... -coverprofile=coverage.out
+      - name: coverage gate
+        env:
+          MINIMUM: "80"
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$3); print $3}')"
+          echo "total coverage: ${total}%  (minimum ${MINIMUM}%)"
+          echo "### coverage ${total}% (minimum ${MINIMUM}%)" >> "$GITHUB_STEP_SUMMARY"
+          awk -v t="$total" -v m="$MINIMUM" 'BEGIN { exit (t + 0 < m + 0) }'
+      - name: build
+        run: CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/kanban
+
+  chart:
+    name: helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@v4
+      - name: helm lint
+        run: helm lint deploy/helm/kanban
+      - name: every values combination the chart claims to support
+        run: |
+          set -euo pipefail
+          ok() {
+            if ! helm template t deploy/helm/kanban "$@" >/dev/null 2>&1; then
+              echo "::error::should render but does not: $*"
+              exit 1
+            fi
+          }
+          nope() {
+            if helm template t deploy/helm/kanban "$@" >/dev/null 2>&1; then
+              echo "::error::should be rejected but renders: $*"
+              exit 1
+            fi
+          }
+          ok
+          ok --set storage=memory --set postgres.enabled=false
+          ok --set storage=postgres --set postgres.enabled=false --set externalDatabase.url=postgres://u:p@h:5432/d
+          ok --set ingress.enabled=true
+          ok --set service.type=NodePort --set service.nodePort=30808
+          # A release installed before the auth section existed carries no
+          # .Values.auth at all; --reuse-values then hands the templates nil.
+          ok --set auth=null
+          nope --set storage=sqlite
+          nope --set storage=memory
+          nope --set storage=postgres --set postgres.enabled=false
+          nope --set ingress.enabled=true --set ingress.hosts=null
+          nope --set postgres.password='has a space'
+          nope --set auth.enabled=true
+          nope --set auth.tls.enabled=true
+          echo "all combinations behave"
