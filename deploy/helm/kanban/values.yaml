@@ -72,10 +72,14 @@ postgres:
 # them.
 networkPolicy:
   enabled: false
-  # The kubelet runs on the node and has no pod label to select, so its
-  # addresses are named. Narrow this to the node's real address.
+  # The kubelet probes from the node, which has no pod label to select, so its
+  # address has to be named. This must be the node's own address on the pod
+  # network, not the pod CIDR: the whole CIDR is every pod in the cluster, which
+  # would make the ingress rule allow exactly what the policy exists to stop.
+  # On k3s the node is the .1 of its pod range; check with
+  #   kubectl get node -o jsonpath='{.items[*].spec.podCIDR}'
   probeSources:
-    - 10.42.0.0/16
+    - 10.42.0.1/32
   # Extra ingress peers, in NetworkPolicyPeer form. This is where the tunnel
   # connector or an ingress controller goes:
   #   - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cloudflared}}
