@@ -8,7 +8,7 @@ import (
 	"io/fs"
 )
 
-//go:embed vendor app.js app.css
+//go:embed vendor app.js app.css logo.svg
 var files embed.FS
 
 // FS is the embedded file tree, rooted at the assets directory.
