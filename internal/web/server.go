@@ -114,9 +114,9 @@ func (s *Server) parseTemplates() {
 		// An assignee is an address, and a card is narrow. These two keep
 		// the display logic out of the template, where a wrong byte offset
 		// would silently cut a multi-byte character in half.
-		"initial":      func(addr string) string { return identity.User{Email: addr}.Initial() },
-		"shortAddress": func(addr string) string { return identity.User{Email: addr}.Display() },
-		"readableOn":   readableOn,
+		"initials":   func(addr string) string { return identity.User{Email: addr}.Initials() },
+		"personName": func(addr string) string { return identity.User{Email: addr}.Display() },
+		"readableOn": readableOn,
 		// Every asset URL carries the digest of the embedded tree, so a new
 		// build is a new URL and the browser cannot serve yesterday's script
 		// against today's markup.

@@ -26,7 +26,7 @@
           {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</span>
         {{end}}
         {{if .Card.Assignee}}
-        <span class="text-gray-500 dark:text-gray-400" title="{{.Card.Assignee}}">{{shortAddress .Card.Assignee}}</span>
+        <span class="text-gray-500 dark:text-gray-400" title="{{.Card.Assignee}}">{{personName .Card.Assignee}}</span>
         {{end}}
       </div>
     </div>
