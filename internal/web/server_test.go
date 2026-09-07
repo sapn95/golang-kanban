@@ -983,3 +983,104 @@ func TestAgo(t *testing.T) {
 		})
 	}
 }
+
+func TestLabelsThroughTheWeb(t *testing.T) {
+	// A same-origin form post, which is what the browser sends and what the
+	// cross-site middleware is looking for.
+	post := func(e *env, path string, body io.Reader) *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, path, body, "Content-Type", "application/x-www-form-urlencoded",
+			"Sec-Fetch-Site", "same-origin")
+	}
+
+	t.Run("the page lists the board's labels and how they are used", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodGet, "/b/demo/labels", nil)
+		// The seeded board has one label, on the seeded card.
+		want(t, rr, http.StatusOK, "bug", "on 1 card", "New label")
+	})
+
+	t.Run("a label can be made from the form", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/labels", form("name", "chore", "color", "#22c55e")), http.StatusSeeOther)
+
+		b, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found *model.Label
+		for i := range b.Labels {
+			if b.Labels[i].Name == "chore" {
+				found = &b.Labels[i]
+			}
+		}
+		if found == nil {
+			t.Fatal("the label was not created")
+		}
+		if found.Color != "#22c55e" {
+			t.Errorf("colour = %q, want the one the form sent", found.Color)
+		}
+	})
+
+	t.Run("a colour the template could not render is refused with a reason", func(t *testing.T) {
+		e := seeded(t)
+		rr := post(e, "/b/demo/labels", form("name", "bad", "color", "javascript:alert(1)"))
+		// A bad colour used to reach the style attribute and render as
+		// ZgotmplZ, which reads as a bug rather than as a rejection.
+		want(t, rr, http.StatusBadRequest, "hex colour")
+		if strings.Contains(rr.Body.String(), "ZgotmplZ") {
+			t.Error("the page rendered ZgotmplZ instead of rejecting the colour")
+		}
+	})
+
+	t.Run("a duplicate name says so instead of failing silently", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/labels", form("name", "bug", "color", "")), http.StatusConflict,
+			"already has a label with that name")
+	})
+
+	t.Run("renaming and recolouring reach every card at once", func(t *testing.T) {
+		e := seeded(t)
+		id := string(e.board.Labels[0].ID)
+		want(t, post(e, "/b/demo/labels/"+id, form("name", "defect", "color", "#ef4444")), http.StatusSeeOther)
+
+		want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK, "defect", "#ef4444")
+	})
+
+	t.Run("a label from another board cannot be reached through this one", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		other, err := e.svc.CreateBoard(ctx, "Other", "other", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		theirs, err := e.svc.CreateLabel(ctx, other.ID, "theirs", "#3b82f6")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want(t, post(e, "/b/demo/labels/"+string(theirs.ID), form("name", "mine", "color", "")), http.StatusNotFound)
+		want(t, post(e, "/b/demo/labels/"+string(theirs.ID)+"/delete", nil), http.StatusNotFound)
+
+		still, err := e.svc.Board(ctx, "other")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(still.Labels) != 1 || still.Labels[0].Name != "theirs" {
+			t.Errorf("the other board's labels are %v, want them untouched", still.Labels)
+		}
+	})
+
+	t.Run("deleting takes it off the cards", func(t *testing.T) {
+		e := seeded(t)
+		id := string(e.board.Labels[0].ID)
+		want(t, post(e, "/b/demo/labels/"+id+"/delete", nil), http.StatusSeeOther)
+
+		card, err := e.svc.Card(context.Background(), e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(card.Labels) != 0 {
+			t.Errorf("the card still carries %v after the label was deleted", card.Labels)
+		}
+		want(t, e.do(http.MethodGet, "/b/demo/labels", nil), http.StatusOK, "0 labels")
+	})
+}

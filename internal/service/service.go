@@ -515,12 +515,37 @@ func (k *Kanban) DeleteComment(ctx context.Context, id model.ID, asker string) (
 
 // --- labels -----------------------------------------------------------------
 
+// hexColor is the only shape a label colour may take.
+//
+// The value goes into a style attribute, where html/template refuses anything
+// it cannot prove is a colour and writes ZgotmplZ instead. That renders as a
+// broken label rather than as a rejection, so a bad colour is caught here,
+// where the user is told what is wrong with it.
+var hexColor = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)
+
+// checkColor accepts a hex colour or nothing at all. Empty means the label
+// takes the default grey.
+func checkColor(color string) (string, error) {
+	color = strings.TrimSpace(color)
+	if color == "" {
+		return "", nil
+	}
+	if !hexColor.MatchString(color) {
+		return "", invalid("color", "must be a hex colour such as #3b82f6, or empty for the default")
+	}
+	return strings.ToLower(color), nil
+}
+
 func (k *Kanban) CreateLabel(ctx context.Context, boardID model.ID, name, color string) (*model.Label, error) {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
 		return nil, err
 	}
-	l := &model.Label{ID: k.newID(), BoardID: boardID, Name: name, Color: strings.TrimSpace(color)}
+	color, err := checkColor(color)
+	if err != nil {
+		return nil, err
+	}
+	l := &model.Label{ID: k.newID(), BoardID: boardID, Name: name, Color: color}
 	if err := k.store.CreateLabel(ctx, l); err != nil {
 		return nil, err
 	}
@@ -532,7 +557,11 @@ func (k *Kanban) UpdateLabel(ctx context.Context, id model.ID, name, color strin
 	if err := checkText("name", name, MaxName, true); err != nil {
 		return err
 	}
-	return k.store.UpdateLabel(ctx, &model.Label{ID: id, Name: name, Color: strings.TrimSpace(color)})
+	color, err := checkColor(color)
+	if err != nil {
+		return err
+	}
+	return k.store.UpdateLabel(ctx, &model.Label{ID: id, Name: name, Color: color})
 }
 
 func (k *Kanban) DeleteLabel(ctx context.Context, id model.ID) error {

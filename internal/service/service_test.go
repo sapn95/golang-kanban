@@ -690,3 +690,45 @@ func TestComments(t *testing.T) {
 		}
 	})
 }
+
+func TestLabelColourIsCheckedBeforeItReachesATemplate(t *testing.T) {
+	tests := []struct {
+		name  string
+		in    string
+		want  string
+		valid bool
+	}{
+		{"empty is the default", "", "", true},
+		{"six digits", "#3B82F6", "#3b82f6", true},
+		{"three digits", "#F00", "#f00", true},
+		{"surrounding space", "  #f00  ", "#f00", true},
+		{"a css keyword", "red", "", false},
+		{"no hash", "3b82f6", "", false},
+		{"four digits", "#abcd", "", false},
+		{"a url", "javascript:alert(1)", "", false},
+		{"an expression", "#f00; background: url(x)", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := newSvc(t)
+			ctx := context.Background()
+			b, _ := k.CreateBoard(ctx, "B", "", nil)
+			l, err := k.CreateLabel(ctx, b.ID, "label", tt.in)
+			if tt.valid {
+				if err != nil {
+					t.Fatalf("CreateLabel(%q) = %v, want it accepted", tt.in, err)
+				}
+				// Anything html/template cannot prove is a colour renders as
+				// ZgotmplZ in a style attribute, which reads as a broken label
+				// rather than as a rejection. So it is rejected here instead.
+				if l.Color != tt.want {
+					t.Errorf("colour = %q, want %q", l.Color, tt.want)
+				}
+				return
+			}
+			if !isValidation(err, "color") {
+				t.Errorf("CreateLabel(%q) = %v, want a validation error on color", tt.in, err)
+			}
+		})
+	}
+}

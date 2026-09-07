@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +71,10 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /cards/{id}/comments", s.addComment)
 	mux.HandleFunc("POST /comments/{id}/delete", s.deleteComment)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
+	mux.HandleFunc("GET /b/{board}/labels", s.labels)
+	mux.HandleFunc("POST /b/{board}/labels", s.createLabel)
+	mux.HandleFunc("POST /b/{board}/labels/{id}", s.updateLabel)
+	mux.HandleFunc("POST /b/{board}/labels/{id}/delete", s.deleteLabel)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
@@ -97,7 +102,7 @@ func (s *Server) parseTemplates() {
 		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))
 	s.parts = base
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"board", "boards", "archive"} {
+	for _, name := range []string{"board", "boards", "archive", "labels"} {
 		s.pages[name] = template.Must(template.Must(base.Clone()).ParseFS(templateFiles, "templates/"+name+".html"))
 	}
 }
@@ -172,6 +177,36 @@ type boardsPage struct {
 	User      identity.User
 	BoardSlug string
 	Boards    []model.Board
+	Error     string
+}
+
+// labelPalette is what the label form offers.
+//
+// A board reads better when its labels come from one set of colours than when
+// every one is picked by hand, and a fixed list cannot produce a value the
+// template has to refuse. The service still accepts any hex colour, so an API
+// client is not held to these eight.
+var labelPalette = []string{"#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280"}
+
+type labelView struct {
+	Label model.Label
+	// Cards is how many cards carry the label, archived ones included.
+	// Deleting takes it off all of them, so the page says so first.
+	Cards int
+	// Custom is a colour that is not one of the presets, set by an API client
+	// or an older board. The form offers it as a ninth swatch rather than
+	// showing the label as though it had no colour and quietly losing it.
+	Custom  bool
+	Palette []string
+}
+
+type labelsPage struct {
+	Title     string
+	User      identity.User
+	BoardSlug string
+	Board     *model.Board
+	Labels    []labelView
+	New       labelView
 	Error     string
 }
 
@@ -722,6 +757,134 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 		page.Cards = append(page.Cards, s.cardView(u, b, c, counts[c.ID]))
 	}
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
+}
+
+// --- labels -------------------------------------------------------------------
+
+// labels renders the label editor. Labels could only be made through code
+// before this; the service methods were there and had no way in.
+func (s *Server) labels(w http.ResponseWriter, r *http.Request) {
+	s.renderLabels(w, r, http.StatusOK, "")
+}
+
+func (s *Server) renderLabels(w http.ResponseWriter, r *http.Request, status int, message string) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	used, err := s.labelUse(r, b.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	p := labelsPage{
+		Title:     b.Name + " · labels",
+		User:      identity.FromContext(r.Context()),
+		BoardSlug: b.Slug,
+		Board:     b,
+		New:       labelView{Palette: labelPalette},
+		Error:     message,
+	}
+	for _, l := range b.Labels {
+		p.Labels = append(p.Labels, labelView{
+			Label:   l,
+			Cards:   used[l.ID],
+			Custom:  l.Color != "" && !slices.Contains(labelPalette, l.Color),
+			Palette: labelPalette,
+		})
+	}
+	s.render(w, s.pages["labels"], "layout", status, p)
+}
+
+// labelUse counts the cards each label is on, the archive included: a label
+// that only archived cards carry is still in use, and deleting it would take
+// it off them without saying so.
+func (s *Server) labelUse(r *http.Request, boardID model.ID) (map[model.ID]int, error) {
+	on, err := s.svc.Cards(r.Context(), boardID)
+	if err != nil {
+		return nil, err
+	}
+	off, err := s.svc.ArchivedCards(r.Context(), boardID)
+	if err != nil {
+		return nil, err
+	}
+	used := map[model.ID]int{}
+	for _, list := range [][]model.Card{on, off} {
+		for _, c := range list {
+			for _, id := range c.Labels {
+				used[id]++
+			}
+		}
+	}
+	return used, nil
+}
+
+// labelFailure puts a rejected edit back on the page with the reason, rather
+// than answering with a bare status the form has nowhere to show.
+func (s *Server) labelFailure(w http.ResponseWriter, r *http.Request, err error) {
+	var ve *service.ValidationError
+	switch {
+	case errors.As(err, &ve):
+		s.renderLabels(w, r, http.StatusBadRequest, ve.Message)
+	case errors.Is(err, store.ErrConflict):
+		s.renderLabels(w, r, http.StatusConflict, "this board already has a label with that name")
+	default:
+		s.fail(w, r, err)
+	}
+}
+
+func (s *Server) createLabel(w http.ResponseWriter, r *http.Request) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if _, err := s.svc.CreateLabel(r.Context(), b.ID, r.FormValue("name"), r.FormValue("color")); err != nil {
+		s.labelFailure(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/b/"+b.Slug+"/labels", http.StatusSeeOther)
+}
+
+// boardLabel resolves the label id in the path against the board in the path,
+// so a crafted id cannot reach a label that belongs to another board.
+func (s *Server) boardLabel(r *http.Request) (*model.Board, *model.Label, error) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		return nil, nil, err
+	}
+	l := b.Label(model.ID(r.PathValue("id")))
+	if l == nil {
+		return nil, nil, store.ErrNotFound
+	}
+	return b, l, nil
+}
+
+func (s *Server) updateLabel(w http.ResponseWriter, r *http.Request) {
+	b, l, err := s.boardLabel(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.UpdateLabel(r.Context(), l.ID, r.FormValue("name"), r.FormValue("color")); err != nil {
+		s.labelFailure(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/b/"+b.Slug+"/labels", http.StatusSeeOther)
+}
+
+func (s *Server) deleteLabel(w http.ResponseWriter, r *http.Request) {
+	b, l, err := s.boardLabel(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.DeleteLabel(r.Context(), l.ID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/b/"+b.Slug+"/labels", http.StatusSeeOther)
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
