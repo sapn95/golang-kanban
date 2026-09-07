@@ -23,8 +23,12 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       ports:
+        {{- /* The same value the Deployment passes as SERVER_PORT, so the
+               policy cannot allow a port the app is not listening on. The
+               previous service.targetPort does not exist in values.yaml, so
+               this always fell back to a literal that happened to match. */}}
         - protocol: TCP
-          port: {{ .Values.service.targetPort | default 17808 }}
+          port: {{ .Values.service.port }}
   egress:
     {{- /* DNS, or nothing resolves. */}}
     - to:
