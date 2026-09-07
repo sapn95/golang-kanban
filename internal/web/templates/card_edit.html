@@ -1,4 +1,21 @@
 {{define "card_fields"}}
+<!-- Two columns once there is room: what the card is on the left, where it
+     lives and what it is tagged with on the right. Below 1024px the grid is
+     not applied and this is the single column it always was. -->
+<div class="card-fields">
+<div class="card-fields__main">
+<div class="mb-4">
+  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
+  <input type="text" name="title" value="{{.Card.Title}}" placeholder="Card title" required maxlength="200"
+    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+</div>
+<div class="mb-4">
+  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
+  <textarea name="description" rows="8" placeholder="Description"
+    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{.Card.Description}}</textarea>
+</div>
+</div>
+<div class="card-fields__side">
 {{if .Columns}}
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Column</label>
@@ -9,16 +26,6 @@
   </select>
 </div>
 {{end}}
-<div class="mb-4">
-  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
-  <input type="text" name="title" value="{{.Card.Title}}" placeholder="Card title" required maxlength="200"
-    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-</div>
-<div class="mb-4">
-  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
-  <textarea name="description" rows="6" placeholder="Description"
-    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{.Card.Description}}</textarea>
-</div>
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Due date</label>
   <input type="date" name="due_date" value="{{.DueInput}}"
@@ -64,6 +71,8 @@
     <i class="bi bi-plus mr-1"></i>Add Subtask
   </button>
   <input type="hidden" name="subtasks" class="subtasks-hidden">
+</div>
+</div>
 </div>
 {{end}}
 
