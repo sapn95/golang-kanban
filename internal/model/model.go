@@ -58,10 +58,15 @@ type Card struct {
 	Description string    // markdown
 	Position    int       // order within the column; gaps are allowed
 	DueDate     time.Time // zero = none; date only, kept at 00:00 UTC
-	Labels      []ID      // label IDs, sorted
-	Subtasks    []Subtask // ordered by Position
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Assignee is the address of whoever is on the card, empty for nobody.
+	// It is stored as the identity provider gave it rather than as a foreign
+	// key: the board has no user table, and people who log in once and never
+	// again should not leave rows behind.
+	Assignee  string
+	Labels    []ID      // label IDs, sorted
+	Subtasks  []Subtask // ordered by Position
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Label is a per-board tag that can be attached to cards.

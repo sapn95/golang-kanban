@@ -80,6 +80,11 @@ func (s *Server) parseTemplates() {
 			}
 			return false
 		},
+		// An assignee is an address, and a card is narrow. These two keep
+		// the display logic out of the template, where a wrong byte offset
+		// would silently cut a multi-byte character in half.
+		"initial":      func(addr string) string { return identity.User{Email: addr}.Initial() },
+		"shortAddress": func(addr string) string { return identity.User{Email: addr}.Display() },
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/card.html", "templates/card_edit.html"))
 	s.parts = base
@@ -92,6 +97,9 @@ func (s *Server) parseTemplates() {
 // --- view models --------------------------------------------------------------
 
 type cardView struct {
+	// Viewer is who is looking, so a card can offer "assign to me" and mark
+	// the ones that are already theirs.
+	Viewer      identity.User
 	Card        model.Card
 	Labels      []model.Label // resolved from the board
 	BoardLabels []model.Label // every label of the board, for the edit form
@@ -124,8 +132,8 @@ type boardsPage struct {
 	Error     string
 }
 
-func (s *Server) cardView(b *model.Board, c model.Card) cardView {
-	v := cardView{Card: c, BoardLabels: b.Labels}
+func (s *Server) cardView(u identity.User, b *model.Board, c model.Card) cardView {
+	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
 			v.Labels = append(v.Labels, *l)
@@ -140,11 +148,11 @@ func (s *Server) cardView(b *model.Board, c model.Card) cardView {
 	return v
 }
 
-func (s *Server) boardPage(b *model.Board, cards []model.Card) boardPage {
-	p := boardPage{Title: b.Name, BoardSlug: b.Slug, Board: b, EmptyCard: cardView{BoardLabels: b.Labels}}
+func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card) boardPage {
+	p := boardPage{Title: b.Name, User: u, BoardSlug: b.Slug, Board: b, EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels}}
 	byColumn := map[model.ID][]cardView{}
 	for _, c := range cards {
-		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(b, c))
+		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c))
 	}
 	for _, col := range b.Columns {
 		cv := columnView{Column: col, Cards: byColumn[col.ID], Count: len(byColumn[col.ID])}
@@ -245,9 +253,8 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	page := s.boardPage(b, cards)
-	page.User = identity.FromContext(r.Context())
-	s.render(w, s.pages["board"], "layout", http.StatusOK, page)
+	s.render(w, s.pages["board"], "layout", http.StatusOK,
+		s.boardPage(identity.FromContext(r.Context()), b, cards))
 }
 
 func cardInput(r *http.Request) service.CardInput {
@@ -259,6 +266,7 @@ func cardInput(r *http.Request) service.CardInput {
 		Title:       r.FormValue("title"),
 		Description: r.FormValue("description"),
 		DueDate:     r.FormValue("due_date"),
+		Assignee:    r.FormValue("assignee"),
 		Labels:      labels,
 		Subtasks:    model.ParseSubtasks(r.FormValue("subtasks")),
 	}
@@ -289,7 +297,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("HX-Retarget", "#cards-"+string(c.ColumnID))
 	w.Header().Set("HX-Reswap", "beforeend")
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(b, *c))
+	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
 }
 
 type orderPayload struct {
@@ -333,7 +341,7 @@ func (s *Server) card(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(b, *c))
+	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
 }
 
 func (s *Server) editCard(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +350,7 @@ func (s *Server) editCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.parts, "card_edit", http.StatusOK, s.cardView(b, *c))
+	s.render(w, s.parts, "card_edit", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
 }
 
 func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
@@ -364,7 +372,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
 		return
 	}
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(b, *c))
+	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
 }
 
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {

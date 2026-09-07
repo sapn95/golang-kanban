@@ -22,7 +22,10 @@ const (
 	MaxTitle       = 200
 	MaxName        = 100
 	MaxDescription = 20000
-	MaxSlug        = 64
+	// MaxAssignee is generous for an address; the cap is there so a form
+	// post cannot put a novel in the column.
+	MaxAssignee = 320
+	MaxSlug     = 64
 )
 
 // Default board created on an empty database.
@@ -242,8 +245,12 @@ type CardInput struct {
 	Title       string
 	Description string
 	DueDate     string // YYYY-MM-DD or empty
-	Labels      []model.ID
-	Subtasks    []model.Subtask // IDs may be empty for new ones
+	// Assignee is an address, empty to unassign. Not checked against a user
+	// list, because there is none: whoever the identity provider let in is
+	// who can be named.
+	Assignee string
+	Labels   []model.ID
+	Subtasks []model.Subtask // IDs may be empty for new ones
 }
 
 func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
@@ -252,6 +259,10 @@ func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 		return err
 	}
 	if err := checkText("description", in.Description, MaxDescription, false); err != nil {
+		return err
+	}
+	assignee := strings.TrimSpace(in.Assignee)
+	if err := checkText("assignee", assignee, MaxAssignee, false); err != nil {
 		return err
 	}
 	due := time.Time{}
@@ -277,7 +288,7 @@ func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 		st.Position = len(subtasks) + 1
 		subtasks = append(subtasks, st)
 	}
-	c.Title, c.Description, c.DueDate = title, strings.ReplaceAll(in.Description, "\r\n", "\n"), due
+	c.Title, c.Description, c.DueDate, c.Assignee = title, strings.ReplaceAll(in.Description, "\r\n", "\n"), due, assignee
 	c.Labels = append([]model.ID(nil), in.Labels...)
 	c.Subtasks = subtasks
 	return nil

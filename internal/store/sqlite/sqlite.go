@@ -27,9 +27,14 @@ func migrations() []store.Migration {
 	if err != nil {
 		panic(err)
 	}
+	assignee, err := migrationFiles.ReadFile("migrations/0003_assignee.sql")
+	if err != nil {
+		panic(err)
+	}
 	return []store.Migration{
 		{Version: 1, Name: "init", Up: initSchema(string(init))},
 		{Version: 2, Name: "import_v1", Up: importV1},
+		{Version: 3, Name: "assignee", Up: store.SQL(string(assignee))},
 	}
 }
 
@@ -473,13 +478,13 @@ func (s *Store) ReorderColumns(ctx context.Context, boardID model.ID, order []mo
 
 // --- cards ------------------------------------------------------------------
 
-const cardColumns = `c.id, c.board_id, c.column_id, c.title, c.description, c.position, c.due_date, c.created_at, c.updated_at`
+const cardColumns = `c.id, c.board_id, c.column_id, c.title, c.description, c.position, c.due_date, c.assignee, c.created_at, c.updated_at`
 
 func scanCard(row interface{ Scan(...any) error }) (*model.Card, error) {
 	var c model.Card
 	var due sql.NullString
 	var created, updated string
-	if err := row.Scan(&c.ID, &c.BoardID, &c.ColumnID, &c.Title, &c.Description, &c.Position, &due, &created, &updated); err != nil {
+	if err := row.Scan(&c.ID, &c.BoardID, &c.ColumnID, &c.Title, &c.Description, &c.Position, &due, &c.Assignee, &created, &updated); err != nil {
 		return nil, mapErr(err)
 	}
 	var err error
@@ -645,9 +650,9 @@ func (s *Store) CreateCard(ctx context.Context, c *model.Card) error {
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) + 1 FROM cards WHERE column_id = ?`, c.ColumnID).Scan(&c.Position); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO cards (id, board_id, column_id, title, description, position, due_date, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			c.ID, c.BoardID, c.ColumnID, c.Title, c.Description, c.Position, dueArg(c.DueDate), timeArg(c.CreatedAt), timeArg(c.UpdatedAt)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO cards (id, board_id, column_id, title, description, position, due_date, assignee, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, c.BoardID, c.ColumnID, c.Title, c.Description, c.Position, dueArg(c.DueDate), c.Assignee, timeArg(c.CreatedAt), timeArg(c.UpdatedAt)); err != nil {
 			return err
 		}
 		return writeCardChildren(ctx, tx, c)
@@ -656,8 +661,8 @@ func (s *Store) CreateCard(ctx context.Context, c *model.Card) error {
 
 func (s *Store) UpdateCard(ctx context.Context, c *model.Card) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if err := tx.QueryRowContext(ctx, `UPDATE cards SET title = ?, description = ?, due_date = ?, updated_at = ?
-			WHERE id = ? RETURNING board_id`, c.Title, c.Description, dueArg(c.DueDate), timeArg(c.UpdatedAt), c.ID).Scan(&c.BoardID); err != nil {
+		if err := tx.QueryRowContext(ctx, `UPDATE cards SET title = ?, description = ?, due_date = ?, assignee = ?, updated_at = ?
+			WHERE id = ? RETURNING board_id`, c.Title, c.Description, dueArg(c.DueDate), c.Assignee, timeArg(c.UpdatedAt), c.ID).Scan(&c.BoardID); err != nil {
 			return err
 		}
 		return writeCardChildren(ctx, tx, c)
