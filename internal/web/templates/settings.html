@@ -1,0 +1,159 @@
+{{define "swatches"}}
+<div class="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Colour">
+  {{$current := .Label.Color}}
+  <label class="cursor-pointer" title="No colour">
+    <input type="radio" name="color" value="" class="sr-only peer"{{if not $current}} checked{{end}}>
+    <span class="block w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 ring-offset-1 ring-offset-white dark:ring-offset-gray-800 peer-checked:ring-2 peer-checked:ring-gray-900 dark:peer-checked:ring-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500"></span>
+  </label>
+  {{range .Palette}}
+  <label class="cursor-pointer" title="{{.}}">
+    <input type="radio" name="color" value="{{.}}" class="sr-only peer"{{if eq . $current}} checked{{end}}>
+    <span class="block w-6 h-6 rounded-full ring-offset-1 ring-offset-white dark:ring-offset-gray-800 peer-checked:ring-2 peer-checked:ring-gray-900 dark:peer-checked:ring-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500" style="background-color: {{.}}"></span>
+  </label>
+  {{end}}
+  {{if .Custom}}
+  <label class="cursor-pointer" title="{{$current}}, set outside this form">
+    <input type="radio" name="color" value="{{$current}}" class="sr-only peer" checked>
+    <span class="block w-6 h-6 rounded-full ring-offset-1 ring-offset-white dark:ring-offset-gray-800 peer-checked:ring-2 peer-checked:ring-gray-900 dark:peer-checked:ring-white" style="background-color: {{$current}}"></span>
+  </label>
+  {{end}}
+</div>
+{{end}}
+
+{{define "content"}}
+<div class="flex items-center justify-between gap-3 mb-6">
+  <a href="/b/{{.BoardSlug}}"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm">
+    <i class="bi bi-arrow-left"></i>Back to the board
+  </a>
+  <span class="text-sm text-gray-500 dark:text-gray-400">
+    {{len .Columns}} column{{if ne (len .Columns) 1}}s{{end}},
+    {{len .Labels}} label{{if ne (len .Labels) 1}}s{{end}}
+  </span>
+</div>
+
+{{with .Error}}
+<div class="mb-4 rounded-lg border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950 px-4 py-3 text-sm text-red-800 dark:text-red-200" role="alert">
+  {{.}}
+</div>
+{{end}}
+
+{{$slug := .BoardSlug}}
+
+<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Columns</h2>
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg divide-y divide-gray-100 dark:divide-gray-700 mb-3">
+  {{range .Columns}}
+  <div class="p-4 flex flex-wrap items-center gap-3">
+    <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}" class="flex flex-1 flex-wrap items-center gap-3 min-w-0">
+      <input type="text" name="name" value="{{.Column.Name}}" required maxlength="100" aria-label="Column name"
+        class="flex-1 min-w-[8rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+      <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0">
+        WIP limit
+        <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
+          value="{{if .Column.WIPLimit}}{{.Column.WIPLimit}}{{end}}"
+          class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+      </label>
+      <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Save</button>
+    </form>
+    <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0 tabular-nums">
+      {{if .Cards}}{{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}empty{{end}}
+    </span>
+    <div class="flex items-center gap-1 shrink-0">
+      {{if not .First}}
+      <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move">
+        <input type="hidden" name="direction" value="up">
+        <button type="submit" title="Move left" class="p-2 rounded-lg text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+          <i class="bi bi-arrow-left-short text-lg"></i>
+        </button>
+      </form>
+      {{end}}
+      {{if not .Last}}
+      <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move">
+        <input type="hidden" name="direction" value="down">
+        <button type="submit" title="Move right" class="p-2 rounded-lg text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+          <i class="bi bi-arrow-right-short text-lg"></i>
+        </button>
+      </form>
+      {{end}}
+      {{if not .Only}}
+      <!-- Where the cards go is part of the delete, not a question asked
+           afterwards. "Delete them too" is in the list rather than the
+           default, so losing them is always something someone chose. -->
+      <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/delete" class="flex items-center gap-2"
+            onsubmit="return confirm('Delete this column?')">
+        {{if .Cards}}
+        <select name="move_to" aria-label="Where its cards go"
+          class="px-2 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+          {{range .Others}}<option value="{{.ID}}">move cards to {{.Name}}</option>{{end}}
+          <option value="">delete the cards too</option>
+        </select>
+        {{end}}
+        <button type="submit" title="Delete this column"
+          class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg">
+          <i class="bi bi-trash text-sm"></i>
+        </button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  <form method="post" action="/b/{{$slug}}/columns" class="p-4 flex flex-wrap items-center gap-3">
+    <input type="text" name="name" required maxlength="100" placeholder="New column" aria-label="New column name"
+      class="flex-1 min-w-[8rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+    <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0">
+      WIP limit
+      <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
+        class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+    </label>
+    <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-gray-800 dark:bg-gray-600 hover:bg-gray-900 dark:hover:bg-gray-500 text-white">
+      <i class="bi bi-plus mr-1"></i>Add
+    </button>
+  </form>
+</div>
+
+<p class="mb-8 text-sm text-gray-400 dark:text-gray-500">
+  A WIP limit is the most cards the column should hold. It is shown on the board
+  and refuses a drop that would go past it. Empty means no limit. The last
+  column cannot be deleted.
+</p>
+
+<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Labels</h2>
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg divide-y divide-gray-100 dark:divide-gray-700">
+  {{range .Labels}}
+  <div class="p-4 flex flex-wrap items-center gap-3">
+    <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}" class="flex flex-1 flex-wrap items-center gap-3 min-w-0">
+      <input type="text" name="name" value="{{.Label.Name}}" required maxlength="100" aria-label="Label name"
+        class="flex-1 min-w-[8rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+      {{template "swatches" .}}
+      <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Save</button>
+    </form>
+    <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+      {{if .Cards}}on {{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}unused{{end}}
+    </span>
+    <!-- A second form rather than a second button in the first: a form inside
+         a form is not valid HTML and the browser drops the inner one. -->
+    <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}/delete" class="shrink-0"
+          onsubmit="return confirm('Delete this label? It comes off every card that carries it.')">
+      <button type="submit" title="Delete this label"
+        class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg">
+        <i class="bi bi-trash text-sm"></i>
+      </button>
+    </form>
+  </div>
+  {{end}}
+
+  <form method="post" action="/b/{{$slug}}/labels" class="p-4 flex flex-wrap items-center gap-3">
+    <input type="text" name="name" required maxlength="100" placeholder="New label" aria-label="New label name"
+      class="flex-1 min-w-[8rem] px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+    {{template "swatches" .NewLabel}}
+    <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-gray-800 dark:bg-gray-600 hover:bg-gray-900 dark:hover:bg-gray-500 text-white">
+      <i class="bi bi-plus mr-1"></i>Add
+    </button>
+  </form>
+</div>
+
+<p class="mt-4 text-sm text-gray-400 dark:text-gray-500">
+  Labels belong to this board. Renaming one changes it on every card at once.
+</p>
+{{end}}
