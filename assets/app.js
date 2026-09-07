@@ -173,3 +173,72 @@
     init();
   }
 })();
+
+// --- multi-select -----------------------------------------------------------
+// Selecting several cards and acting on them at once. The selected ids are
+// injected into every toolbar form on submit rather than being kept in hidden
+// inputs, so the source of truth is the checkboxes on screen and the two
+// cannot drift apart.
+(function () {
+  const bar = document.getElementById('selectionBar');
+  if (!bar) return;
+
+  const countEl = document.getElementById('selectionCount');
+  // Shift-click extends from the last box clicked, and only within one
+  // column: a range across columns has no meaning the user could predict.
+  let anchor = null;
+
+  const boxes = () => Array.from(document.querySelectorAll('.card-select'));
+  const selected = () => boxes().filter((b) => b.checked);
+
+  function paint() {
+    const n = selected().length;
+    countEl.textContent = String(n);
+    bar.hidden = n === 0;
+    boxes().forEach((b) => {
+      const card = b.closest('[data-id]');
+      if (!card) return;
+      card.classList.toggle('ring-2', b.checked);
+      card.classList.toggle('ring-blue-500', b.checked);
+    });
+  }
+
+  function onClick(e) {
+    const box = e.target.closest('.card-select');
+    if (!box) return;
+    if (e.shiftKey && anchor && anchor !== box) {
+      const column = box.closest('[data-column]');
+      if (column && anchor.closest('[data-column]') === column) {
+        const inColumn = Array.from(column.querySelectorAll('.card-select'));
+        const [from, to] = [inColumn.indexOf(anchor), inColumn.indexOf(box)].sort((x, y) => x - y);
+        inColumn.slice(from, to + 1).forEach((b) => { b.checked = box.checked; });
+      }
+    }
+    anchor = box;
+    paint();
+  }
+
+  // Delegated, because cards are replaced by htmx swaps and a listener bound
+  // to a card would go with it.
+  document.addEventListener('click', onClick);
+
+  document.getElementById('clearSelection')?.addEventListener('click', () => {
+    boxes().forEach((b) => { b.checked = false; });
+    anchor = null;
+    paint();
+  });
+
+  // A card the user is dragging should not stay selected somewhere else.
+  document.addEventListener('htmx:afterSwap', paint);
+
+  bar.querySelectorAll('form').forEach((form) => {
+    form.addEventListener('htmx:configRequest', (e) => {
+      const ids = selected().map((b) => b.value);
+      if (!ids.length) return;
+      // htmx serialises repeated names from an array value.
+      e.detail.parameters.ids = ids;
+    });
+  });
+
+  paint();
+})();

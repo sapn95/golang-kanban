@@ -404,3 +404,94 @@ func TestAssigneeIsMarkedWhenItIsTheViewer(t *testing.T) {
 		t.Error("a card assigned to the viewer is not marked as theirs")
 	}
 }
+
+func TestBulkEndpoint(t *testing.T) {
+	post := func(t *testing.T, e *env, form url.Values, user *identity.User) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/b/demo/cards/bulk", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if user != nil {
+			req = req.WithContext(identity.NewContext(req.Context(), *user))
+		}
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("delete removes the selected cards and asks for a refresh", func(t *testing.T) {
+		e := seeded(t)
+		rec := post(t, e, url.Values{"action": {"delete"}, "ids": {string(e.card.ID)}}, nil)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("HX-Refresh") != "true" {
+			t.Error("the client was not told to refresh")
+		}
+		if _, err := e.svc.Card(context.Background(), e.card.ID); err == nil {
+			t.Error("the card survived a bulk delete")
+		}
+	})
+
+	t.Run("assign to me needs a signed-in user", func(t *testing.T) {
+		e := seeded(t)
+		form := url.Values{"action": {"assign"}, "target": {"@me"}, "ids": {string(e.card.ID)}}
+
+		// Anonymous: the sentinel must not be stored as though it were an
+		// address, and must not silently assign to nobody either.
+		if rec := post(t, e, form, nil); rec.Code != http.StatusForbidden {
+			t.Errorf("anonymous status = %d, want 403", rec.Code)
+		}
+		if c, _ := e.svc.Card(context.Background(), e.card.ID); c.Assignee != "" {
+			t.Errorf("assignee = %q after an anonymous assign-to-me", c.Assignee)
+		}
+
+		u := identity.User{Email: "someone@example.com"}
+		if rec := post(t, e, form, &u); rec.Code != http.StatusNoContent {
+			t.Fatalf("signed-in status = %d", rec.Code)
+		}
+		c, _ := e.svc.Card(context.Background(), e.card.ID)
+		if c.Assignee != "someone@example.com" {
+			t.Errorf("assignee = %q, want the signed-in address", c.Assignee)
+		}
+	})
+
+	t.Run("an empty selection is a bad request", func(t *testing.T) {
+		e := seeded(t)
+		if rec := post(t, e, url.Values{"action": {"delete"}}, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("an unknown action is a bad request", func(t *testing.T) {
+		e := seeded(t)
+		rec := post(t, e, url.Values{"action": {"burn"}, "ids": {string(e.card.ID)}}, nil)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+		if _, err := e.svc.Card(context.Background(), e.card.ID); err != nil {
+			t.Error("an unknown action still touched the card")
+		}
+	})
+
+	t.Run("a card id from another board is not deleted", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		other, err := e.svc.CreateBoard(ctx, "Other", "other", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		victim, err := e.svc.CreateCard(ctx, other.ID, other.Columns[0].ID, service.CardInput{Title: "theirs"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Posted to /b/demo, so the handler must not reach across boards even
+		// though the id is real.
+		rec := post(t, e, url.Values{"action": {"delete"}, "ids": {string(victim.ID)}}, nil)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d", rec.Code)
+		}
+		if _, err := e.svc.Card(ctx, victim.ID); err != nil {
+			t.Error("a card on another board was deleted through this board's endpoint")
+		}
+	})
+}

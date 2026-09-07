@@ -1,6 +1,10 @@
 {{define "card"}}
 <div class="bg-white dark:bg-gray-700 rounded-lg p-4 shadow-md border border-gray-200 dark:border-gray-600 cursor-move hover:shadow-lg transition-all duration-200" id="card-{{.Card.ID}}" data-id="{{.Card.ID}}">
-  <h5 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{.Card.Title}}</h5>
+  <div class="flex items-start gap-2 mb-2">
+    <input type="checkbox" class="card-select mt-1.5 w-4 h-4 rounded shrink-0 cursor-pointer"
+           value="{{.Card.ID}}" aria-label="Select card">
+    <h5 class="text-lg font-semibold text-gray-900 dark:text-white flex-1">{{.Card.Title}}</h5>
+  </div>
   {{if or .Labels .Due}}
   <div class="flex flex-wrap gap-1 mb-2 text-xs">
     {{range .Labels}}<span class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600"{{with .Color}} style="background-color: {{.}}; color: white"{{end}}>{{.Name}}</span>{{end}}

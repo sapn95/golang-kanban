@@ -59,6 +59,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /b/{board}", s.board)
 	mux.HandleFunc("POST /b/{board}/cards", s.createCard)
 	mux.HandleFunc("POST /b/{board}/columns/{column}/order", s.reorderCards)
+	mux.HandleFunc("POST /b/{board}/cards/bulk", s.bulkCards)
 	mux.HandleFunc("GET /cards/{id}", s.card)
 	mux.HandleFunc("GET /cards/{id}/edit", s.editCard)
 	mux.HandleFunc("POST /cards/{id}", s.updateCard)
@@ -323,6 +324,53 @@ func (s *Server) reorderCards(w http.ResponseWriter, r *http.Request) {
 }
 
 // cardAndBoard loads a card and its board for rendering.
+// bulkCards applies one action to a set of selected cards.
+//
+// It answers with HX-Refresh rather than a fragment. A bulk move can empty one
+// column and reorder another, and a bulk delete changes counts and WIP
+// warnings across the board; stitching that together from partial swaps would
+// be a lot of machinery for an action nobody runs in a loop.
+func (s *Server) bulkCards(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ids := make([]model.ID, 0, len(r.Form["ids"]))
+	for _, id := range r.Form["ids"] {
+		ids = append(ids, model.ID(id))
+	}
+
+	target := r.FormValue("target")
+	action := service.BulkAction(r.FormValue("action"))
+	if action == service.BulkAssign && target == "@me" {
+		// The browser does not know the viewer's address, and asking it to
+		// would mean putting the address in the page for scripts to read.
+		u := identity.FromContext(r.Context())
+		if u.Anonymous() {
+			plain(w, http.StatusForbidden, "not signed in")
+			return
+		}
+		target = u.Email
+	}
+
+	res, err := s.svc.Bulk(r.Context(), b.ID, action, ids, target)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if len(res.Failed) > 0 {
+		s.log.Warn("bulk action partially failed", "action", action,
+			"changed", len(res.Changed), "failed", len(res.Failed))
+	}
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) cardAndBoard(r *http.Request) (*model.Card, *model.Board, error) {
 	c, err := s.svc.Card(r.Context(), model.ID(r.PathValue("id")))
 	if err != nil {
