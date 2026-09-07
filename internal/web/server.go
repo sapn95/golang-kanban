@@ -102,10 +102,11 @@ type cardView struct {
 	// the ones that are already theirs.
 	Viewer      identity.User
 	Card        model.Card
-	Labels      []model.Label // resolved from the board
-	BoardLabels []model.Label // every label of the board, for the edit form
-	Due         string        // "" or "2 Jan 2006"
-	DueInput    string        // "" or "2006-01-02"
+	Labels      []model.Label  // resolved from the board
+	BoardLabels []model.Label  // every label of the board, for the edit form
+	Columns     []model.Column // every column, so the edit form can move the card
+	Due         string         // "" or "2 Jan 2006"
+	DueInput    string         // "" or "2006-01-02"
 	Overdue     bool
 }
 
@@ -134,7 +135,7 @@ type boardsPage struct {
 }
 
 func (s *Server) cardView(u identity.User, b *model.Board, c model.Card) cardView {
-	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels}
+	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels, Columns: b.Columns}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
 			v.Labels = append(v.Labels, *l)
@@ -150,7 +151,7 @@ func (s *Server) cardView(u identity.User, b *model.Board, c model.Card) cardVie
 }
 
 func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card) boardPage {
-	p := boardPage{Title: b.Name, User: u, BoardSlug: b.Slug, Board: b, EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels}}
+	p := boardPage{Title: b.Name, User: u, BoardSlug: b.Slug, Board: b, EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels, Columns: b.Columns}}
 	byColumn := map[model.ID][]cardView{}
 	for _, c := range cards {
 		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c))
@@ -406,7 +407,30 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		plain(w, http.StatusBadRequest, "bad form")
 		return
 	}
-	c, err := s.svc.UpdateCard(r.Context(), model.ID(r.PathValue("id")), cardInput(r))
+	id := model.ID(r.PathValue("id"))
+
+	// The column moves before the fields are written. The store's UpdateCard
+	// deliberately never touches ColumnID, so a move is a reorder, and a
+	// reorder can be refused by a WIP limit. Doing it first means a refused
+	// move leaves the card exactly as it was, rather than saving the new
+	// title into a card that did not go anywhere.
+	moved := false
+	if want := model.ID(r.FormValue("column")); want != "" {
+		cur, err := s.svc.Card(r.Context(), id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if cur.ColumnID != want {
+			if err := s.svc.ReorderCards(r.Context(), cur.BoardID, want, []model.ID{id}); err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			moved = true
+		}
+	}
+
+	c, err := s.svc.UpdateCard(r.Context(), id, cardInput(r))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -418,6 +442,14 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isHTMX(r) {
 		http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
+		return
+	}
+	if moved {
+		// The form swaps the card in place, which would leave it drawn in the
+		// column it just left. Both columns also need their counts and WIP
+		// warnings redrawn, so the page is cheaper to redraw than to patch.
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))

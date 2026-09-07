@@ -10,11 +10,20 @@
 }
 .modal.show { display: flex; }
 .modal-dialog {
-  max-width: 500px;
-  width: 90%;
+  /* 500px left the description box too small to see a paragraph at once,
+     and on a phone 90% of the width wasted a margin that was not needed. */
+  max-width: 44rem;
+  width: 94%;
   max-height: 90vh;
   overflow-y: auto;
 }
+@media (min-width: 640px) {
+  .modal-dialog { width: 90%; }
+}
+/* Keep the header and footer in view while a long form scrolls between them. */
+.modal-dialog .modal-content { display: flex; flex-direction: column; max-height: 90vh; }
+.modal-dialog .modal-content > :first-child,
+.modal-dialog .modal-content > form > :first-child { flex: 0 0 auto; }
 .modal-content {
   background: white;
   border-radius: 8px;
@@ -25,3 +34,25 @@
   color: white;
 }
 .sortable-ghost { opacity: 0.4; }
+
+/* Board layout.
+   Written as plain CSS rather than Tailwind arbitrary values because these
+   two rules decide whether the board is usable on a phone, and they should
+   not depend on what the Play CDN happens to generate at runtime. */
+.kanban-scroller {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 1rem;
+}
+.kanban-column {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .kanban-scroller { gap: 1.5rem; }
+  .kanban-column { flex: 1 1 20rem; min-width: 20rem; }
+}

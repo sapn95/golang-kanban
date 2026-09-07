@@ -495,3 +495,82 @@ func TestBulkEndpoint(t *testing.T) {
 		}
 	})
 }
+
+func TestEditFormMovesTheCard(t *testing.T) {
+	post := func(t *testing.T, e *env, column model.ID) *httptest.ResponseRecorder {
+		t.Helper()
+		form := url.Values{"title": {"moved"}, "column": {string(column)}}
+		req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("a different column moves it and redraws", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, err := e.svc.Board(ctx, "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := b.Columns[1].ID
+
+		rec := post(t, e, target)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("HX-Refresh") != "true" {
+			t.Error("a move did not ask the page to redraw, so the card would stay drawn in the old column")
+		}
+		c, err := e.svc.Card(ctx, e.card.ID)
+		if err != nil || c.ColumnID != target {
+			t.Fatalf("column = %s (err %v), want %s", c.ColumnID, err, target)
+		}
+		if c.Title != "moved" {
+			t.Errorf("title = %q, want the field change to have been saved too", c.Title)
+		}
+	})
+
+	t.Run("the same column still swaps the card in place", func(t *testing.T) {
+		e := seeded(t)
+		b, _ := e.svc.Board(context.Background(), "demo")
+		rec := post(t, e, b.Columns[0].ID)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want the card fragment", rec.Code)
+		}
+		if rec.Header().Get("HX-Refresh") != "" {
+			t.Error("an unchanged column asked for a full redraw")
+		}
+	})
+
+	t.Run("a refused move leaves the card untouched", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, _ := e.svc.Board(ctx, "demo")
+		// A WIP limit of zero cards free: the move must be refused, and the
+		// title must not have been written either.
+		full := b.Columns[1]
+		full.WIPLimit = 1
+		if err := e.svc.UpdateColumn(ctx, full.ID, full.Name, 1); err != nil {
+			t.Fatalf("setting a WIP limit: %v", err)
+		}
+		if _, err := e.svc.CreateCard(ctx, b.ID, full.ID, service.CardInput{Title: "occupies the slot"}); err != nil {
+			t.Fatal(err)
+		}
+
+		before, _ := e.svc.Card(ctx, e.card.ID)
+		rec := post(t, e, full.ID)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409 for a full column", rec.Code)
+		}
+		after, _ := e.svc.Card(ctx, e.card.ID)
+		if after.ColumnID != before.ColumnID {
+			t.Error("the card moved even though the move was refused")
+		}
+		if after.Title != before.Title {
+			t.Errorf("title = %q, want %q: the fields were written despite the refused move", after.Title, before.Title)
+		}
+	})
+}

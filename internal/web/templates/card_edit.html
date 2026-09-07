@@ -1,4 +1,14 @@
 {{define "card_fields"}}
+{{if .Columns}}
+<div class="mb-4">
+  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Column</label>
+  <select name="column"
+    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+    {{$current := .Card.ColumnID}}
+    {{range .Columns}}<option value="{{.ID}}"{{if eq .ID $current}} selected{{end}}>{{.Name}}</option>{{end}}
+  </select>
+</div>
+{{end}}
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Title</label>
   <input type="text" name="title" value="{{.Card.Title}}" placeholder="Card title" required maxlength="200"
@@ -6,7 +16,7 @@
 </div>
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
-  <textarea name="description" rows="3" placeholder="Description"
+  <textarea name="description" rows="6" placeholder="Description"
     class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{.Card.Description}}</textarea>
 </div>
 <div class="mb-4">
