@@ -353,7 +353,7 @@ func (s *Store) UpdateCard(_ context.Context, c *model.Card) error {
 	if err := s.checkLabels(s.boards[cur.BoardID], c.Labels); err != nil {
 		return err
 	}
-	cur.Title, cur.Description, cur.DueDate, cur.UpdatedAt = c.Title, c.Description, c.DueDate, c.UpdatedAt
+	cur.Title, cur.Description, cur.DueDate, cur.Assignee, cur.UpdatedAt = c.Title, c.Description, c.DueDate, c.Assignee, c.UpdatedAt
 	cur.Labels = append([]model.ID(nil), c.Labels...)
 	cur.Subtasks = append([]model.Subtask(nil), c.Subtasks...)
 	normalise(cur)

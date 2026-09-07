@@ -353,3 +353,54 @@ func TestPagesSayNothingWhenNobodyIsSignedIn(t *testing.T) {
 		t.Error("the page shows an avatar for a request with no user")
 	}
 }
+
+func TestAssigneeThroughTheForm(t *testing.T) {
+	e := seeded(t)
+
+	post := func(t *testing.T, assignee string) string {
+		t.Helper()
+		form := url.Values{"title": {"assigned"}, "assignee": {assignee}}
+		req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+
+	body := post(t, "someone@example.com")
+	if !strings.Contains(body, "someone@example.com") {
+		t.Error("the rendered card does not show the assignee")
+	}
+
+	// Unassigning has to actually clear it, not be read as "unchanged".
+	body = post(t, "")
+	if strings.Contains(body, "someone@example.com") {
+		t.Error("the assignee survived being cleared")
+	}
+
+	// Whitespace is not an assignee.
+	body = post(t, "   ")
+	if strings.Contains(body, "avatar") || strings.Contains(body, "title=\"   \"") {
+		t.Error("whitespace was stored as an assignee")
+	}
+}
+
+func TestAssigneeIsMarkedWhenItIsTheViewer(t *testing.T) {
+	e := seeded(t)
+	form := url.Values{"title": {"mine"}, "assignee": {"someone@example.com"}}
+	req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req = req.WithContext(identity.NewContext(req.Context(), identity.User{Email: "someone@example.com"}))
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+
+	// The viewer's own cards get the gradient bubble; everyone else's is grey.
+	if !strings.Contains(rec.Body.String(), "from-blue-600 to-purple-600") {
+		t.Error("a card assigned to the viewer is not marked as theirs")
+	}
+}

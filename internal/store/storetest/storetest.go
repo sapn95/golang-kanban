@@ -25,6 +25,7 @@ func Run(t *testing.T, newStore New) {
 		"Boards":        testBoards,
 		"Columns":       testColumns,
 		"Cards":         testCards,
+		"Assignee":      testAssignee,
 		"ReorderCards":  testReorderCards,
 		"Labels":        testLabels,
 		"Timestamps":    testTimestamps,
@@ -516,4 +517,67 @@ func testDeleteCascade(t *testing.T, s store.Store) {
 	wantErr(t, "label after board delete", s.UpdateLabel(ctx, l), store.ErrNotFound)
 	// The slug is free again.
 	mustBoard(t, s, "cascade", "A")
+}
+
+func testAssignee(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "assignee", "A")
+	col := b.Columns[0].ID
+
+	c := &model.Card{ID: newID("k"), BoardID: b.ID, ColumnID: col, Title: "assigned",
+		Assignee: "someone@example.com", CreatedAt: now(), UpdatedAt: now()}
+	if err := s.CreateCard(ctx, c); err != nil {
+		t.Fatalf("CreateCard: %v", err)
+	}
+	got, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("GetCard: %v", err)
+	}
+	if got.Assignee != "someone@example.com" {
+		t.Errorf("Assignee after create = %q, want someone@example.com", got.Assignee)
+	}
+
+	got.Assignee = "other@example.com"
+	got.UpdatedAt = now()
+	if err := s.UpdateCard(ctx, got); err != nil {
+		t.Fatalf("UpdateCard: %v", err)
+	}
+	if got, err = s.GetCard(ctx, c.ID); err != nil || got.Assignee != "other@example.com" {
+		t.Fatalf("Assignee after reassign = %q (err %v), want other@example.com", got.Assignee, err)
+	}
+
+	// Unassigning goes through the same path, so an empty string has to mean
+	// "nobody" and not "leave it as it was".
+	got.Assignee = ""
+	got.UpdatedAt = now()
+	if err := s.UpdateCard(ctx, got); err != nil {
+		t.Fatalf("UpdateCard unassign: %v", err)
+	}
+	if got, err = s.GetCard(ctx, c.ID); err != nil || got.Assignee != "" {
+		t.Fatalf("Assignee after unassign = %q (err %v), want empty", got.Assignee, err)
+	}
+
+	// ListCards is a different query from GetCard, and the board renders from
+	// that one, so a column missed there would be invisible to GetCard tests.
+	got.Assignee = "someone@example.com"
+	got.UpdatedAt = now()
+	if err := s.UpdateCard(ctx, got); err != nil {
+		t.Fatalf("UpdateCard: %v", err)
+	}
+	cards, err := s.ListCards(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("ListCards: %v", err)
+	}
+	found := false
+	for _, lc := range cards {
+		if lc.ID == c.ID {
+			found = true
+			if lc.Assignee != "someone@example.com" {
+				t.Errorf("Assignee from ListCards = %q, want someone@example.com", lc.Assignee)
+			}
+		}
+	}
+	if !found {
+		t.Error("the card did not come back from ListCards")
+	}
 }

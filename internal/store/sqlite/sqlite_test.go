@@ -391,3 +391,66 @@ func TestInClause(t *testing.T) {
 		}
 	}
 }
+
+// The live database already has cards, so version 3 runs ALTER TABLE against
+// a populated table. A fresh-database test would never exercise that, and it
+// is the only path the deployed board actually takes.
+func TestAssigneeMigrationOnAPopulatedTable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "kanban.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := st.DB()
+	t.Cleanup(func() { _ = st.Close() })
+
+	// Everything up to the version before assignee, which is the state a
+	// board that has been running has.
+	before := []store.Migration{}
+	for _, m := range migrations() {
+		if m.Version < 3 {
+			before = append(before, m)
+		}
+	}
+	if _, err := store.RunMigrations(context.Background(), db, before); err != nil {
+		t.Fatalf("migrating to v2: %v", err)
+	}
+
+	ctx := context.Background()
+	// Seeded with raw SQL on purpose: at version 2 the store's own CreateCard
+	// would write a column that does not exist yet, which is the whole point.
+	if _, err := db.ExecContext(ctx, `INSERT INTO boards (id, slug, name) VALUES ('b-mig', 'mig', 'Mig')`); err != nil {
+		t.Fatalf("seeding a board: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO columns (id, board_id, name, position) VALUES ('c-mig', 'b-mig', 'A', 1)`); err != nil {
+		t.Fatalf("seeding a column: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO cards (id, board_id, column_id, title, position) VALUES ('k-mig', 'b-mig', 'c-mig', 'existing', 1)`); err != nil {
+		t.Fatalf("seeding a card: %v", err)
+	}
+
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("migrating to v3 over existing rows: %v", err)
+	}
+
+	got, err := st.GetCard(ctx, "k-mig")
+	if err != nil {
+		t.Fatalf("the card did not survive the migration: %v", err)
+	}
+	if got.Title != "existing" {
+		t.Errorf("Title = %q, want existing", got.Title)
+	}
+	if got.Assignee != "" {
+		t.Errorf("Assignee = %q, want empty for a row that predates the column", got.Assignee)
+	}
+	// And the column is writable afterwards, not just readable.
+	got.Assignee = "someone@example.com"
+	got.UpdatedAt = time.Now().UTC()
+	if err := st.UpdateCard(ctx, got); err != nil {
+		t.Fatalf("UpdateCard after the migration: %v", err)
+	}
+	if got, err = st.GetCard(ctx, "k-mig"); err != nil || got.Assignee != "someone@example.com" {
+		t.Fatalf("Assignee = %q (err %v) after assigning post-migration", got.Assignee, err)
+	}
+}
