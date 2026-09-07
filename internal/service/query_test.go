@@ -126,3 +126,39 @@ func TestQueryMatchEdges(t *testing.T) {
 		t.Error("due:week excluded today")
 	}
 }
+
+func TestABareWordFindsALabel(t *testing.T) {
+	names := map[model.ID]string{"l1": "bug", "l2": "needs review"}
+	card := model.Card{Title: "Fix the login page", Description: "it times out", Labels: []model.ID{"l1"}}
+	plain := model.Card{Title: "Something else"}
+	today := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		query string
+		card  model.Card
+		want  bool
+	}{
+		// A label is something you can see on the card, so a word you can see
+		// on a card should find it.
+		{"a bare word matches a label name", "bug", card, true},
+		{"part of a label name matches too", "bu", card, true},
+		{"a card without the label does not match", "bug", plain, false},
+		{"the title still matches", "login", card, true},
+		{"the description still matches", "times out", card, true},
+		{"a word in none of the three does not match", "nonsense", card, false},
+		// label: stays exact, which is how you say you mean that one label.
+		{"label: is exact", "label:bug", card, true},
+		{"label: does not match a prefix", "label:bu", card, false},
+		// Every term has to match, whichever of the three it comes from.
+		{"two terms from two places both have to match", "login bug", card, true},
+		{"one term missing rejects the card", "login nonsense", card, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseQuery(tt.query).Match(tt.card, names, today); got != tt.want {
+				t.Errorf("Match(%q) = %v, want %v", tt.query, got, tt.want)
+			}
+		})
+	}
+}

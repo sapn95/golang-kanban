@@ -46,11 +46,18 @@
 {{if .BoardLabels}}
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Labels</label>
-  <div class="flex flex-wrap gap-3">
+  <!-- The colour is on the chip, not just a dot beside a name: this is where
+       a label is picked, and picking one without seeing what it will look
+       like on the card is how a board ends up with two labels the same shade. -->
+  <div class="flex flex-wrap gap-2">
     {{$card := .Card}}
     {{range .BoardLabels}}
-    <label class="inline-flex items-center gap-1 text-sm">
-      <input type="checkbox" name="labels" value="{{.ID}}"{{if hasLabel $card .ID}} checked{{end}} class="w-4 h-4 rounded"> {{.Name}}
+    <label class="inline-flex items-center gap-1.5 cursor-pointer">
+      <input type="checkbox" name="labels" value="{{.ID}}"{{if hasLabel $card .ID}} checked{{end}} class="peer sr-only">
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none
+        opacity-40 peer-checked:opacity-100 ring-1 ring-transparent peer-checked:ring-gray-900 dark:peer-checked:ring-white
+        {{if not .Color}}bg-gray-200 text-gray-800 dark:bg-gray-500 dark:text-white{{end}}"
+        {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</span>
     </label>
     {{end}}
   </div>

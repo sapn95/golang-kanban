@@ -16,8 +16,13 @@ import (
 // cards, not millions; loading them and filtering in one place is cheap and
 // gives every backend identical behaviour for free.
 type Query struct {
-	// Text matches title or description, case-insensitively. Every term has
-	// to match, so adding a word narrows.
+	// Text matches title, description or a label name, case-insensitively.
+	// Every term has to match, so adding a word narrows.
+	//
+	// Label names are in there because that is what people expect: a label is
+	// something you can see on the card, and a word you can see on a card
+	// should find it. label: is still the way to say "only the label", which
+	// is what you want when the same word is also in a title.
 	Text []string
 	// Labels are label names; a card must carry all of them.
 	Labels []string
@@ -104,13 +109,39 @@ func tokenise(s string) []string {
 // to its lowercased name; the caller resolves them once for the whole board
 // rather than per card.
 func (q Query) Match(c model.Card, labelNames map[model.ID]string, today time.Time) bool {
+	return q.matchesText(c, labelNames) &&
+		q.matchesLabels(c, labelNames) &&
+		q.matchesAssignee(c) &&
+		q.matchesDue(c, today)
+}
+
+// matchesText requires every bare word, so adding one narrows. A word matches
+// the title, the description or the name of a label the card carries.
+func (q Query) matchesText(c model.Card, labelNames map[model.ID]string) bool {
+	title, description := strings.ToLower(c.Title), strings.ToLower(c.Description)
 	for _, term := range q.Text {
-		if !strings.Contains(strings.ToLower(c.Title), term) &&
-			!strings.Contains(strings.ToLower(c.Description), term) {
+		if strings.Contains(title, term) || strings.Contains(description, term) {
+			continue
+		}
+		if !q.labelContains(c, labelNames, term) {
 			return false
 		}
 	}
+	return true
+}
 
+func (q Query) labelContains(c model.Card, labelNames map[model.ID]string, term string) bool {
+	for _, id := range c.Labels {
+		if strings.Contains(labelNames[id], term) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesLabels requires every label: name exactly. Naming a label is how you
+// say you mean that one, and not everything it happens to be a substring of.
+func (q Query) matchesLabels(c model.Card, labelNames map[model.ID]string) bool {
 	for _, want := range q.Labels {
 		found := false
 		for _, id := range c.Labels {
@@ -123,37 +154,33 @@ func (q Query) Match(c model.Card, labelNames map[model.ID]string, today time.Ti
 			return false
 		}
 	}
+	return true
+}
 
-	if q.Assignee != "" {
-		if q.Assignee == "none" {
-			if c.Assignee != "" {
-				return false
-			}
-		} else if !strings.Contains(strings.ToLower(c.Assignee), q.Assignee) {
-			return false
-		}
+func (q Query) matchesAssignee(c model.Card) bool {
+	switch q.Assignee {
+	case "":
+		return true
+	case "none":
+		return c.Assignee == ""
+	default:
+		return strings.Contains(strings.ToLower(c.Assignee), q.Assignee)
 	}
+}
 
+func (q Query) matchesDue(c model.Card, today time.Time) bool {
 	switch q.Due {
 	case "none":
-		if !c.DueDate.IsZero() {
-			return false
-		}
+		return c.DueDate.IsZero()
 	case "overdue":
-		if c.DueDate.IsZero() || !c.DueDate.Before(today) {
-			return false
-		}
+		return !c.DueDate.IsZero() && c.DueDate.Before(today)
 	case "today":
-		if !c.DueDate.Equal(today) {
-			return false
-		}
+		return c.DueDate.Equal(today)
 	case "week":
 		// Today through the next seven days, so "this week" includes today
 		// and excludes anything already overdue.
-		if c.DueDate.IsZero() || c.DueDate.Before(today) || c.DueDate.After(today.AddDate(0, 0, 7)) {
-			return false
-		}
+		return !c.DueDate.IsZero() && !c.DueDate.Before(today) && !c.DueDate.After(today.AddDate(0, 0, 7))
+	default:
+		return true
 	}
-
-	return true
 }

@@ -21,7 +21,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Comments on a card, with who wrote them and when. They cannot be edited and
   the author can remove their own; the reasoning is in
   [docs/adr/0007](docs/adr/0007-comments-are-append-only.md).
-- Search on the board's own URL, so a result set can be linked to:
+- Search on the board's own URL, so a result set can be linked to. A bare
+  word matches the title, the description or a label name:
   `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.
 - Select several cards (shift-click for a range) and move, assign, archive or delete them at once.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
