@@ -138,12 +138,9 @@
           </div>
         </div>
         <div class="p-6">
-          <div class="mb-4">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Column</label>
-            <select name="column" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-              {{range .Columns}}<option value="{{.Column.ID}}">{{.Column.Name}}</option>{{end}}
-            </select>
-          </div>
+          <!-- The column select lives in card_fields. This form used to render
+               a second one above it with the same name, and the browser sent
+               whichever came last. -->
           {{template "card_fields" .EmptyCard}}
         </div>
         <div class="p-6 border-t border-gray-200 dark:border-gray-600 flex justify-end space-x-3">

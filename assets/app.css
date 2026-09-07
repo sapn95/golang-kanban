@@ -11,14 +11,34 @@
 .modal.show { display: flex; }
 .modal-dialog {
   /* 500px left the description box too small to see a paragraph at once,
-     and on a phone 90% of the width wasted a margin that was not needed. */
-  max-width: 44rem;
-  width: 94%;
-  max-height: 90vh;
+     and on a phone 90% of the width wasted a margin that was not needed.
+     44rem then wasted most of a desktop screen instead: the form sat in a
+     narrow strip with the comments pushed below the fold. */
+  max-width: min(76rem, 96vw);
+  width: 96%;
+  max-height: 94vh;
   overflow-y: auto;
 }
 @media (min-width: 640px) {
-  .modal-dialog { width: 90%; }
+  .modal-dialog { width: 92%; }
+}
+
+/* The card form in two columns once there is room for them. What a card is
+   goes on the left and can use the width; what it is tagged with goes on the
+   right, where every control is short. Below 1024px it is one column, which is
+   the phone layout unchanged. */
+@media (min-width: 1024px) {
+  .card-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 22rem;
+    column-gap: 2rem;
+    align-items: start;
+  }
+  .card-fields__main { min-width: 0; }
+  .card-fields__side { min-width: 0; }
+  /* The description takes whatever height the two columns end up with, so the
+     form does not leave a hole beside a short checklist. */
+  .card-fields__main textarea[name="description"] { min-height: 18rem; }
 }
 /* Keep the header and footer in view while a long form scrolls between them. */
 .modal-dialog .modal-content { display: flex; flex-direction: column; max-height: 90vh; }

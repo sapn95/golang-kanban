@@ -1379,3 +1379,26 @@ func TestVersionEndpoint(t *testing.T) {
 		want(t, e.do(http.MethodGet, "/version", nil), http.StatusOK, "unknown")
 	})
 }
+
+func TestTheAddFormHasOneColumnSelect(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	// The add-card form used to render its own column select above the one in
+	// card_fields. Two controls with the same name meant the browser sent
+	// whichever came last, so the visible choice was not always the one used.
+	if n := strings.Count(body, `name="column"`); n != 1 {
+		t.Errorf("the board renders %d column selects, want 1", n)
+	}
+}
+
+func TestTheCardFormIsInTwoParts(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/cards/"+string(e.card.ID)+"/edit", nil).Body.String()
+	// The split is what the stylesheet grids on a wide screen. Below 1024px
+	// the grid is not applied and it is the single column it always was.
+	for _, part := range []string{"card-fields__main", "card-fields__side"} {
+		if !strings.Contains(body, part) {
+			t.Errorf("the edit form has no %s, so it cannot be laid out in two columns", part)
+		}
+	}
+}
