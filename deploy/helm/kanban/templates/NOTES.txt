@@ -4,6 +4,10 @@
 
   Everything lives in the pod. A restart loses the board.
 {{- end }}
+{{- if eq .Values.storage "sqlite" }}
+
+  The board is one file, at {{ .Values.sqlite.path }} on the volume.
+{{- end }}
 
 Reach it:
 {{- if .Values.ingress.enabled }}
@@ -23,6 +27,12 @@ Reach it:
 The database volume and the Secret holding its password both survive
 `helm uninstall`, on purpose — one is useless without the other. To remove them:
   kubectl -n {{ .Release.Namespace }} delete pvc,secret -l app.kubernetes.io/instance={{ .Release.Name }}
+{{- end }}
+
+{{- if eq .Values.storage "sqlite" }}
+
+The volume survives `helm uninstall`, on purpose: it holds the board. To remove it:
+  kubectl -n {{ .Release.Namespace }} delete pvc -l app.kubernetes.io/instance={{ .Release.Name }}
 {{- end }}
 
 {{- if (.Values.auth | default dict).enabled }}

@@ -21,7 +21,9 @@ Numbers in brackets below point at them.
 - **Configuration is environment variables.** Existing variables keep their
   names and defaults. A config file, if it ever comes, is a thin layer that
   sets the same values.
-- **Every new Go dependency gets an ADR.** Phase 0 adds none.
+- **Every new Go dependency gets an ADR.** Phase 0 adds none; Phase 1 adds
+  `modernc.org/sqlite` ([0004](adr/0004-sqlite-backend.md)), which is pure Go
+  because the `CGO_ENABLED=0` rule above outranks the faster cgo driver.
 
 ## Package layout
 
@@ -35,7 +37,8 @@ Numbers in brackets below point at them.
 │   ├── store/             Store interface, sentinel errors, migration runner                 [0003]
 │   │   ├── storetest/     contract test suite every backend must pass
 │   │   ├── memory/        in-memory backend; tests and demos
-│   │   └── postgres/      lib/pq backend, embedded migrations/*.sql
+│   │   ├── postgres/      lib/pq backend, embedded migrations/*.sql
+│   │   └── sqlite/        modernc.org/sqlite backend, embedded migrations/*.sql [0004]
 │   ├── service/           use cases: one method per user action, validation, WIP limits, IDs
 │   ├── web/               HTMX handlers, embedded templates/, view models
 │   ├── api/               (Phase 4) JSON handlers over the same service
@@ -45,17 +48,17 @@ Numbers in brackets below point at them.
 └── deploy/                (Phase 6) compose profiles, haproxy, helm, terraform, unraid
 ```
 
-Only the packages Phase 0 needs exist today (`cmd/kanban`, `assets`,
-`config`, `model`, `store` + `memory` + `postgres` + `storetest`, `service`,
-`web`). The others are listed so their place is agreed now; empty directories
-are not committed.
+The packages Phase 0 needs exist today, plus the SQLite backend (`cmd/kanban`,
+`assets`, `config`, `model`, `store` + `memory` + `postgres` + `sqlite` +
+`storetest`, `service`, `web`). The others are listed so their place is agreed
+now; empty directories are not committed.
 
 ## Dependency direction
 
 ```text
 cmd/kanban ──► web ──► service ──► store (interface) ◄── store/postgres
             └► api ─┘      │                          ◄── store/memory
-                           ▼                          ◄── store/sqlite   (Phase 1)
+                           ▼                          ◄── store/sqlite
                          model  ◄──────────────────────── store/mongo    (Phase 1)
                                                       ◄── store/s3       (Phase 1)
 ```
@@ -136,10 +139,11 @@ Subcommands use `flag` and a `switch`; no CLI library.
 |-----------------|-------------|------------------------------------------------------------|
 | `SERVER_PORT`   | `17808`     | unchanged                                                  |
 | `LISTEN_ADDR`   | `:$SERVER_PORT` | new; wins over `SERVER_PORT` when set                  |
-| `STORAGE`       | `postgres`  | Phase 0 accepts `postgres` and `memory`; default flips to `sqlite` in Phase 1 |
+| `STORAGE`       | `postgres`  | `postgres`, `sqlite` or `memory`; the default stays `postgres` so upgrades keep their database ([0004](adr/0004-sqlite-backend.md)) |
 | `DATABASE_URL`  | *(unset)*   | new; full DSN, wins over the `DB_*` variables              |
 | `DB_USER` `DB_PASS` `DB_HOST` `DB_PORT` `DB_NAME` | as today | unchanged                              |
 | `DB_SSLMODE`    | `disable`   | new; today's hard-coded value becomes the default          |
+| `SQLITE_PATH`   | `/data/kanban.db` | `STORAGE=sqlite` only; the image declares `VOLUME ["/data"]` |
 | `AUTO_MIGRATE`  | `true`      | run migrations on `serve` start; `false` to require `kanban migrate` |
 | `LOG_LEVEL`     | `info`      | `debug` `info` `warn` `error`                              |
 | `LOG_FORMAT`    | `text`      | `text` or `json`                                           |
@@ -154,7 +158,8 @@ Each SQL backend embeds its own `migrations/NNNN_name.sql`; the runner in
 `internal/store` is ~60 lines of stdlib: a `schema_migrations(version)` table,
 each file applied in one transaction. A migration may also be a Go function
 for steps that are easier in code than in SQL; the v1 data migration is one
-(see [0002](adr/0002-board-column-card-model.md)). No migration library.
+(see [0002](adr/0002-board-column-card-model.md)), and so is the v1 table
+rename on SQLite, which has no conditional DDL. No migration library.
 
 `AUTO_MIGRATE=true` on start keeps `docker run` zero-setup. Operators who want
 control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
@@ -168,8 +173,9 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
 
 ## Testing
 
-- `go test ./...` runs without any external service: `store/memory` and, from
-  Phase 1, `store/sqlite` back the service and handler tests.
+- `go test ./...` runs without any external service: `store/memory` and
+  `store/sqlite` back the service and handler tests, the latter on a temporary
+  file per subtest.
 - `store/storetest.Run(t, newStore)` is the contract suite. Every backend runs
   it; Postgres runs it in CI against a service container and is skipped when
   `KANBAN_TEST_POSTGRES_URL` is unset.
@@ -179,7 +185,9 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
 
 - Dockerfile becomes multi-stage: `golang:1.24` builder with
   `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, final image
-  `gcr.io/distroless/static`, non-root, `VOLUME /data` (for SQLite in Phase 1).
+  `gcr.io/distroless/static`, non-root, `VOLUME /data` (the SQLite file).
+  Every backend is pure Go, so the build stays CGO-free
+  ([0004](adr/0004-sqlite-backend.md)).
 - `lint.yml` reads the Go version from `go.mod` (`go-version-file`) instead of
   pinning 1.21 while `go.mod` says 1.24; a `test` job runs `go test ./...`.
 - `test.yml` runs `go test ./... -race -coverpkg=./...` against a Postgres

@@ -22,6 +22,9 @@ func TestDefaults(t *testing.T) {
 	if c.Storage != StoragePostgres || !c.AutoMigrate || c.LogLevel != "info" || c.LogFormat != "text" {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
+	if c.SQLitePath != "/data/kanban.db" {
+		t.Errorf("SQLitePath = %q", c.SQLitePath)
+	}
 	want := "postgres://user:password@postgres:5432/kanban?sslmode=disable"
 	if got := c.DSN(); got != want {
 		t.Errorf("DSN = %q, want %q", got, want)
@@ -71,6 +74,26 @@ func TestOverrides(t *testing.T) {
 	}
 }
 
+func TestSQLite(t *testing.T) {
+	c, err := FromEnv(lookup(map[string]string{"STORAGE": "SQLite"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Storage != StorageSQLite {
+		t.Errorf("Storage = %q", c.Storage)
+	}
+	if c.SQLitePath != "/data/kanban.db" {
+		t.Errorf("SQLitePath = %q", c.SQLitePath)
+	}
+	c, err = FromEnv(lookup(map[string]string{"STORAGE": "sqlite", "SQLITE_PATH": "/srv/board.db"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SQLitePath != "/srv/board.db" {
+		t.Errorf("SQLitePath = %q", c.SQLitePath)
+	}
+}
+
 func TestDatabaseURLWins(t *testing.T) {
 	c, err := FromEnv(lookup(map[string]string{"DATABASE_URL": "postgres://x@y/z", "DB_HOST": "ignored"}))
 	if err != nil {
@@ -102,5 +125,110 @@ func TestInvalid(t *testing.T) {
 		if _, err := FromEnv(lookup(map[string]string{"LOG_LEVEL": lvl})); err != nil {
 			t.Errorf("%s: %v", lvl, err)
 		}
+	}
+}
+
+func TestAuthMode(t *testing.T) {
+	base := map[string]string{"STORAGE": "memory"}
+	with := func(kv map[string]string) Lookup {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for k, v := range kv {
+			m[k] = v
+		}
+		return func(key string) string { return m[key] }
+	}
+
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+		check   func(t *testing.T, c Config)
+	}{
+		{
+			name: "defaults to none",
+			env:  nil,
+			check: func(t *testing.T, c Config) {
+				if c.AuthMode != AuthNone {
+					t.Errorf("AuthMode = %q, want %q", c.AuthMode, AuthNone)
+				}
+			},
+		},
+		{
+			name: "proxy takes the default header",
+			env:  map[string]string{"AUTH_MODE": "proxy"},
+			check: func(t *testing.T, c Config) {
+				if c.AuthHeader != "X-Forwarded-Email" {
+					t.Errorf("AuthHeader = %q", c.AuthHeader)
+				}
+			},
+		},
+		{
+			name:    "access without a team domain is refused",
+			env:     map[string]string{"AUTH_MODE": "access", "ACCESS_AUD": "x"},
+			wantErr: "ACCESS_TEAM_DOMAIN",
+		},
+		{
+			// Without an audience any token from the same team would open
+			// this app, so an empty one must not be silently allowed.
+			name:    "access without an audience is refused",
+			env:     map[string]string{"AUTH_MODE": "access", "ACCESS_TEAM_DOMAIN": "t.cloudflareaccess.com"},
+			wantErr: "ACCESS_AUD",
+		},
+		{
+			name:    "an unknown mode is refused",
+			env:     map[string]string{"AUTH_MODE": "trust-me"},
+			wantErr: "AUTH_MODE",
+		},
+		{
+			name: "access derives the issuer and certs URL",
+			env: map[string]string{
+				"AUTH_MODE": "access", "ACCESS_TEAM_DOMAIN": "t.cloudflareaccess.com", "ACCESS_AUD": "abc",
+			},
+			check: func(t *testing.T, c Config) {
+				if got, want := c.AccessIssuer(), "https://t.cloudflareaccess.com"; got != want {
+					t.Errorf("AccessIssuer() = %q, want %q", got, want)
+				}
+				if got, want := c.AccessCertsURL(), "https://t.cloudflareaccess.com/cdn-cgi/access/certs"; got != want {
+					t.Errorf("AccessCertsURL() = %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			// Pasting the team URL out of the dashboard is the obvious
+			// mistake; it would otherwise produce https://https://...
+			name: "a pasted URL is accepted as a team domain",
+			env: map[string]string{
+				"AUTH_MODE": "access", "ACCESS_TEAM_DOMAIN": "https://t.cloudflareaccess.com/", "ACCESS_AUD": "abc",
+			},
+			check: func(t *testing.T, c Config) {
+				if got, want := c.AccessIssuer(), "https://t.cloudflareaccess.com"; got != want {
+					t.Errorf("AccessIssuer() = %q, want %q", got, want)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := FromEnv(with(tt.env))
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("accepted %v", tt.env)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error = %v, want it to mention %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("FromEnv: %v", err)
+			}
+			if tt.check != nil {
+				tt.check(t, c)
+			}
+		})
 	}
 }
