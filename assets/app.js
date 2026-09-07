@@ -4,14 +4,12 @@
   'use strict';
 
   // --- dark mode -----------------------------------------------------------
+  // The class itself is set by an inline script in the head, before the first
+  // paint. This script is deferred, so doing it here made every navigation
+  // flash white. All that is left is the toggle.
   function initDarkMode() {
     var toggle = document.getElementById('darkModeToggle');
     var html = document.documentElement;
-    var saved = null;
-    try { saved = localStorage.getItem('theme'); } catch (e) { /* private mode */ }
-    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      html.classList.add('dark');
-    }
     if (toggle) {
       toggle.addEventListener('click', function () {
         html.classList.toggle('dark');

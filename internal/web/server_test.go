@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"kanban/assets"
 	"kanban/internal/identity"
 	"kanban/internal/model"
 	"kanban/internal/service"
@@ -233,7 +234,7 @@ func TestStaticAndHealth(t *testing.T) {
 	e := newEnv(t, nil, nil)
 	rr := e.do(http.MethodGet, "/assets/vendor/htmx/htmx.min.js", nil)
 	want(t, rr, http.StatusOK, "htmx")
-	if rr.Header().Get("Cache-Control") != "public, max-age=86400" {
+	if rr.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
 		t.Fatalf("cache header = %q", rr.Header().Get("Cache-Control"))
 	}
 	want(t, e.do(http.MethodGet, "/assets/app.js", nil), http.StatusOK, "postOrder")
@@ -1466,5 +1467,45 @@ func TestLabelsAreLegibleOnACard(t *testing.T) {
 	}
 	if strings.Contains(body, "ZgotmplZ") {
 		t.Error("the colour was refused by the template's CSS escaper")
+	}
+}
+
+func TestAssetURLsCarryAVersion(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+
+	// Every asset the page pulls has to be busted, not just app.js: the
+	// stylesheet and the vendored scripts change with a release too.
+	for _, name := range []string{"app.js", "app.css", "logo.svg",
+		"vendor/htmx/htmx.min.js", "vendor/sortablejs/Sortable.min.js"} {
+		if !strings.Contains(body, "/assets/"+name+"?v=") {
+			t.Errorf("%s is referenced without a version, so a browser can keep yesterday's copy", name)
+		}
+	}
+	// And nothing is left on a bare URL that would be cached for a year.
+	if strings.Contains(body, `"/assets/app.js"`) {
+		t.Error("app.js is still referenced unversioned somewhere")
+	}
+}
+
+func TestAssetsAreCachedForeverAtAVersionedURL(t *testing.T) {
+	e := seeded(t)
+	rr := e.do(http.MethodGet, "/assets/app.js?v="+assets.Version(), nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	// immutable is only honest because the URL changes with the content.
+	if got := rr.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+		t.Errorf("Cache-Control = %q, want it immutable", got)
+	}
+}
+
+func TestTheAssetVersionFollowsTheContent(t *testing.T) {
+	v := assets.Version()
+	if len(v) != 12 {
+		t.Fatalf("version = %q, want twelve hex characters", v)
+	}
+	if v != assets.Version() {
+		t.Error("the version is not stable between calls")
 	}
 }
