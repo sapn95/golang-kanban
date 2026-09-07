@@ -31,12 +31,14 @@ var templateFiles embed.FS
 
 // Server is the HTTP front-end.
 type Server struct {
-	svc   *service.Kanban
-	ready func(context.Context) error
-	log   *slog.Logger
-	now   func() time.Time
-	pages map[string]*template.Template // full pages, keyed by name
-	parts *template.Template            // fragments: card, card_edit
+	svc     *service.Kanban
+	ready   func(context.Context) error
+	log     *slog.Logger
+	now     func() time.Time
+	version string
+	commit  string
+	pages   map[string]*template.Template // full pages, keyed by name
+	parts   *template.Template            // fragments: card, card_edit
 }
 
 // Option configures New.
@@ -44,6 +46,12 @@ type Option func(*Server)
 
 // WithClock replaces time.Now, used for the overdue marker.
 func WithClock(now func() time.Time) Option { return func(s *Server) { s.now = now } }
+
+// WithBuild records what is running, for /version. Leave it out and the
+// endpoint says so rather than making something up.
+func WithBuild(version, commit string) Option {
+	return func(s *Server) { s.version, s.commit = version, commit }
+}
 
 // New builds the handler. ready is called by /readyz; pass the store's Ping.
 func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logger, opts ...Option) http.Handler {
@@ -87,6 +95,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
+	mux.HandleFunc("GET /version", s.buildInfo)
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	return s.logging(s.recover(s.secureHeaders(s.crossSite(s.limitBody(mux)))))
 }
@@ -1100,6 +1109,27 @@ func (s *Server) deleteLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.settingsRedirect(w, r, b)
+}
+
+// buildInfo says which build is answering.
+//
+// Without it, telling whether a deploy actually landed means fetching a page
+// and looking for markup that only the new version renders, which is guesswork
+// dressed up as a check. The release workflow passes the commit in, so this is
+// the same string that is in the git history.
+//
+// It is behind whatever guards the hostname, like every other route except the
+// two probes. On a LAN address it is readable, which is the point: knowing the
+// version is how you find out that a rollout is stuck.
+func (s *Server) buildInfo(w http.ResponseWriter, r *http.Request) {
+	version, commit := s.version, s.commit
+	if version == "" {
+		version = "unknown"
+	}
+	if commit == "" {
+		commit = "unknown"
+	}
+	plain(w, http.StatusOK, fmt.Sprintf("kanban %s (commit %s)\n", version, commit))
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {

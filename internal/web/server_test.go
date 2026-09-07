@@ -1364,3 +1364,18 @@ func TestColumnsThroughTheWeb(t *testing.T) {
 		}
 	})
 }
+
+func TestVersionEndpoint(t *testing.T) {
+	t.Run("it reports the build it was given", func(t *testing.T) {
+		svc := service.New(memory.New())
+		h := New(svc, nil, nil, WithBuild("1.2.3", "abcdef0"))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/version", nil))
+		want(t, rr, http.StatusOK, "1.2.3", "abcdef0")
+	})
+
+	t.Run("an unbuilt binary says so rather than inventing one", func(t *testing.T) {
+		e := seeded(t)
+		want(t, e.do(http.MethodGet, "/version", nil), http.StatusOK, "unknown")
+	})
+}
