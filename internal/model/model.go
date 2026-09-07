@@ -9,11 +9,33 @@ import "time"
 // the same on every storage backend, which keeps snapshots portable.
 type ID string
 
+// How a board draws its columns.
+const (
+	// LayoutColumns is the usual kanban shape: columns side by side, each
+	// scrolling on its own.
+	LayoutColumns = "columns"
+	// LayoutRows stacks the columns and lets the cards flow across each one.
+	// It suits a board with few columns and many cards, and a wide screen.
+	LayoutRows = "rows"
+)
+
+// LayoutOrDefault turns an empty or unknown layout into the default, so a row
+// written before the column existed, or by something that did not know about
+// it, still draws.
+func LayoutOrDefault(layout string) string {
+	if layout == LayoutRows {
+		return LayoutRows
+	}
+	return LayoutColumns
+}
+
 // Board owns columns, cards and labels.
 type Board struct {
-	ID        ID
-	Slug      string // URL segment, unique; [a-z0-9]+(-[a-z0-9]+)*
-	Name      string
+	ID   ID
+	Slug string // URL segment, unique; [a-z0-9]+(-[a-z0-9]+)*
+	Name string
+	// Layout is LayoutColumns or LayoutRows; read it through LayoutOrDefault.
+	Layout    string
 	Columns   []Column // ordered by Position
 	Labels    []Label  // ordered by Name
 	CreatedAt time.Time

@@ -139,6 +139,9 @@ func (s *Store) CreateBoard(_ context.Context, b *model.Board) error {
 		return store.ErrConflict
 	}
 	stored := copyBoard(b)
+	// The SQL backends get this from the column default; here it has to be
+	// written, or a board created without a layout would read back empty.
+	stored.Layout = model.LayoutOrDefault(stored.Layout)
 	for i := range stored.Columns {
 		stored.Columns[i].BoardID = b.ID
 		stored.Columns[i].Position = i + 1
@@ -163,6 +166,7 @@ func (s *Store) UpdateBoard(_ context.Context, b *model.Board) error {
 		return store.ErrConflict
 	}
 	cur.Name, cur.Slug, cur.UpdatedAt = b.Name, b.Slug, b.UpdatedAt
+	cur.Layout = model.LayoutOrDefault(b.Layout)
 	return nil
 }
 

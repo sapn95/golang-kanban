@@ -38,6 +38,7 @@ func migrations() []store.Migration {
 		{Version: 3, Name: "assignee", Up: store.SQL(sqlFile("0003_assignee.sql"))},
 		{Version: 4, Name: "archive", Up: store.SQL(sqlFile("0004_archive.sql"))},
 		{Version: 5, Name: "comments", Up: store.SQL(sqlFile("0005_comments.sql"))},
+		{Version: 6, Name: "layout", Up: store.SQL(sqlFile("0006_layout.sql"))},
 	}
 }
 
@@ -135,11 +136,11 @@ func ids(in []model.ID) []string {
 
 // --- boards -----------------------------------------------------------------
 
-const boardColumns = `id, slug, name, created_at, updated_at`
+const boardColumns = `id, slug, name, layout, created_at, updated_at`
 
 func scanBoard(row interface{ Scan(...any) error }) (*model.Board, error) {
 	var b model.Board
-	if err := row.Scan(&b.ID, &b.Slug, &b.Name, &b.CreatedAt, &b.UpdatedAt); err != nil {
+	if err := row.Scan(&b.ID, &b.Slug, &b.Name, &b.Layout, &b.CreatedAt, &b.UpdatedAt); err != nil {
 		return nil, mapErr(err)
 	}
 	b.CreatedAt, b.UpdatedAt = b.CreatedAt.UTC(), b.UpdatedAt.UTC()
@@ -239,8 +240,8 @@ func (s *Store) GetBoardByID(ctx context.Context, id model.ID) (*model.Board, er
 
 func (s *Store) CreateBoard(ctx context.Context, b *model.Board) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO boards (id, slug, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)`,
-			b.ID, b.Slug, b.Name, b.CreatedAt.UTC(), b.UpdatedAt.UTC()); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO boards (id, slug, name, layout, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+			b.ID, b.Slug, b.Name, model.LayoutOrDefault(b.Layout), b.CreatedAt.UTC(), b.UpdatedAt.UTC()); err != nil {
 			return err
 		}
 		for i := range b.Columns {
@@ -257,8 +258,8 @@ func (s *Store) CreateBoard(ctx context.Context, b *model.Board) error {
 }
 
 func (s *Store) UpdateBoard(ctx context.Context, b *model.Board) error {
-	return affected(s.db.ExecContext(ctx, `UPDATE boards SET name = $1, slug = $2, updated_at = $3 WHERE id = $4`,
-		b.Name, b.Slug, b.UpdatedAt.UTC(), b.ID))
+	return affected(s.db.ExecContext(ctx, `UPDATE boards SET name = $1, slug = $2, layout = $3, updated_at = $4 WHERE id = $5`,
+		b.Name, b.Slug, model.LayoutOrDefault(b.Layout), b.UpdatedAt.UTC(), b.ID))
 }
 
 func (s *Store) DeleteBoard(ctx context.Context, id model.ID) error {

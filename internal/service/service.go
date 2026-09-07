@@ -172,7 +172,7 @@ func (k *Kanban) CreateBoard(ctx context.Context, name, slug string, columns []s
 		columns = DefaultColumns
 	}
 	now := k.now()
-	b := &model.Board{ID: k.newID(), Slug: slug, Name: name, CreatedAt: now, UpdatedAt: now}
+	b := &model.Board{ID: k.newID(), Slug: slug, Name: name, Layout: model.LayoutColumns, CreatedAt: now, UpdatedAt: now}
 	for _, c := range columns {
 		c = strings.TrimSpace(c)
 		if err := checkText("column", c, MaxName, true); err != nil {
@@ -207,6 +207,23 @@ func (k *Kanban) RenameBoard(ctx context.Context, id model.ID, name, slug string
 		return nil, err
 	}
 	return b, nil
+}
+
+// SetBoardLayout changes how the board draws its columns. It is a property of
+// the board rather than of the viewer, because a board that reads better as
+// rows reads better as rows for everyone looking at it.
+func (k *Kanban) SetBoardLayout(ctx context.Context, id model.ID, layout string) error {
+	switch layout {
+	case model.LayoutColumns, model.LayoutRows:
+	default:
+		return invalid("layout", "must be columns or rows")
+	}
+	b, err := k.store.GetBoardByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	b.Layout, b.UpdatedAt = layout, k.now()
+	return k.store.UpdateBoard(ctx, b)
 }
 
 func (k *Kanban) DeleteBoard(ctx context.Context, id model.ID) error {

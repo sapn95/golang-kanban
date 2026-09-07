@@ -42,6 +42,15 @@
      class="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm">
     <i class="bi bi-sliders"></i>Settings
   </a>
+  <!-- The button says what it will do, not what is on screen. -->
+  <form method="post" action="/b/{{.Board.Slug}}/layout">
+    <input type="hidden" name="layout" value="{{if .Rows}}columns{{else}}rows{{end}}">
+    <button type="submit"
+      class="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm"
+      title="{{if .Rows}}Draw the columns side by side{{else}}Stack the columns as rows{{end}}">
+      <i class="bi bi-{{if .Rows}}layout-three-columns{{else}}list-task{{end}}"></i>{{if .Rows}}Columns{{else}}Rows{{end}}
+    </button>
+  </form>
 </div>
 
 <div id="selectionBar"
@@ -82,7 +91,7 @@
 <!-- On a phone one column fills the screen and the scroller snaps to it, so a
      swipe lands on a column rather than between two. shrink-0 is what stops
      flex from squeezing three columns into one screen width. -->
-<div class="kanban-scroller">
+<div class="kanban-scroller{{if .Rows}} rows{{end}}">
   {{range .Columns}}
   <div class="kanban-column bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6">
     <h3 class="text-xl font-bold text-center mb-2 text-gray-700 dark:text-gray-300 flex justify-center items-center gap-2">
@@ -114,7 +123,7 @@
       At the limit. Finish something before starting another.
     </p>
     {{end}}
-    <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="space-y-3 min-h-[120px] max-h-[70vh] overflow-y-auto pr-1 sm:pr-2">
+    <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="kanban-cards">
       {{range .Cards}}{{template "card" .}}{{end}}
     </div>
     {{if not .Cards}}
