@@ -116,6 +116,15 @@ func (s *Server) parseTemplates() {
 		"initial":      func(addr string) string { return identity.User{Email: addr}.Initial() },
 		"shortAddress": func(addr string) string { return identity.User{Email: addr}.Display() },
 		"readableOn":   readableOn,
+		// Every asset URL carries the digest of the embedded tree, so a new
+		// build is a new URL and the browser cannot serve yesterday's script
+		// against today's markup.
+		"asset": func(path string) string {
+			if v := assets.Version(); v != "" {
+				return "/assets/" + path + "?v=" + v
+			}
+			return "/assets/" + path
+		},
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles,
 		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))
@@ -1192,7 +1201,9 @@ func staticHandler(next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=86400")
+		// immutable is honest now: the URL carries the digest of the tree, so
+		// a file at a given URL never changes and the browser never has to ask.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		next.ServeHTTP(w, r)
 	})
 }
