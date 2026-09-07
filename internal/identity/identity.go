@@ -70,10 +70,12 @@ func nameFromAddress(addr string) string {
 	local := addr
 	if i := strings.IndexByte(local, '@'); i > 0 {
 		local = local[:i]
-	}
-	// A +tag is routing, not part of anyone's name.
-	if i := strings.IndexByte(local, '+'); i > 0 {
-		local = local[:i]
+		// A +tag is routing, not part of anyone's name. Only inside an
+		// address, though: an identity that is not an address at all keeps
+		// every character it came with, plus sign included.
+		if i := strings.IndexByte(local, '+'); i > 0 {
+			local = local[:i]
+		}
 	}
 
 	words := strings.FieldsFunc(local, func(r rune) bool { return r == '.' || r == '_' })
@@ -141,9 +143,13 @@ func (u User) Initials() string {
 	return first + firstRune(words[len(words)-1])
 }
 
+// firstRune is the first letter of s, upper-cased, or "" when s holds none.
+// Letters only: a bubble reading "1A" for "123 Alice" says less than "A".
 func firstRune(s string) string {
 	for _, r := range s {
-		return string(unicode.ToUpper(r))
+		if unicode.IsLetter(r) {
+			return string(unicode.ToUpper(r))
+		}
 	}
 	return ""
 }
