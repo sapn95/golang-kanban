@@ -60,6 +60,13 @@ DB_SSLMODE=disable
 AUTO_MIGRATE=true          # false: run `kanban migrate` yourself
 LOG_LEVEL=info             # debug | info | warn | error
 LOG_FORMAT=text            # text | json
+
+# Who is making the request. See docs/adr/0005 for why proxy and access
+# are not interchangeable.
+AUTH_MODE=none             # none | proxy | access
+AUTH_HEADER=X-Forwarded-Email  # AUTH_MODE=proxy only
+ACCESS_TEAM_DOMAIN=        # AUTH_MODE=access only, e.g. team.cloudflareaccess.com
+ACCESS_AUD=                # AUTH_MODE=access only, the application's AUD tag
 ```
 
 `kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban version` prints the version. `/healthz` says the process is up, `/readyz` says the database answers.

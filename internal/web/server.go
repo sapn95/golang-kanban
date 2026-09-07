@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"kanban/assets"
+	"kanban/internal/identity"
 	"kanban/internal/model"
 	"kanban/internal/service"
 	"kanban/internal/store"
@@ -108,6 +109,7 @@ type columnView struct {
 
 type boardPage struct {
 	Title     string
+	User      identity.User
 	BoardSlug string
 	Board     *model.Board
 	Columns   []columnView
@@ -116,6 +118,7 @@ type boardPage struct {
 
 type boardsPage struct {
 	Title     string
+	User      identity.User
 	BoardSlug string
 	Boards    []model.Board
 	Error     string
@@ -205,7 +208,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/b/"+boards[0].Slug, http.StatusSeeOther)
 		return
 	}
-	s.render(w, s.pages["boards"], "layout", http.StatusOK, boardsPage{Title: "Kanban", Boards: boards})
+	s.render(w, s.pages["boards"], "layout", http.StatusOK, boardsPage{Title: "Kanban", User: identity.FromContext(r.Context()), Boards: boards})
 }
 
 func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
@@ -222,7 +225,7 @@ func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 			if ve != nil {
 				msg = ve.Error()
 			}
-			s.render(w, s.pages["boards"], "layout", http.StatusBadRequest, boardsPage{Title: "Kanban", Boards: boards, Error: msg})
+			s.render(w, s.pages["boards"], "layout", http.StatusBadRequest, boardsPage{Title: "Kanban", User: identity.FromContext(r.Context()), Boards: boards, Error: msg})
 			return
 		}
 		s.fail(w, r, err)
@@ -242,7 +245,9 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.pages["board"], "layout", http.StatusOK, s.boardPage(b, cards))
+	page := s.boardPage(b, cards)
+	page.User = identity.FromContext(r.Context())
+	s.render(w, s.pages["board"], "layout", http.StatusOK, page)
 }
 
 func cardInput(r *http.Request) service.CardInput {
