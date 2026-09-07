@@ -50,9 +50,9 @@
       <span class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 min-w-0" title="{{.Card.Assignee}}">
         <span class="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full text-white text-[10px] font-semibold uppercase
                      {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}">
-          {{initial .Card.Assignee}}
+          {{initials .Card.Assignee}}
         </span>
-        <span class="hidden sm:inline truncate">{{shortAddress .Card.Assignee}}</span>
+        <span class="hidden sm:inline truncate">{{personName .Card.Assignee}}</span>
       </span>
       {{end}}
       {{if .CommentCount}}

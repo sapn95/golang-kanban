@@ -282,9 +282,27 @@ func TestDisplay(t *testing.T) {
 		want string
 	}{
 		{identity.User{}, "anonymous"},
+		{identity.User{Email: "a.b@example.com", Name: "A Person"}, "A Person"},
+
+		// The point of the exercise: an address in the usual corporate shape
+		// reads as the person's name.
+		{identity.User{Email: "nicolas.haas@example.com"}, "Nicolas Haas"},
+		{identity.User{Email: "sebastian.winterberger2@example.com"}, "Sebastian Winterberger"},
+		{identity.User{Email: "ada_lovelace@example.com"}, "Ada Lovelace"},
+		{identity.User{Email: "jean.claude.dupont@example.com"}, "Jean Claude Dupont"},
+		{identity.User{Email: "anne-marie.dupont@example.com"}, "Anne-Marie Dupont"},
+		{identity.User{Email: "fiona.McLeod@example.com"}, "Fiona McLeod"},
+		{identity.User{Email: "nicolas.haas+board@example.com"}, "Nicolas Haas"},
+		{identity.User{Email: "émile.zola@example.com"}, "Émile Zola"},
+
+		// And where it must not guess. A local part that is not several
+		// alphabetic words is handed back exactly as it arrived.
 		{identity.User{Email: "someone@example.com"}, "someone"},
-		{identity.User{Email: "someone@example.com", Name: "A Person"}, "A Person"},
+		{identity.User{Email: "u236858@example.com"}, "u236858"},
+		{identity.User{Email: "team.42@example.com"}, "team.42"},
+		{identity.User{Email: "a.winterberger@example.com"}, "a.winterberger"},
 		{identity.User{Email: "no-at-sign"}, "no-at-sign"},
+		{identity.User{Email: "noreply@example.com"}, "noreply"},
 	}
 	for _, tt := range tests {
 		if got := tt.user.Display(); got != tt.want {
@@ -293,19 +311,23 @@ func TestDisplay(t *testing.T) {
 	}
 }
 
-func TestInitial(t *testing.T) {
+func TestInitials(t *testing.T) {
 	tests := []struct {
 		user identity.User
 		want string
 	}{
-		{identity.User{}, "a"},
-		{identity.User{Email: "someone@example.com"}, "s"},
-		{identity.User{Name: "Über Mensch"}, "Ü"}, // two bytes: a byte slice would cut it in half
+		{identity.User{}, "A"},
+		{identity.User{Email: "someone@example.com"}, "S"},
+		// Two words in, two letters out — the point of an avatar bubble.
+		{identity.User{Email: "sebastian.winterberger2@example.com"}, "SW"},
+		{identity.User{Name: "Jean Claude Van Damme"}, "JD"}, // first and last, not the middle
+		{identity.User{Name: "Über Mensch"}, "ÜM"},           // two bytes: a byte slice would cut it in half
 		{identity.User{Name: "水曜日"}, "水"},
+		{identity.User{Name: "   "}, ""},
 	}
 	for _, tt := range tests {
-		if got := tt.user.Initial(); got != tt.want {
-			t.Errorf("User%+v.Initial() = %q, want %q", tt.user, got, tt.want)
+		if got := tt.user.Initials(); got != tt.want {
+			t.Errorf("User%+v.Initials() = %q, want %q", tt.user, got, tt.want)
 		}
 	}
 }

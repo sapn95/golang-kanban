@@ -17,6 +17,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"unicode"
 )
 
 // Mode selects how a request's user is established.
@@ -41,27 +42,108 @@ type User struct {
 // Anonymous reports whether the user is unidentified.
 func (u User) Anonymous() bool { return u.Email == "" }
 
-// Display is what to show in the interface: the name when there is one, else
-// the part of the address before the @, else "anonymous".
+// Display is what to show in the interface: the name the provider gave, else
+// a name read out of the address, else "anonymous".
 func (u User) Display() string {
 	switch {
 	case u.Name != "":
 		return u.Name
 	case u.Email != "":
-		if i := strings.IndexByte(u.Email, '@'); i > 0 {
-			return u.Email[:i]
-		}
-		return u.Email
+		return nameFromAddress(u.Email)
 	default:
 		return "anonymous"
 	}
 }
 
-// Initial is the first character of Display, for an avatar bubble. It is a
-// rune and not a byte, so a name that starts outside ASCII is not cut in half.
-func (u User) Initial() string {
-	for _, r := range u.Display() {
-		return string(r)
+// nameFromAddress reads a person's name out of an address when the address is
+// shaped like one, and hands back the local part untouched when it is not.
+//
+// The reason to bother: Cloudflare Access only carries a name claim when the
+// identity provider supplies one, and a one-time-PIN login supplies nothing.
+// Without this the board is a wall of "sebastian.winterberger2", which is
+// worse than a name and worse than an address.
+//
+// Guessing is bounded on purpose. A local part that is not several alphabetic
+// words is left exactly as it was, so a login id like "u236858" stays itself
+// instead of becoming "U236858".
+func nameFromAddress(addr string) string {
+	local := addr
+	if i := strings.IndexByte(local, '@'); i > 0 {
+		local = local[:i]
+	}
+	// A +tag is routing, not part of anyone's name.
+	if i := strings.IndexByte(local, '+'); i > 0 {
+		local = local[:i]
+	}
+
+	words := strings.FieldsFunc(local, func(r rune) bool { return r == '.' || r == '_' })
+	if len(words) < 2 {
+		return local
+	}
+	for i, w := range words {
+		// A trailing number is a disambiguator the directory added, not part
+		// of the name: sebastian.winterberger2 is one person, once.
+		w = strings.TrimRight(w, "0123456789")
+		if !isName(w) {
+			return local
+		}
+		words[i] = title(w)
+	}
+	return strings.Join(words, " ")
+}
+
+// isName reports whether w could be a word of a name: at least two letters,
+// and nothing in it that is not a letter or an internal hyphen.
+func isName(w string) bool {
+	letters := 0
+	for i, r := range w {
+		switch {
+		case unicode.IsLetter(r):
+			letters++
+		case r == '-' && i > 0 && i < len(w)-1:
+		default:
+			return false
+		}
+	}
+	return letters >= 2
+}
+
+// title uppercases the first letter of every hyphen-separated part and leaves
+// the rest of each alone, so "anne-marie" becomes "Anne-Marie" and a surname
+// that already carries its own capital, like "McLeod", keeps it.
+func title(w string) string {
+	out := make([]rune, 0, len(w))
+	upNext := true
+	for _, r := range w {
+		if upNext && unicode.IsLetter(r) {
+			r = unicode.ToUpper(r)
+			upNext = false
+		} else if r == '-' {
+			upNext = true
+		}
+		out = append(out, r)
+	}
+	return string(out)
+}
+
+// Initials is up to two letters for an avatar bubble: the first letter of the
+// first and last words of Display. Runes and not bytes, so a name that starts
+// outside ASCII is not cut in half.
+func (u User) Initials() string {
+	words := strings.Fields(u.Display())
+	if len(words) == 0 {
+		return ""
+	}
+	first := firstRune(words[0])
+	if len(words) == 1 {
+		return first
+	}
+	return first + firstRune(words[len(words)-1])
+}
+
+func firstRune(s string) string {
+	for _, r := range s {
+		return string(unicode.ToUpper(r))
 	}
 	return ""
 }
