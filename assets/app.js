@@ -104,6 +104,35 @@
     });
   }
 
+  // --- quick edit ----------------------------------------------------------
+  // The assignee and label menus on the card face. One open at a time, and a
+  // click anywhere that is neither a trigger nor inside an open panel closes
+  // them, which is what an outside click has to do for a menu.
+  function closePanels(except) {
+    document.querySelectorAll('.quick-panel:not(.hidden)').forEach(function (panel) {
+      if (panel !== except) { panel.classList.add('hidden'); }
+    });
+  }
+
+  function initQuickEdit() {
+    // Delegated: cards are replaced wholesale by htmx swaps, so a listener
+    // bound to a trigger would go out with the card it was on.
+    document.addEventListener('click', function (e) {
+      var trigger = e.target.closest('.quick-toggle');
+      if (trigger) {
+        var panel = document.getElementById(trigger.dataset.panel);
+        closePanels(panel);
+        if (panel) { panel.classList.toggle('hidden'); }
+        return;
+      }
+      // A click inside an open panel is somebody using it.
+      if (!e.target.closest('.quick-panel')) { closePanels(null); }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { closePanels(null); }
+    });
+  }
+
   // --- subtasks ------------------------------------------------------------
   // The form posts one hidden field, "subtasks", in the line format
   // "flag|title" where flag is 1 for done.
@@ -179,10 +208,12 @@
       }
     }
     if (target.id.indexOf('card-') === 0) {
-      // A comment answers with the card face as an out-of-band swap so its
-      // badge keeps up. That must not close the modal being typed in.
+      // Only the edit form closes the modal. Everything else that answers with
+      // the card face does so as a side effect — a comment brings it along so
+      // its badge keeps up, a quick edit redraws it in place — and none of
+      // those should shut a form somebody is typing in.
       var path = (evt.detail.pathInfo && evt.detail.pathInfo.requestPath) || '';
-      if (path.indexOf('/comments') === -1) { hideModal('editCardModal'); }
+      if (/^\/cards\/[^/]+$/.test(path)) { hideModal('editCardModal'); }
     }
   });
   document.body.addEventListener('htmx:afterRequest', function (evt) {
@@ -200,6 +231,7 @@
   function init() {
     initDarkMode();
     initHtmxHooks();
+    initQuickEdit();
     initSortable();
     var addForm = document.getElementById('addCardForm');
     if (addForm) { initSubtasks(addForm); }

@@ -1559,3 +1559,158 @@ func TestBoardLayout(t *testing.T) {
 		}
 	})
 }
+
+func TestQuickEditOnTheCardFace(t *testing.T) {
+	const her, him = "her@example.com", "him@example.com"
+
+	post := func(t *testing.T, e *env, user, path string, body io.Reader) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, body)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		// The quick edits answer with the card face, which only means anything
+		// to htmx; without the header they redirect to the board.
+		req.Header.Set("HX-Request", "true")
+		if user != "" {
+			req = req.WithContext(identity.NewContext(req.Context(), identity.User{Email: user}))
+		}
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec
+	}
+	assignee := func(t *testing.T, e *env) string {
+		t.Helper()
+		c, err := e.svc.Card(context.Background(), e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.Assignee
+	}
+
+	t.Run("the card face carries both menus", func(t *testing.T) {
+		e := seeded(t)
+		card, label := string(e.card.ID), string(e.board.Labels[0].ID)
+		want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK,
+			`data-panel="assignee-`+card,
+			`data-panel="labels-`+card,
+			`id="assignee-`+card,
+			`id="labels-`+card,
+			`hx-post="/cards/`+card+`/labels/`+label+`/toggle"`)
+	})
+
+	t.Run("the menu offers the people already on the board, the viewer first", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		for _, who := range []string{him, "zoe@example.com"} {
+			if _, err := e.svc.CreateCard(ctx, e.board.ID, e.board.Columns[0].ID,
+				service.CardInput{Title: "for " + who, Assignee: who}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		body := e.doAs(her, http.MethodGet, "/b/demo", nil).Body.String()
+
+		// The viewer is offered by name, so their own address is not written
+		// into every card on the board.
+		if !strings.Contains(body, `value="@me"`) {
+			t.Error("the menu does not offer the viewer")
+		}
+		himAt := strings.Index(body, `value="`+him+`"`)
+		zoeAt := strings.Index(body, `value="zoe@example.com"`)
+		if himAt < 0 || zoeAt < 0 {
+			t.Fatalf("the menu is missing somebody: him=%d zoe=%d", himAt, zoeAt)
+		}
+		// Alphabetical below the viewer, so the menu does not reshuffle itself
+		// every time a card moves.
+		if himAt > zoeAt {
+			t.Error("the people are not in alphabetical order")
+		}
+	})
+
+	t.Run("picking somebody assigns them and redraws the card", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(t, e, "", "/cards/"+string(e.card.ID)+"/assignee", form("assignee", him)),
+			http.StatusOK, `id="card-`+string(e.card.ID), him)
+		if got := assignee(t, e); got != him {
+			t.Errorf("assignee = %q, want %q", got, him)
+		}
+		// One field, and nothing else: that is the whole reason this is not the
+		// edit form with most of its inputs missing.
+		c, _ := e.svc.Card(context.Background(), e.card.ID)
+		if c.Title != "First card" || len(c.Labels) != 1 || len(c.Subtasks) != 2 {
+			t.Errorf("the quick edit disturbed the rest of the card: %+v", c)
+		}
+	})
+
+	t.Run("the server resolves the viewer, and refuses to guess", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(t, e, her, "/cards/"+string(e.card.ID)+"/assignee", form("assignee", "@me")),
+			http.StatusOK, her)
+		if got := assignee(t, e); got != her {
+			t.Errorf("assignee = %q, want %q", got, her)
+		}
+
+		want(t, post(t, e, "", "/cards/"+string(e.card.ID)+"/assignee", form("assignee", "@me")),
+			http.StatusForbidden)
+		if got := assignee(t, e); got != her {
+			t.Errorf("assignee = %q after a refused @me, want it untouched", got)
+		}
+	})
+
+	t.Run("unassigning clears it", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(t, e, "", "/cards/"+string(e.card.ID)+"/assignee", form("assignee", him)), http.StatusOK)
+		body := post(t, e, "", "/cards/"+string(e.card.ID)+"/assignee", form("assignee", "")).Body.String()
+		if strings.Contains(body, him) {
+			t.Error("the assignee survived being cleared from the card face")
+		}
+		if got := assignee(t, e); got != "" {
+			t.Errorf("assignee = %q, want empty", got)
+		}
+	})
+
+	t.Run("a label toggles off and on again", func(t *testing.T) {
+		e := seeded(t)
+		card, label := string(e.card.ID), string(e.board.Labels[0].ID)
+		labels := func() []model.ID {
+			c, _ := e.svc.Card(context.Background(), e.card.ID)
+			return c.Labels
+		}
+
+		// The seeded card already carries it, so the first click takes it off.
+		want(t, post(t, e, "", "/cards/"+card+"/labels/"+label+"/toggle", nil), http.StatusOK)
+		if got := labels(); len(got) != 0 {
+			t.Errorf("labels = %v, want none", got)
+		}
+		want(t, post(t, e, "", "/cards/"+card+"/labels/"+label+"/toggle", nil), http.StatusOK, "bug")
+		if got := labels(); len(got) != 1 || got[0] != model.ID(label) {
+			t.Errorf("labels = %v, want the bug label back", got)
+		}
+	})
+
+	t.Run("a label from another board is refused", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		other, err := e.svc.CreateBoard(ctx, "Other", "other", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		theirs, err := e.svc.CreateLabel(ctx, other.ID, "theirs", "#00f")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want(t, post(t, e, "", "/cards/"+string(e.card.ID)+"/labels/"+string(theirs.ID)+"/toggle", nil),
+			http.StatusNotFound)
+		c, _ := e.svc.Card(ctx, e.card.ID)
+		if len(c.Labels) != 1 {
+			t.Errorf("labels = %v, want the refused toggle to have changed nothing", c.Labels)
+		}
+	})
+
+	t.Run("without htmx a quick edit lands back on the board", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/assignee", form("assignee", him))
+		want(t, rr, http.StatusSeeOther)
+		if got := rr.Header().Get("Location"); got != "/b/demo" {
+			t.Errorf("Location = %q, want /b/demo", got)
+		}
+	})
+}

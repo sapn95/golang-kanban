@@ -74,6 +74,10 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /cards/{id}", s.card)
 	mux.HandleFunc("GET /cards/{id}/edit", s.editCard)
 	mux.HandleFunc("POST /cards/{id}", s.updateCard)
+	// The two quick edits from the card face. Each writes one field, so they
+	// are not the update form with most of its inputs left out.
+	mux.HandleFunc("POST /cards/{id}/assignee", s.setCardAssignee)
+	mux.HandleFunc("POST /cards/{id}/labels/{label}/toggle", s.toggleCardLabel)
 	mux.HandleFunc("POST /cards/{id}/delete", s.deleteCard)
 	mux.HandleFunc("POST /cards/{id}/archive", s.archiveCard)
 	mux.HandleFunc("POST /cards/{id}/restore", s.restoreCard)
@@ -203,6 +207,8 @@ type cardView struct {
 	// carries the card face along so its badge is not left stale behind the
 	// open modal. htmx ignores it when the board is not the page on screen.
 	OOB bool
+	// People are the addresses the quick-edit menu offers, viewer first.
+	People []string
 }
 
 type commentView struct {
@@ -310,8 +316,8 @@ type settingsPage struct {
 	Error     string
 }
 
-func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comments int) cardView {
-	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments}
+func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comments int, people []string) cardView {
+	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments, People: people}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
 			v.Labels = append(v.Labels, *l)
@@ -396,9 +402,12 @@ func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, 
 		Rows:      model.LayoutOrDefault(b.Layout) == model.LayoutRows,
 		EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels, Columns: b.Columns},
 	}
+	// Read off the cards already in hand, so the board's own render — the one
+	// page that is drawn constantly — costs no extra query for its menus.
+	people := service.People(cards, u.Email)
 	byColumn := map[model.ID][]cardView{}
 	for _, c := range cards {
-		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c, comments[c.ID]))
+		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c, comments[c.ID], people))
 	}
 	for _, col := range b.Columns {
 		cv := columnView{Column: col, Cards: byColumn[col.ID], Count: len(byColumn[col.ID])}
@@ -535,8 +544,11 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		}
 		page := s.boardPage(u, b, nil, counts)
 		page.Query, page.Searching = raw, true
+		// The hits are a subset, and a quick edit on a result should offer the
+		// same people as one on the board, so the list comes from the board.
+		people := s.people(r, u, b.ID)
 		for _, c := range hits {
-			page.Results = append(page.Results, s.cardView(u, b, c, counts[c.ID]))
+			page.Results = append(page.Results, s.cardView(u, b, c, counts[c.ID], people))
 		}
 		s.render(w, s.pages["board"], "layout", http.StatusOK, page)
 		return
@@ -592,7 +604,8 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Reswap", "beforeend")
 	// A card that was created a microsecond ago has no comments; counting them
 	// would be a query that can only ever answer zero.
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c, 0))
+	u := identity.FromContext(r.Context())
+	s.render(w, s.parts, "card", http.StatusOK, s.cardView(u, b, *c, 0, s.people(r, u, b.ID)))
 }
 
 type orderPayload struct {
@@ -685,7 +698,23 @@ func (s *Server) cardFragment(r *http.Request, b *model.Board, c model.Card) (ca
 	if err != nil {
 		return cardView{}, err
 	}
-	return s.cardView(identity.FromContext(r.Context()), b, c, len(comments)), nil
+	u := identity.FromContext(r.Context())
+	return s.cardView(u, b, c, len(comments), s.people(r, u, b.ID)), nil
+}
+
+// people is the list a quick-edit menu offers, for the handlers that do not
+// already hold the board's cards.
+//
+// A failure is logged and answered with just the viewer rather than failing the
+// render. The menu is an offer: a card drawn with a short menu is a better
+// answer than a card that does not draw.
+func (s *Server) people(r *http.Request, u identity.User, boardID model.ID) []string {
+	cards, err := s.svc.Cards(r.Context(), boardID)
+	if err != nil {
+		s.log.Warn("could not list a board's people", "board", boardID, "err", err)
+		return service.People(nil, u.Email)
+	}
+	return service.People(cards, u.Email)
 }
 
 func (s *Server) card(w http.ResponseWriter, r *http.Request) {
@@ -714,7 +743,9 @@ func (s *Server) editCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := identity.FromContext(r.Context())
-	v := s.cardView(u, b, *c, len(comments))
+	// No people list: the modal renders the full form, which has an assignee
+	// field of its own, and never the card face.
+	v := s.cardView(u, b, *c, len(comments), nil)
 	for _, cm := range comments {
 		v.Comments = append(v.Comments, s.commentView(u, cm))
 	}
@@ -839,6 +870,67 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, s.parts, "card", http.StatusOK, v)
 }
 
+// setCardAssignee is the quick edit on the card face. It sends one field, so
+// two people reassigning cards on the same board at the same time cannot
+// overwrite each other's titles the way the full form would.
+func (s *Server) setCardAssignee(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	assignee := r.FormValue("assignee")
+	if assignee == "@me" {
+		// The same reason the bulk toolbar uses this: the viewer's own address
+		// is not written into the page, so the button asks for it by name.
+		u := identity.FromContext(r.Context())
+		if u.Anonymous() {
+			plain(w, http.StatusForbidden, "not signed in")
+			return
+		}
+		assignee = u.Email
+	}
+	c, err := s.svc.SetCardAssignee(r.Context(), model.ID(r.PathValue("id")), assignee)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.quickEdited(w, r, c)
+}
+
+// toggleCardLabel puts one of the board's labels on a card, or takes it off.
+// Which of the two it is comes from the card, not from the request: a button
+// that said "add" would be wrong the moment someone else clicked first.
+func (s *Server) toggleCardLabel(w http.ResponseWriter, r *http.Request) {
+	c, err := s.svc.ToggleCardLabel(r.Context(),
+		model.ID(r.PathValue("id")), model.ID(r.PathValue("label")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.quickEdited(w, r, c)
+}
+
+// quickEdited answers a quick edit with the card face redrawn in place. The
+// menu is not sent back with it: a fresh card comes with its panels closed,
+// which is what a click on a menu item should leave behind.
+func (s *Server) quickEdited(w http.ResponseWriter, r *http.Request, c *model.Card) {
+	b, err := s.svc.BoardByID(r.Context(), c.BoardID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !isHTMX(r) {
+		http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
+		return
+	}
+	v, err := s.cardFragment(r, b, *c)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, s.parts, "card", http.StatusOK, v)
+}
+
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 	if err := s.svc.DeleteCard(r.Context(), model.ID(r.PathValue("id"))); err != nil {
 		s.fail(w, r, err)
@@ -888,7 +980,9 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 	u := identity.FromContext(r.Context())
 	page := archivePage{Title: b.Name + " · archive", User: u, BoardSlug: b.Slug, Board: b}
 	for _, c := range cards {
-		page.Cards = append(page.Cards, s.cardView(u, b, c, counts[c.ID]))
+		// No people list: the archive draws its own rows, and the action there
+		// is to restore a card rather than to reassign it.
+		page.Cards = append(page.Cards, s.cardView(u, b, c, counts[c.ID], nil))
 	}
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }
