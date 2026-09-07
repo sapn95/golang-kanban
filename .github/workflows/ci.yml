@@ -111,7 +111,24 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: azure/setup-helm@v4
+      - name: install helm
+        env:
+          # Helm is a single Go binary. Fetching it directly keeps the
+          # deprecated Node 20 runtime of azure/setup-helm out of this
+          # workflow, and pins the version where it can be read.
+          HELM_VERSION: "v4.2.4"
+        run: |
+          set -euo pipefail
+          tgz="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL "https://get.helm.sh/${tgz}" -o "$tgz"
+          curl -fsSL "https://get.helm.sh/${tgz}.sha256sum" -o sums
+          # An unverified binary that then renders manifests for a cluster is
+          # not worth the two lines this saves.
+          sha256sum -c sums
+          tar xzf "$tgz" linux-amd64/helm
+          sudo install -m 0755 linux-amd64/helm /usr/local/bin/helm
+          rm -rf "$tgz" sums linux-amd64
+          helm version --short
       - name: helm lint
         run: helm lint deploy/helm/kanban
       - name: every values combination the chart claims to support
