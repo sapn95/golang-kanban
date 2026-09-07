@@ -151,11 +151,43 @@ func TestColumns(t *testing.T) {
 	if got.Columns[0].Name != "QA" || got.Columns[0].WIPLimit != 3 {
 		t.Fatalf("columns = %+v", got.Columns)
 	}
-	if err := k.RemoveColumn(ctx, c.ID, b.Columns[0].ID); err != nil {
+	if err := k.RemoveColumn(ctx, b.ID, c.ID, b.Columns[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := k.RemoveColumn(ctx, c.ID, ""); !errors.Is(err, store.ErrNotFound) {
+	if err := k.RemoveColumn(ctx, b.ID, c.ID, ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("remove twice: %v", err)
+	}
+}
+
+func TestTheLastColumnCannotBeDeleted(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, err := k.CreateBoard(ctx, "One", "", []string{"Only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A board with no columns holds no cards and offers nowhere to put one,
+	// so the delete would leave something only the database could repair.
+	if err := k.RemoveColumn(ctx, b.ID, b.Columns[0].ID, ""); !isValidation(err, "column") {
+		t.Errorf("deleting the last column = %v, want a validation error", err)
+	}
+	got, _ := k.Board(ctx, b.Slug)
+	if len(got.Columns) != 1 {
+		t.Errorf("board has %d columns, want the one it started with", len(got.Columns))
+	}
+
+	// A column from another board is a miss, not a delete.
+	other, err := k.CreateBoard(ctx, "Two", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := k.RemoveColumn(ctx, b.ID, other.Columns[0].ID, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("deleting another board's column = %v, want ErrNotFound", err)
+	}
+	// And so is a destination that belongs to another board, which would
+	// otherwise move cards across boards.
+	if err := k.RemoveColumn(ctx, other.ID, other.Columns[0].ID, b.Columns[0].ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("moving cards to another board's column = %v, want ErrNotFound", err)
 	}
 }
 

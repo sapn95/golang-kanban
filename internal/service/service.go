@@ -241,8 +241,26 @@ func (k *Kanban) UpdateColumn(ctx context.Context, id model.ID, name string, wip
 	return k.store.UpdateColumn(ctx, &model.Column{ID: id, Name: name, WIPLimit: wipLimit})
 }
 
-// RemoveColumn deletes a column, moving its cards to moveCardsTo when given.
-func (k *Kanban) RemoveColumn(ctx context.Context, id, moveCardsTo model.ID) error {
+// RemoveColumn deletes a column of boardID, moving its cards to moveCardsTo
+// when given and deleting them when it is empty.
+//
+// The last column cannot go. A board without columns holds no cards and offers
+// nowhere to put one, so the delete would leave something that can only be
+// repaired through the database.
+func (k *Kanban) RemoveColumn(ctx context.Context, boardID, id, moveCardsTo model.ID) error {
+	b, err := k.store.GetBoardByID(ctx, boardID)
+	if err != nil {
+		return err
+	}
+	if b.Column(id) == nil {
+		return store.ErrNotFound
+	}
+	if len(b.Columns) <= 1 {
+		return invalid("column", "a board needs at least one column")
+	}
+	if moveCardsTo != "" && b.Column(moveCardsTo) == nil {
+		return store.ErrNotFound
+	}
 	return k.store.DeleteColumn(ctx, id, moveCardsTo)
 }
 

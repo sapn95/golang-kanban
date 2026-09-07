@@ -10,9 +10,11 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 
 ### Features
 - Boards with as many columns as you like, each with an optional WIP limit.
-- Cards with description, due date, labels and a subtask checklist.
-- Labels are made and renamed from the board itself, with a fixed palette; the
-  page says how many cards carry one before you delete it.
+  Columns and labels are edited from the board's own settings page: add,
+  rename, reorder, set a limit, and choose where a deleted column's cards go.
+- Cards with description, due date, labels and a subtask checklist. The card
+  face shows checklist progress, and grades a due date rather than only
+  marking it late.
 - Assignee per card, shown on the card face, with one click to take it yourself.
 - Archive a card instead of deleting it: it leaves the board, keeps its column
   and labels, and restoring puts back the same card.
@@ -94,7 +96,7 @@ KANBAN_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/kanban_test?sslmode
 #### Todo's
 If I feel like it I might work on some of these things:
 - [x] darkmode
-- [ ] remove/add/edit collums (the data model has them; the UI is next)
+- [x] remove/add/edit collums
 - [ ] make it pretty
 - [x] add sqlite option for people too lazy to setup a db
 - [ ] tls

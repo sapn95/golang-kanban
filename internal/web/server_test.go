@@ -994,7 +994,7 @@ func TestLabelsThroughTheWeb(t *testing.T) {
 
 	t.Run("the page lists the board's labels and how they are used", func(t *testing.T) {
 		e := seeded(t)
-		rr := e.do(http.MethodGet, "/b/demo/labels", nil)
+		rr := e.do(http.MethodGet, "/b/demo/settings", nil)
 		// The seeded board has one label, on the seeded card.
 		want(t, rr, http.StatusOK, "bug", "on 1 card", "New label")
 	})
@@ -1081,7 +1081,7 @@ func TestLabelsThroughTheWeb(t *testing.T) {
 		if len(card.Labels) != 0 {
 			t.Errorf("the card still carries %v after the label was deleted", card.Labels)
 		}
-		want(t, e.do(http.MethodGet, "/b/demo/labels", nil), http.StatusOK, "0 labels")
+		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK, "0 labels")
 	})
 }
 
@@ -1213,4 +1213,154 @@ func TestDueDatesAreGradedOnTheCardFace(t *testing.T) {
 			want(t, e.do(http.MethodGet, "/b/dates", nil), http.StatusOK, tt.want)
 		})
 	}
+}
+
+func TestColumnsThroughTheWeb(t *testing.T) {
+	post := func(e *env, path string, body io.Reader) *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, path, body, "Content-Type", "application/x-www-form-urlencoded",
+			"Sec-Fetch-Site", "same-origin")
+	}
+	names := func(t *testing.T, e *env) []string {
+		t.Helper()
+		b, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range b.Columns {
+			out = append(out, c.Name)
+		}
+		return out
+	}
+
+	t.Run("the page lists the columns and what they hold", func(t *testing.T) {
+		e := seeded(t)
+		// The seeded board is To Do / In Progress / Done, with one card.
+		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK,
+			"3 columns", "1 card", "empty", "New column", "WIP limit")
+	})
+
+	t.Run("the old labels URL still lands somewhere", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodGet, "/b/demo/labels", nil)
+		if rr.Code != http.StatusMovedPermanently {
+			t.Fatalf("status = %d, want a permanent redirect", rr.Code)
+		}
+		if got := rr.Header().Get("Location"); got != "/b/demo/settings" {
+			t.Errorf("Location = %q, want the settings page", got)
+		}
+	})
+
+	t.Run("a column can be added with a WIP limit", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/columns", form("name", "Review", "wip_limit", "2")), http.StatusSeeOther)
+
+		b, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := b.Columns[len(b.Columns)-1]
+		if last.Name != "Review" || last.WIPLimit != 2 {
+			t.Errorf("added column = %+v, want Review with a limit of 2", last)
+		}
+	})
+
+	t.Run("an empty limit means no limit", func(t *testing.T) {
+		e := seeded(t)
+		todo := e.board.Columns[0]
+		want(t, post(e, "/b/demo/columns/"+string(todo.ID), form("name", todo.Name, "wip_limit", "")), http.StatusSeeOther)
+
+		b, _ := e.svc.Board(context.Background(), "demo")
+		if b.Columns[0].WIPLimit != 0 {
+			t.Errorf("limit = %d, want 0 for an empty field", b.Columns[0].WIPLimit)
+		}
+	})
+
+	t.Run("a limit that is not a number says so on the form", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/columns", form("name", "Bad", "wip_limit", "lots")), http.StatusBadRequest,
+			"whole number")
+		if len(names(t, e)) != 3 {
+			t.Error("the column was created despite the rejected limit")
+		}
+	})
+
+	t.Run("a limit set here is what the board then shows", func(t *testing.T) {
+		e := seeded(t)
+		todo := e.board.Columns[0]
+		want(t, post(e, "/b/demo/columns/"+string(todo.ID), form("name", "To Do", "wip_limit", "1")), http.StatusSeeOther)
+		// The whole point of the editor: the limit was in the model from the
+		// start and there was no way to set it.
+		want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK, "1 / 1", "At the limit.")
+	})
+
+	t.Run("columns move one place at a time and stop at the ends", func(t *testing.T) {
+		e := seeded(t)
+		second := e.board.Columns[1]
+		want(t, post(e, "/b/demo/columns/"+string(second.ID)+"/move", form("direction", "up")), http.StatusSeeOther)
+		if got := names(t, e); got[0] != "In Progress" || got[1] != "To Do" {
+			t.Errorf("order = %v, want In Progress moved ahead of To Do", got)
+		}
+		// Already first. A repeated submit is a no-op, not an error page.
+		want(t, post(e, "/b/demo/columns/"+string(second.ID)+"/move", form("direction", "up")), http.StatusSeeOther)
+		if got := names(t, e); got[0] != "In Progress" {
+			t.Errorf("order = %v, want it left alone at the end", got)
+		}
+	})
+
+	t.Run("deleting takes the cards somewhere, or with it", func(t *testing.T) {
+		e := seeded(t)
+		todo, done := e.board.Columns[0], e.board.Columns[2]
+		want(t, post(e, "/b/demo/columns/"+string(todo.ID)+"/delete",
+			form("move_to", string(done.ID))), http.StatusSeeOther)
+
+		card, err := e.svc.Card(context.Background(), e.card.ID)
+		if err != nil {
+			t.Fatalf("the card went with the column: %v", err)
+		}
+		if card.ColumnID != done.ID {
+			t.Errorf("the card is in %s, want it moved to %s", card.ColumnID, done.ID)
+		}
+		if got := names(t, e); len(got) != 2 {
+			t.Errorf("columns = %v, want the deleted one gone", got)
+		}
+	})
+
+	t.Run("an empty destination deletes the cards too", func(t *testing.T) {
+		e := seeded(t)
+		todo := e.board.Columns[0]
+		want(t, post(e, "/b/demo/columns/"+string(todo.ID)+"/delete", form("move_to", "")), http.StatusSeeOther)
+		if _, err := e.svc.Card(context.Background(), e.card.ID); err == nil {
+			t.Error("the card survived a delete with nowhere to move it")
+		}
+	})
+
+	t.Run("the last column cannot go", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, err := e.svc.CreateBoard(ctx, "Single", "single", []string{"Only"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want(t, post(e, "/b/single/columns/"+string(b.Columns[0].ID)+"/delete", form("move_to", "")),
+			http.StatusBadRequest, "at least one column")
+	})
+
+	t.Run("a column from another board cannot be reached through this one", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		other, err := e.svc.CreateBoard(ctx, "Other", "other", []string{"Theirs"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := string(other.Columns[0].ID)
+		want(t, post(e, "/b/demo/columns/"+id, form("name", "mine", "wip_limit", "")), http.StatusNotFound)
+		want(t, post(e, "/b/demo/columns/"+id+"/delete", form("move_to", "")), http.StatusNotFound)
+		want(t, post(e, "/b/demo/columns/"+id+"/move", form("direction", "up")), http.StatusNotFound)
+
+		still, _ := e.svc.Board(ctx, "other")
+		if still.Columns[0].Name != "Theirs" {
+			t.Errorf("the other board's column is now %q", still.Columns[0].Name)
+		}
+	})
 }

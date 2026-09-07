@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,10 +72,18 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /cards/{id}/comments", s.addComment)
 	mux.HandleFunc("POST /comments/{id}/delete", s.deleteComment)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
-	mux.HandleFunc("GET /b/{board}/labels", s.labels)
+	// One settings page for the two things a board owns besides its cards.
+	// The old /labels URL is kept, because it shipped, and a bookmark to it
+	// should land somewhere rather than 404.
+	mux.HandleFunc("GET /b/{board}/settings", s.settings)
+	mux.HandleFunc("GET /b/{board}/labels", s.settingsMoved)
 	mux.HandleFunc("POST /b/{board}/labels", s.createLabel)
 	mux.HandleFunc("POST /b/{board}/labels/{id}", s.updateLabel)
 	mux.HandleFunc("POST /b/{board}/labels/{id}/delete", s.deleteLabel)
+	mux.HandleFunc("POST /b/{board}/columns", s.createColumn)
+	mux.HandleFunc("POST /b/{board}/columns/{id}", s.updateColumn)
+	mux.HandleFunc("POST /b/{board}/columns/{id}/delete", s.deleteColumn)
+	mux.HandleFunc("POST /b/{board}/columns/{id}/move", s.moveColumn)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
@@ -102,7 +111,7 @@ func (s *Server) parseTemplates() {
 		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))
 	s.parts = base
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"board", "boards", "archive", "labels"} {
+	for _, name := range []string{"board", "boards", "archive", "settings"} {
 		s.pages[name] = template.Must(template.Must(base.Clone()).ParseFS(templateFiles, "templates/"+name+".html"))
 	}
 }
@@ -216,13 +225,28 @@ type labelView struct {
 	Palette []string
 }
 
-type labelsPage struct {
+type columnSetting struct {
+	Column model.Column
+	// Cards is how many are in it, the archive included, because deleting the
+	// column decides what happens to those as well.
+	Cards int
+	// Others are where its cards could go instead, on a delete.
+	Others []model.Column
+	First  bool
+	Last   bool
+	// Only marks the last column standing. It cannot be deleted, so the form
+	// does not offer to.
+	Only bool
+}
+
+type settingsPage struct {
 	Title     string
 	User      identity.User
 	BoardSlug string
 	Board     *model.Board
+	Columns   []columnSetting
 	Labels    []labelView
-	New       labelView
+	NewLabel  labelView
 	Error     string
 }
 
@@ -805,79 +829,109 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }
 
-// --- labels -------------------------------------------------------------------
+// --- settings -----------------------------------------------------------------
 
-// labels renders the label editor. Labels could only be made through code
-// before this; the service methods were there and had no way in.
-func (s *Server) labels(w http.ResponseWriter, r *http.Request) {
-	s.renderLabels(w, r, http.StatusOK, "")
+// settings renders the board's columns and labels. Neither could be edited
+// without writing Go before this: the service methods were all there and had
+// no way in, which is why a WIP limit was a thing the model knew about and
+// nobody could set.
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	s.renderSettings(w, r, http.StatusOK, "")
 }
 
-func (s *Server) renderLabels(w http.ResponseWriter, r *http.Request, status int, message string) {
+// settingsMoved keeps the /labels URL working. It shipped, and a bookmark to
+// it should land on the page that replaced it rather than on a 404.
+func (s *Server) settingsMoved(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/b/"+r.PathValue("board")+"/settings", http.StatusMovedPermanently)
+}
+
+func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status int, message string) {
 	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	used, err := s.labelUse(r, b.ID)
+	labelUse, columnUse, err := s.boardUse(r, b.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	p := labelsPage{
-		Title:     b.Name + " · labels",
+	p := settingsPage{
+		Title:     b.Name + " · settings",
 		User:      identity.FromContext(r.Context()),
 		BoardSlug: b.Slug,
 		Board:     b,
-		New:       labelView{Palette: labelPalette},
+		NewLabel:  labelView{Palette: labelPalette},
 		Error:     message,
+	}
+	for i, col := range b.Columns {
+		cs := columnSetting{
+			Column: col,
+			Cards:  columnUse[col.ID],
+			First:  i == 0,
+			Last:   i == len(b.Columns)-1,
+			Only:   len(b.Columns) == 1,
+		}
+		for _, other := range b.Columns {
+			if other.ID != col.ID {
+				cs.Others = append(cs.Others, other)
+			}
+		}
+		p.Columns = append(p.Columns, cs)
 	}
 	for _, l := range b.Labels {
 		p.Labels = append(p.Labels, labelView{
 			Label:   l,
-			Cards:   used[l.ID],
+			Cards:   labelUse[l.ID],
 			Custom:  l.Color != "" && !slices.Contains(labelPalette, l.Color),
 			Palette: labelPalette,
 		})
 	}
-	s.render(w, s.pages["labels"], "layout", status, p)
+	s.render(w, s.pages["settings"], "layout", status, p)
 }
 
-// labelUse counts the cards each label is on, the archive included: a label
-// that only archived cards carry is still in use, and deleting it would take
-// it off them without saying so.
-func (s *Server) labelUse(r *http.Request, boardID model.ID) (map[model.ID]int, error) {
+// boardUse counts what each label and each column carries, the archive
+// included: a label only archived cards wear is still in use, and deleting the
+// column they sit in decides what happens to them too. Both counts come from
+// the same two reads.
+func (s *Server) boardUse(r *http.Request, boardID model.ID) (labels, columns map[model.ID]int, err error) {
 	on, err := s.svc.Cards(r.Context(), boardID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	off, err := s.svc.ArchivedCards(r.Context(), boardID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	used := map[model.ID]int{}
+	labels, columns = map[model.ID]int{}, map[model.ID]int{}
 	for _, list := range [][]model.Card{on, off} {
 		for _, c := range list {
+			columns[c.ColumnID]++
 			for _, id := range c.Labels {
-				used[id]++
+				labels[id]++
 			}
 		}
 	}
-	return used, nil
+	return labels, columns, nil
 }
 
-// labelFailure puts a rejected edit back on the page with the reason, rather
-// than answering with a bare status the form has nowhere to show.
-func (s *Server) labelFailure(w http.ResponseWriter, r *http.Request, err error) {
+// settingsFailure puts a rejected edit back on the page with the reason,
+// rather than answering with a bare status the form has nowhere to show.
+func (s *Server) settingsFailure(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *service.ValidationError
 	switch {
 	case errors.As(err, &ve):
-		s.renderLabels(w, r, http.StatusBadRequest, ve.Message)
+		s.renderSettings(w, r, http.StatusBadRequest, ve.Message)
 	case errors.Is(err, store.ErrConflict):
-		s.renderLabels(w, r, http.StatusConflict, "this board already has a label with that name")
+		// Only labels are unique by name; two columns may share one.
+		s.renderSettings(w, r, http.StatusConflict, "this board already has a label with that name")
 	default:
 		s.fail(w, r, err)
 	}
+}
+
+func (s *Server) settingsRedirect(w http.ResponseWriter, r *http.Request, b *model.Board) {
+	http.Redirect(w, r, "/b/"+b.Slug+"/settings", http.StatusSeeOther)
 }
 
 func (s *Server) createLabel(w http.ResponseWriter, r *http.Request) {
@@ -887,10 +941,125 @@ func (s *Server) createLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.svc.CreateLabel(r.Context(), b.ID, r.FormValue("name"), r.FormValue("color")); err != nil {
-		s.labelFailure(w, r, err)
+		s.settingsFailure(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/b/"+b.Slug+"/labels", http.StatusSeeOther)
+	s.settingsRedirect(w, r, b)
+}
+
+// --- columns ------------------------------------------------------------------
+
+// wipLimit reads the limit field. Empty is no limit, which is what the model
+// stores as zero.
+func wipLimit(v string) (int, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, &service.ValidationError{Field: "wip_limit", Message: "must be a whole number, or empty for no limit"}
+	}
+	return n, nil
+}
+
+// boardColumn resolves the column id in the path against the board in the
+// path, so a crafted id cannot reach a column on another board.
+func (s *Server) boardColumn(r *http.Request) (*model.Board, *model.Column, error) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		return nil, nil, err
+	}
+	c := b.Column(model.ID(r.PathValue("id")))
+	if c == nil {
+		return nil, nil, store.ErrNotFound
+	}
+	return b, c, nil
+}
+
+func (s *Server) createColumn(w http.ResponseWriter, r *http.Request) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	limit, err := wipLimit(r.FormValue("wip_limit"))
+	if err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	if _, err := s.svc.AddColumn(r.Context(), b.ID, r.FormValue("name"), limit); err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	s.settingsRedirect(w, r, b)
+}
+
+func (s *Server) updateColumn(w http.ResponseWriter, r *http.Request) {
+	b, col, err := s.boardColumn(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	limit, err := wipLimit(r.FormValue("wip_limit"))
+	if err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	if err := s.svc.UpdateColumn(r.Context(), col.ID, r.FormValue("name"), limit); err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	s.settingsRedirect(w, r, b)
+}
+
+// deleteColumn removes a column. move_to names where its cards go; empty means
+// they go with it, which is why the form makes that the deliberate choice
+// rather than the default.
+func (s *Server) deleteColumn(w http.ResponseWriter, r *http.Request) {
+	b, col, err := s.boardColumn(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.RemoveColumn(r.Context(), b.ID, col.ID, model.ID(r.FormValue("move_to"))); err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	s.settingsRedirect(w, r, b)
+}
+
+// moveColumn swaps a column with its neighbour. A move off either end is a
+// no-op rather than an error: the buttons are not offered there, and a repeated
+// submit should not be an error page.
+func (s *Server) moveColumn(w http.ResponseWriter, r *http.Request) {
+	b, col, err := s.boardColumn(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	order := make([]model.ID, len(b.Columns))
+	at := -1
+	for i, c := range b.Columns {
+		order[i] = c.ID
+		if c.ID == col.ID {
+			at = i
+		}
+	}
+	to := at - 1
+	if r.FormValue("direction") == "down" {
+		to = at + 1
+	}
+	if to < 0 || to >= len(order) {
+		s.settingsRedirect(w, r, b)
+		return
+	}
+	order[at], order[to] = order[to], order[at]
+	if err := s.svc.ReorderColumns(r.Context(), b.ID, order); err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	s.settingsRedirect(w, r, b)
 }
 
 // boardLabel resolves the label id in the path against the board in the path,
@@ -914,10 +1083,10 @@ func (s *Server) updateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.svc.UpdateLabel(r.Context(), l.ID, r.FormValue("name"), r.FormValue("color")); err != nil {
-		s.labelFailure(w, r, err)
+		s.settingsFailure(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/b/"+b.Slug+"/labels", http.StatusSeeOther)
+	s.settingsRedirect(w, r, b)
 }
 
 func (s *Server) deleteLabel(w http.ResponseWriter, r *http.Request) {
@@ -930,7 +1099,7 @@ func (s *Server) deleteLabel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/b/"+b.Slug+"/labels", http.StatusSeeOther)
+	s.settingsRedirect(w, r, b)
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
