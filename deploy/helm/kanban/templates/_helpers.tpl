@@ -68,6 +68,14 @@ Two consequences, both documented in README.md rather than papered over:
     keeping the data it unlocks, and the next install would generate a password
     the retained database has never heard of.
 */}}
+{{/*
+The Secret both pods read the database credentials from: the caller's when they
+brought one, otherwise the one this chart creates.
+*/}}
+{{- define "kanban.postgresSecretName" -}}
+{{- .Values.postgres.existingSecret | default (include "kanban.postgresFullname" .) -}}
+{{- end -}}
+
 {{- define "kanban.postgresPassword" -}}
 {{- if .Values.postgres.password -}}
 {{- .Values.postgres.password -}}

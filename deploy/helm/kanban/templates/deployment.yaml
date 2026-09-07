@@ -76,7 +76,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   {{- if .Values.postgres.enabled }}
-                  name: {{ include "kanban.postgresFullname" . }}
+                  name: {{ include "kanban.postgresSecretName" . }}
                   key: url
                   {{- else if .Values.externalDatabase.existingSecret }}
                   name: {{ .Values.externalDatabase.existingSecret }}
