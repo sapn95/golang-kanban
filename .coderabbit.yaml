@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# main tracks upstream; homelab is where this fork is developed and deployed
+# from. CodeRabbit only reviews pull requests against the default branch unless
+# the other base branches are named here, so every PR in this repo was being
+# skipped with "auto reviews are disabled on base/target branches other than
+# the default branch".
+reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - homelab
