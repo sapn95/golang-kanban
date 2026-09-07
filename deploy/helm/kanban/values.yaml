@@ -49,6 +49,14 @@ postgres:
   user: kanban
   database: kanban
   # password: ""     # generated and stored in a Secret when left empty
+
+  # Name a Secret that already holds keys "password" and "url", and the chart
+  # will not create one. This is the answer for GitOps: `helm template` has no
+  # cluster to read the previous password back from, so without it the rendered
+  # Secret carries a freshly generated password on every sync while the
+  # database keeps the one it was initialised with. The mismatch stays hidden
+  # until the pod restarts.
+  existingSecret: ""
   persistence:
     enabled: true
     size: 1Gi

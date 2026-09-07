@@ -159,8 +159,13 @@ kubectl delete pvc,secret -l app.kubernetes.io/instance=<release>
 Two limits worth knowing before you rely on the generated password:
 
 - `helm template` has no cluster to read the existing Secret from, so it mints a
-  fresh password on every render. Set `postgres.password` explicitly for any
-  GitOps flow that applies rendered output.
+  fresh password on every render. **Any GitOps flow that applies rendered output
+  must set `postgres.existingSecret`**, naming a Secret that already holds
+  `password` and `url`. Without it every sync rewrites the Secret with a new
+  password while the database keeps the one it was initialised with, and the
+  mismatch stays invisible until the pod restarts and then cannot open its own
+  database. `postgres.password` also stops the churn but puts the password in
+  whatever holds the values.
 - `POSTGRES_PASSWORD` only takes effect when the database initialises. Changing
   `postgres.password` on a release whose volume already exists rolls the app
   onto a credential the database will reject. Change it with `ALTER USER` in the
