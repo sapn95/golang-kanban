@@ -5,8 +5,8 @@
   </button>
 </div>
 
-<div id="selectionBar" hidden
-     class="sticky top-0 z-20 mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-4 py-3 shadow">
+<div id="selectionBar"
+     class="hidden sticky top-0 z-20 mb-4 flex-wrap items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-4 py-3 shadow">
   <span class="text-sm font-medium text-blue-900 dark:text-blue-100"><span id="selectionCount">0</span> selected</span>
   <form class="flex flex-wrap items-center gap-2" hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
     <input type="hidden" name="action" value="move">
@@ -36,17 +36,23 @@
           class="ml-auto px-3 py-1.5 text-sm rounded-lg text-blue-900 dark:text-blue-100 hover:bg-blue-100 dark:hover:bg-blue-900">Clear</button>
 </div>
 
-<div class="flex gap-6 overflow-x-auto pb-4 items-start">
+<!-- On a phone one column fills the screen and the scroller snaps to it, so a
+     swipe lands on a column rather than between two. shrink-0 is what stops
+     flex from squeezing three columns into one screen width. -->
+<div class="kanban-scroller">
   {{range .Columns}}
-  <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 min-w-[85vw] sm:min-w-[20rem] flex-1">
+  <div class="kanban-column bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6">
     <h3 class="text-xl font-bold text-center mb-4 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2 flex justify-center items-center gap-2">
       <span>{{.Column.Name}}</span>
       <span class="text-sm font-normal text-gray-500 dark:text-gray-400{{if .OverLimit}} text-red-500{{end}}"
         data-count-for="{{.Column.ID}}" data-limit="{{.Column.WIPLimit}}">{{if .Column.WIPLimit}}{{.Count}} / {{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
     </h3>
-    <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="space-y-3 min-h-[200px] max-h-[70vh] overflow-y-auto pr-2">
+    <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="space-y-3 min-h-[120px] max-h-[70vh] overflow-y-auto pr-1 sm:pr-2">
       {{range .Cards}}{{template "card" .}}{{end}}
     </div>
+    {{if not .Cards}}
+    <p class="text-center text-sm text-gray-400 dark:text-gray-500 py-6 pointer-events-none">Nothing here yet</p>
+    {{end}}
   </div>
   {{end}}
 </div>

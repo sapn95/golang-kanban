@@ -194,7 +194,10 @@
   function paint() {
     const n = selected().length;
     countEl.textContent = String(n);
-    bar.hidden = n === 0;
+    // A class, not the hidden attribute: Tailwind's display utilities beat
+    // [hidden] on specificity, so the attribute alone left the bar on screen.
+    bar.classList.toggle('hidden', n === 0);
+    bar.classList.toggle('flex', n > 0);
     boxes().forEach((b) => {
       const card = b.closest('[data-id]');
       if (!card) return;
