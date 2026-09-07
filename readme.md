@@ -14,6 +14,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Assignee per card, shown on the card face, with one click to take it yourself.
 - Archive a card instead of deleting it: it leaves the board, keeps its column
   and labels, and restoring puts back the same card.
+- Search on the board's own URL, so a result set can be linked to:
+  `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.
 - Select several cards (shift-click for a range) and move, assign, archive or delete them at once.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
 - Dark mode.

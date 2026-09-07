@@ -122,8 +122,15 @@ type columnView struct {
 }
 
 type boardPage struct {
-	Title     string
-	User      identity.User
+	Title string
+	User  identity.User
+	// Query is what the user typed, echoed back into the box so a reload or a
+	// shared link keeps the search.
+	Query   string
+	Results []cardView
+	// Searching is Query being non-empty, not Results being non-empty: a
+	// search with no hits must say so rather than silently showing the board.
+	Searching bool
 	BoardSlug string
 	Board     *model.Board
 	Columns   []columnView
@@ -262,13 +269,32 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	u := identity.FromContext(r.Context())
+
+	// The search lives on the board's own URL rather than a page of its own,
+	// so a result set can be linked to and reloading keeps it.
+	raw := strings.TrimSpace(r.URL.Query().Get("q"))
+	if raw != "" {
+		hits, err := s.svc.Search(r.Context(), b.ID, service.ParseQuery(raw))
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		page := s.boardPage(u, b, nil)
+		page.Query, page.Searching = raw, true
+		for _, c := range hits {
+			page.Results = append(page.Results, s.cardView(u, b, c))
+		}
+		s.render(w, s.pages["board"], "layout", http.StatusOK, page)
+		return
+	}
+
 	cards, err := s.svc.Cards(r.Context(), b.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.pages["board"], "layout", http.StatusOK,
-		s.boardPage(identity.FromContext(r.Context()), b, cards))
+	s.render(w, s.pages["board"], "layout", http.StatusOK, s.boardPage(u, b, cards))
 }
 
 func cardInput(r *http.Request) service.CardInput {

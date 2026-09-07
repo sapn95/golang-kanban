@@ -371,6 +371,46 @@ func (k *Kanban) UpdateCard(ctx context.Context, id model.ID, in CardInput) (*mo
 	return c, nil
 }
 
+// Search returns the cards of a board matching q, in board order, or in
+// most-recently-archived order when the query asks for the archive.
+//
+// An empty query returns the board unfiltered, so the search box can be wired
+// to the same handler as the board itself.
+func (k *Kanban) Search(ctx context.Context, boardID model.ID, q Query) ([]model.Card, error) {
+	board, err := k.store.GetBoardByID(ctx, boardID)
+	if err != nil {
+		return nil, err
+	}
+
+	var cards []model.Card
+	if q.Archived {
+		cards, err = k.store.ListArchivedCards(ctx, boardID)
+	} else {
+		cards, err = k.store.ListCards(ctx, boardID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if q.Empty() {
+		return cards, nil
+	}
+
+	// Resolved once for the board rather than per card.
+	names := make(map[model.ID]string, len(board.Labels))
+	for _, l := range board.Labels {
+		names[l.ID] = strings.ToLower(l.Name)
+	}
+	today := k.now().UTC().Truncate(24 * time.Hour)
+
+	out := make([]model.Card, 0, len(cards))
+	for _, c := range cards {
+		if q.Match(c, names, today) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
 // ArchiveCard takes a card off the board. It keeps its column, position,
 // labels and subtasks, so RestoreCard puts back the same card.
 func (k *Kanban) ArchiveCard(ctx context.Context, id model.ID) error {

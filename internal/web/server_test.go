@@ -766,3 +766,77 @@ func TestArchiveThroughTheWeb(t *testing.T) {
 		}
 	})
 }
+
+func TestSearchOnTheBoardURL(t *testing.T) {
+	setup := func(t *testing.T) *env {
+		t.Helper()
+		e := seeded(t)
+		ctx := context.Background()
+		b, err := e.svc.Board(ctx, "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID,
+			service.CardInput{Title: "Fix the login page", Description: "throws on submit"}); err != nil {
+			t.Fatal(err)
+		}
+		gone, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID, service.CardInput{Title: "old login work"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := e.svc.ArchiveCard(ctx, gone.ID); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+
+	t.Run("a hit is shown and the query is echoed back", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, "/b/demo?q=login", nil).Body.String()
+		if !strings.Contains(body, "Fix the login page") {
+			t.Error("the matching card is not in the results")
+		}
+		if !strings.Contains(body, `value="login"`) {
+			t.Error("the query was not put back in the box, so a reload would lose it")
+		}
+	})
+
+	t.Run("the board's own cards are not all shown during a search", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, "/b/demo?q=nothingmatchesthis", nil).Body.String()
+		if !strings.Contains(body, "Nothing matches that") {
+			t.Error("an empty result set silently rendered the board instead of saying so")
+		}
+		if strings.Contains(body, string(e.card.ID)) {
+			t.Error("a non-matching card was still drawn")
+		}
+	})
+
+	t.Run("archived cards are only found with is:archived", func(t *testing.T) {
+		e := setup(t)
+		plain := e.do(http.MethodGet, "/b/demo?q=login", nil).Body.String()
+		if strings.Contains(plain, "old login work") {
+			t.Error("an archived card turned up in an ordinary search")
+		}
+		arch := e.do(http.MethodGet, "/b/demo?q=login+is%3Aarchived", nil).Body.String()
+		if !strings.Contains(arch, "old login work") {
+			t.Error("is:archived did not reach the archive")
+		}
+		if strings.Contains(arch, "Fix the login page") {
+			t.Error("is:archived also returned cards that are still on the board")
+		}
+	})
+
+	t.Run("an empty query is the plain board", func(t *testing.T) {
+		e := setup(t)
+		for _, path := range []string{"/b/demo", "/b/demo?q=", "/b/demo?q=%20%20"} {
+			body := e.do(http.MethodGet, path, nil).Body.String()
+			if strings.Contains(body, "Nothing matches that") {
+				t.Errorf("%s rendered a search with no hits instead of the board", path)
+			}
+			if !strings.Contains(body, "Add New Card") {
+				t.Errorf("%s did not render the board", path)
+			}
+		}
+	})
+}
