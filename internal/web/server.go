@@ -119,7 +119,15 @@ type cardView struct {
 	Columns     []model.Column // every column, so the edit form can move the card
 	Due         string         // "" or "2 Jan 2006"
 	DueInput    string         // "" or "2006-01-02"
-	Overdue     bool
+	// DueState is "", "overdue", "today", "soon" or "later". A single flag
+	// only distinguished late from not late, which said nothing about a card
+	// due in an hour and a card due in a month.
+	DueState string
+	// SubtasksDone and SubtasksTotal draw the checklist's progress on the card
+	// face. Percent is separate because a template cannot divide.
+	SubtasksDone    int
+	SubtasksTotal   int
+	SubtasksPercent int
 	// CommentCount draws the badge on the card face. The board loads every
 	// card's count in one call; a single-card fragment counts its own.
 	CommentCount int
@@ -142,10 +150,18 @@ type commentView struct {
 }
 
 type columnView struct {
-	Column    model.Column
-	Cards     []cardView
-	Count     int
+	Column model.Column
+	Cards  []cardView
+	Count  int
+	// AtLimit is a full column, OverLimit one that is already past. They are
+	// separate because the first is working as intended and the second is not,
+	// and a column that only turns red once the rule has been broken tells
+	// nobody it was about to be.
+	AtLimit   bool
 	OverLimit bool
+	// LimitPercent fills the bar under the header, capped at 100 so an
+	// over-full column does not draw outside its own track.
+	LimitPercent int
 }
 
 type boardPage struct {
@@ -220,10 +236,36 @@ func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comment
 	if !c.DueDate.IsZero() {
 		v.Due = c.DueDate.Format("2 Jan 2006")
 		v.DueInput = c.DueDate.Format("2006-01-02")
-		today := s.now().UTC().Truncate(24 * time.Hour)
-		v.Overdue = c.DueDate.Before(today)
+		v.DueState = dueState(s.now().UTC().Truncate(24*time.Hour), c.DueDate)
+	}
+	for _, st := range c.Subtasks {
+		if st.Done {
+			v.SubtasksDone++
+		}
+	}
+	v.SubtasksTotal = len(c.Subtasks)
+	if v.SubtasksTotal > 0 {
+		v.SubtasksPercent = v.SubtasksDone * 100 / v.SubtasksTotal
 	}
 	return v
+}
+
+// dueSoon is how far ahead a due date still counts as pressing. Three days is
+// long enough to act on and short enough that most of the board is not amber.
+const dueSoon = 3
+
+// dueState grades a due date against today. Both are dates at midnight UTC.
+func dueState(today, due time.Time) string {
+	switch {
+	case due.Before(today):
+		return "overdue"
+	case due.Equal(today):
+		return "today"
+	case due.Before(today.AddDate(0, 0, dueSoon+1)):
+		return "soon"
+	default:
+		return "later"
+	}
 }
 
 func (s *Server) commentView(u identity.User, c model.Comment) commentView {
@@ -272,7 +314,11 @@ func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, 
 	}
 	for _, col := range b.Columns {
 		cv := columnView{Column: col, Cards: byColumn[col.ID], Count: len(byColumn[col.ID])}
-		cv.OverLimit = col.WIPLimit > 0 && cv.Count > col.WIPLimit
+		if col.WIPLimit > 0 {
+			cv.AtLimit = cv.Count == col.WIPLimit
+			cv.OverLimit = cv.Count > col.WIPLimit
+			cv.LimitPercent = min(cv.Count*100/col.WIPLimit, 100)
+		}
 		p.Columns = append(p.Columns, cv)
 	}
 	return p

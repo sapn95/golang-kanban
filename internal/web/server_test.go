@@ -1084,3 +1084,133 @@ func TestLabelsThroughTheWeb(t *testing.T) {
 		want(t, e.do(http.MethodGet, "/b/demo/labels", nil), http.StatusOK, "0 labels")
 	})
 }
+
+func TestDueState(t *testing.T) {
+	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
+	now := day(5)
+	tests := []struct {
+		name string
+		due  time.Time
+		want string
+	}{
+		{"yesterday", day(4), "overdue"},
+		{"today", day(5), "today"},
+		{"tomorrow", day(6), "soon"},
+		{"the last day that still counts as soon", day(8), "soon"},
+		{"one day past that", day(9), "later"},
+		{"next month", time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC), "later"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dueState(now, tt.due); got != tt.want {
+				t.Errorf("dueState = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBoardShowsWhatIsPressing(t *testing.T) {
+	t.Run("the checklist shows its progress on the card face", func(t *testing.T) {
+		e := seeded(t)
+		// The seeded card has two subtasks, one of them done.
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, ">1/2<") {
+			t.Error("the card face does not say how much of the checklist is done")
+		}
+		if !strings.Contains(body, "width: 50%") {
+			t.Error("the progress bar is not drawn at half")
+		}
+		if strings.Contains(body, "ZgotmplZ") {
+			t.Error("the width was refused by the template's CSS escaper")
+		}
+	})
+
+	t.Run("a WIP limit is visible before a drop is refused", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		todo := e.board.Columns[0]
+
+		// One card in the column already, so a limit of 1 is a full column
+		// rather than an over-full one.
+		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1); err != nil {
+			t.Fatal(err)
+		}
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, "1 / 1") {
+			t.Error("the column header does not show the count against the limit")
+		}
+		if !strings.Contains(body, "At the limit.") {
+			t.Error("a full column says nothing until a drop is refused")
+		}
+		if !strings.Contains(body, "bg-amber-500") {
+			t.Error("the limit bar is not amber on a full column")
+		}
+		// The over-limit notice is in the page too, hidden, so that a drop can
+		// switch to it without the server rendering the copy again.
+		if !strings.Contains(body, "over its limit") {
+			t.Error("the over-limit notice is missing, so a drop has nothing to reveal")
+		}
+	})
+
+	t.Run("an over-full column says by how much", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		todo := e.board.Columns[0]
+		if _, err := e.svc.CreateCard(ctx, e.board.ID, todo.ID, service.CardInput{Title: "second"}); err != nil {
+			t.Fatal(err)
+		}
+		// Set the limit after the fact: a limit lowered under a column that is
+		// already fuller than it is the case the board has to survive.
+		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1); err != nil {
+			t.Fatal(err)
+		}
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, "2 / 1") {
+			t.Error("the header does not show the column past its limit")
+		}
+		if !strings.Contains(body, "bg-red-500") {
+			t.Error("the limit bar is not red on an over-full column")
+		}
+		// Capped, so the bar does not draw outside its own track.
+		if !strings.Contains(body, "width: 100%") {
+			t.Errorf("the bar was not capped at 100%%")
+		}
+	})
+
+	t.Run("a column without a limit draws no bar", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if strings.Contains(body, "data-limit-bar-for") {
+			t.Error("a column with no WIP limit still draws a limit bar")
+		}
+	})
+}
+
+func TestDueDatesAreGradedOnTheCardFace(t *testing.T) {
+	tests := []struct {
+		name string
+		due  string
+		want string
+	}{
+		{"overdue is red", "2026-09-01", "bg-red-100"},
+		{"today is amber", "2026-09-05", "bg-amber-100"},
+		{"within days is yellow", "2026-09-07", "bg-yellow-50"},
+		{"further out is blue", "2026-11-01", "bg-blue-100"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := newEnv(t, nil, nil)
+			ctx := context.Background()
+			b, err := e.svc.CreateBoard(ctx, "Dates", "dates", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID, service.CardInput{
+				Title: "dated", DueDate: tt.due,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			want(t, e.do(http.MethodGet, "/b/dates", nil), http.StatusOK, tt.want)
+		})
+	}
+}

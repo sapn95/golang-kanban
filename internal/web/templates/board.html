@@ -85,11 +85,35 @@
 <div class="kanban-scroller">
   {{range .Columns}}
   <div class="kanban-column bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6">
-    <h3 class="text-xl font-bold text-center mb-4 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600 pb-2 flex justify-center items-center gap-2">
+    <h3 class="text-xl font-bold text-center mb-2 text-gray-700 dark:text-gray-300 flex justify-center items-center gap-2">
       <span>{{.Column.Name}}</span>
-      <span class="text-sm font-normal text-gray-500 dark:text-gray-400{{if .OverLimit}} text-red-500{{end}}"
+      <span class="text-sm font-normal tabular-nums {{if .OverLimit}}text-red-600 dark:text-red-400{{else if .AtLimit}}text-amber-600 dark:text-amber-400{{else}}text-gray-500 dark:text-gray-400{{end}}"
         data-count-for="{{.Column.ID}}" data-limit="{{.Column.WIPLimit}}">{{if .Column.WIPLimit}}{{.Count}} / {{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
     </h3>
+    <!-- A WIP limit used to be visible only as a drop the server refused. The
+         bar says how close the column is before anyone drags anything. -->
+    {{if .Column.WIPLimit}}
+    <div class="h-1 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden mb-2" data-limit-bar-for="{{.Column.ID}}"
+         title="{{.Count}} of {{.Column.WIPLimit}} allowed in this column">
+      <div class="h-full rounded-full {{if .OverLimit}}bg-red-500{{else if .AtLimit}}bg-amber-500{{else}}bg-blue-500{{end}}"
+           style="width: {{.LimitPercent}}%"></div>
+    </div>
+    {{end}}
+    <div class="border-b border-gray-200 dark:border-gray-600 mb-4"></div>
+    <!-- Both are always in the page and one of them is hidden, so that a drop
+         can switch between them without the server rendering the copy twice.
+         A class rather than the hidden attribute: Tailwind's display
+         utilities beat [hidden] on specificity. -->
+    {{if .Column.WIPLimit}}
+    <p data-limit-note-for="{{.Column.ID}}" data-state="over"
+       class="mb-3 text-xs text-red-600 dark:text-red-400 text-center{{if not .OverLimit}} hidden{{end}}">
+      This column is over its limit. Finish something before moving more in.
+    </p>
+    <p data-limit-note-for="{{.Column.ID}}" data-state="at"
+       class="mb-3 text-xs text-amber-600 dark:text-amber-400 text-center{{if not .AtLimit}} hidden{{end}}">
+      At the limit. Finish something before starting another.
+    </p>
+    {{end}}
     <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="space-y-3 min-h-[120px] max-h-[70vh] overflow-y-auto pr-1 sm:pr-2">
       {{range .Cards}}{{template "card" .}}{{end}}
     </div>
