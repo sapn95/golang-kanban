@@ -102,6 +102,8 @@ without breaking anyone. Boards become first-class, and the hand-rolled
 | GET    | `/cards/{id}`                          | card fragment (re-render after edit)                 |
 | GET    | `/cards/{id}/edit`                     | edit form fragment                                   |
 | POST   | `/cards/{id}`                          | update title/description/due date/labels/subtasks    |
+| POST   | `/cards/{id}/assignee`                 | quick edit: form field `assignee`, `@me` or empty    |
+| POST   | `/cards/{id}/labels/{label}/toggle`    | quick edit: put one of the board's labels on or off  |
 | POST   | `/cards/{id}/delete`                   | delete                                               |
 | POST   | `/b/{board}/columns/{column}/order`    | JSON `{"order":[ids]}`: authoritative card order     |
 | POST   | `/b/{board}/columns`                   | (Phase 2) create column                              |

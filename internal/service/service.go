@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -412,6 +413,102 @@ func (k *Kanban) UpdateCard(ctx context.Context, id model.ID, in CardInput) (*mo
 		return nil, err
 	}
 	return c, nil
+}
+
+// SetCardAssignee changes only who a card is assigned to. An empty address
+// unassigns it.
+//
+// Separate from UpdateCard rather than a call through it, because a quick edit
+// on the card face knows one field. Routing it through UpdateCard would mean
+// sending every other field back to keep it, and two people quick-editing one
+// card would then overwrite each other's titles.
+func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee string) (*model.Card, error) {
+	assignee = strings.TrimSpace(assignee)
+	if err := checkText("assignee", assignee, MaxAssignee, false); err != nil {
+		return nil, err
+	}
+	c, err := k.store.GetCard(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if c.Assignee == assignee {
+		// Nothing to write, and no reason to move UpdatedAt for a click that
+		// changed nothing.
+		return c, nil
+	}
+	c.Assignee, c.UpdatedAt = assignee, k.now()
+	if err := k.store.UpdateCard(ctx, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// ToggleCardLabel puts a label on a card or takes it off, whichever the card
+// is not already. Same reason as SetCardAssignee for not going through
+// UpdateCard.
+//
+// The label has to belong to the card's own board. Nothing else checks that,
+// so a crafted id would otherwise attach another board's label to this one.
+func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*model.Card, error) {
+	c, err := k.store.GetCard(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	b, err := k.store.GetBoardByID(ctx, c.BoardID)
+	if err != nil {
+		return nil, err
+	}
+	if b.Label(labelID) == nil {
+		return nil, store.ErrNotFound
+	}
+	// No cap on how many: a toggle can only ever add a label the board has, so
+	// the board's own label count is the bound.
+	if i := slices.Index(c.Labels, labelID); i >= 0 {
+		c.Labels = slices.Delete(c.Labels, i, i+1)
+	} else {
+		c.Labels = append(c.Labels, labelID)
+	}
+	c.UpdatedAt = k.now()
+	if err := k.store.UpdateCard(ctx, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// People collects the addresses that already appear on a board, so a quick
+// edit can offer the people it knows instead of asking for an address to be
+// typed every time. extra is put in front, for the viewer.
+//
+// It reads the cards the caller already has rather than querying again: the
+// only caller is drawing a board it has just loaded. Comment authors are left
+// out for the same reason — they would cost a query per board view, and
+// someone who has commented is usually someone who has been assigned.
+func People(cards []model.Card, extra ...string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(addr string) {
+		addr = strings.TrimSpace(addr)
+		// Case is not part of an address for our purposes: the same person
+		// twice in a menu is a bug, not a feature.
+		if addr == "" || seen[strings.ToLower(addr)] {
+			return
+		}
+		seen[strings.ToLower(addr)] = true
+		out = append(out, addr)
+	}
+	for _, e := range extra {
+		add(e)
+	}
+	rest := len(out)
+	for _, c := range cards {
+		add(c.Assignee)
+	}
+	// The viewer stays first; everyone else is alphabetical, so the menu does
+	// not reshuffle itself as cards move around.
+	slices.SortFunc(out[rest:], func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	return out
 }
 
 // Search returns the cards of a board matching q, in board order, or in

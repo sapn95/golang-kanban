@@ -117,3 +117,23 @@ html.dark { color-scheme: dark; background-color: #111827; }
   max-height: none;
   overflow-y: visible;
 }
+
+/* One row of a quick-edit panel on the card face: assign to somebody, put a
+   label on. Plain CSS rather than the same dozen Tailwind classes repeated on
+   every row of every list on every card. */
+.quick-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.25rem 0.375rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-align: left;
+  color: #374151;
+  cursor: pointer;
+}
+.quick-item:hover { background-color: #f3f4f6; }
+.dark .quick-item { color: #e5e7eb; }
+.dark .quick-item:hover { background-color: #4b5563; }

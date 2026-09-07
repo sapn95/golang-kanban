@@ -764,3 +764,131 @@ func TestLabelColourIsCheckedBeforeItReachesATemplate(t *testing.T) {
 		})
 	}
 }
+
+func TestSetCardAssignee(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "T"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := k.SetCardAssignee(ctx, c.ID, "  her@example.com  "); err != nil {
+		t.Fatalf("SetCardAssignee: %v", err)
+	}
+	got, _ := k.Card(ctx, c.ID)
+	if got.Assignee != "her@example.com" {
+		t.Errorf("assignee = %q, want it trimmed to her@example.com", got.Assignee)
+	}
+	// Everything else on the card is untouched: a quick edit that reset the
+	// title to empty would be worse than no quick edit at all.
+	if got.Title != "T" {
+		t.Errorf("title = %q, want T", got.Title)
+	}
+
+	if _, err := k.SetCardAssignee(ctx, c.ID, ""); err != nil {
+		t.Fatalf("unassigning: %v", err)
+	}
+	if got, _ = k.Card(ctx, c.ID); got.Assignee != "" {
+		t.Errorf("assignee = %q after unassigning, want empty", got.Assignee)
+	}
+
+	if _, err := k.SetCardAssignee(ctx, c.ID, strings.Repeat("a", MaxAssignee+1)); !isValidation(err, "assignee") {
+		t.Errorf("an over-long assignee = %v, want a validation error", err)
+	}
+	if _, err := k.SetCardAssignee(ctx, "nope", "her@example.com"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("assigning an unknown card = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSetCardAssigneeToTheSamePersonChangesNothing(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "T", Assignee: "her@example.com"})
+
+	// A clock that moves, so a needless write would show up as a new UpdatedAt.
+	later := fixed.Add(time.Hour)
+	k.now = func() time.Time { return later }
+	if _, err := k.SetCardAssignee(ctx, c.ID, "her@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := k.Card(ctx, c.ID)
+	if !got.UpdatedAt.Equal(c.UpdatedAt) {
+		t.Errorf("UpdatedAt moved to %v for a click that changed nothing", got.UpdatedAt)
+	}
+}
+
+func TestToggleCardLabel(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	bug, _ := k.CreateLabel(ctx, b.ID, "bug", "#f00")
+	c, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "T"})
+
+	if _, err := k.ToggleCardLabel(ctx, c.ID, bug.ID); err != nil {
+		t.Fatalf("adding: %v", err)
+	}
+	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 1 || got.Labels[0] != bug.ID {
+		t.Errorf("labels = %v, want just the bug label", got.Labels)
+	}
+	if _, err := k.ToggleCardLabel(ctx, c.ID, bug.ID); err != nil {
+		t.Fatalf("removing: %v", err)
+	}
+	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
+		t.Errorf("labels = %v after the second toggle, want none", got.Labels)
+	}
+
+	// A label belongs to a board. Without this check a crafted id would hang
+	// another board's label on this card, and the board would then render a
+	// card carrying a label it does not have.
+	other, _ := k.CreateBoard(ctx, "Other", "", nil)
+	theirs, _ := k.CreateLabel(ctx, other.ID, "theirs", "#00f")
+	if _, err := k.ToggleCardLabel(ctx, c.ID, theirs.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("another board's label = %v, want ErrNotFound", err)
+	}
+	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
+		t.Errorf("labels = %v, want the refused toggle to have changed nothing", got.Labels)
+	}
+	if _, err := k.ToggleCardLabel(ctx, "nope", theirs.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("toggling on an unknown card = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPeople(t *testing.T) {
+	cards := []model.Card{
+		{Assignee: "zoe@example.com"},
+		{Assignee: ""},
+		{Assignee: "  anna@example.com  "},
+		{Assignee: "ZOE@example.com"},
+		{Assignee: "mike@example.com"},
+	}
+	tests := []struct {
+		name  string
+		extra []string
+		want  []string
+	}{
+		{"nobody signed in", nil,
+			[]string{"anna@example.com", "mike@example.com", "zoe@example.com"}},
+		{"the viewer comes first even out of order", []string{"zoe@example.com"},
+			[]string{"zoe@example.com", "anna@example.com", "mike@example.com"}},
+		{"a viewer nobody has assigned is still offered", []string{"new@example.com"},
+			[]string{"new@example.com", "anna@example.com", "mike@example.com", "zoe@example.com"}},
+		{"an anonymous viewer adds nothing", []string{""},
+			[]string{"anna@example.com", "mike@example.com", "zoe@example.com"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := People(cards, tt.extra...)
+			if len(got) != len(tt.want) {
+				t.Fatalf("People = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("People = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}

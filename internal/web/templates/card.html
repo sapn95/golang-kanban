@@ -5,8 +5,8 @@
            value="{{.Card.ID}}" aria-label="Select card">
     <h5 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex-1 break-words">{{.Card.Title}}</h5>
   </div>
-  {{if or .Labels .Due}}
-  <div class="flex flex-wrap gap-1 mb-2 text-xs">
+  {{if or .Labels .Due .BoardLabels}}
+  <div class="flex flex-wrap items-center gap-1 mb-2 text-xs">
     {{range .Labels}}
     <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none
       {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
@@ -21,6 +21,14 @@
       title="{{if eq .DueState "overdue"}}Overdue{{else if eq .DueState "today"}}Due today{{else if eq .DueState "soon"}}Due within days{{else}}Due{{end}}">
       <i class="bi bi-calendar-event mr-1"></i>{{.Due}}
     </span>
+    {{end}}
+    {{if .BoardLabels}}
+    <button type="button" class="quick-toggle inline-flex items-center px-2 py-1 rounded-full leading-none border border-dashed
+                                 border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-400
+                                 hover:text-blue-600 hover:border-blue-400 dark:hover:text-blue-400"
+            data-panel="labels-{{.Card.ID}}" title="Labels" aria-label="Labels">
+      <i class="bi bi-plus-lg"></i>
+    </button>
     {{end}}
   </div>
   {{end}}
@@ -46,15 +54,24 @@
   {{end}}
   <div class="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-600">
     <span class="flex items-center gap-2 mr-auto min-w-0">
-      {{if .Card.Assignee}}
-      <span class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 min-w-0" title="{{.Card.Assignee}}">
+      <button type="button" class="quick-toggle flex items-center gap-1.5 min-w-0 -mx-1 px-1 py-0.5 rounded-lg text-xs
+                                   hover:bg-gray-100 dark:hover:bg-gray-600"
+              data-panel="assignee-{{.Card.ID}}" aria-label="Assignee"
+              title="{{if .Card.Assignee}}{{.Card.Assignee}}{{else}}Nobody is assigned{{end}}">
+        {{if .Card.Assignee}}
         <span class="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full text-white text-[10px] font-semibold uppercase
                      {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}">
           {{initials .Card.Assignee}}
         </span>
-        <span class="hidden sm:inline truncate">{{personName .Card.Assignee}}</span>
-      </span>
-      {{end}}
+        <span class="hidden sm:inline truncate text-gray-600 dark:text-gray-300">{{personName .Card.Assignee}}</span>
+        {{else}}
+        <span class="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full border border-dashed
+                     border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-500">
+          <i class="bi bi-person"></i>
+        </span>
+        <span class="hidden sm:inline text-gray-400 dark:text-gray-500">Unassigned</span>
+        {{end}}
+      </button>
       {{if .CommentCount}}
       <span class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 shrink-0"
             title="{{.CommentCount}} comment{{if ne .CommentCount 1}}s{{end}}">
@@ -75,5 +92,67 @@
       <i class="bi bi-trash text-sm"></i>
     </button>
   </div>
+
+  <!-- The quick-edit panels. They sit in the card's own flow and push it
+       taller rather than floating above it: a column is a scroll container,
+       and anything absolutely positioned inside one is clipped by it.
+
+       One small form per choice, so the name/value pair the server reads is
+       unambiguous. A single form with a submit button per person would depend
+       on htmx sending the submitter's value, and the free-text field below
+       shares the field name. -->
+  <div id="assignee-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-gray-100 dark:border-gray-600">
+    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Assign to</p>
+    <div class="flex flex-col gap-0.5 max-h-44 overflow-y-auto">
+      {{range .People}}
+      <form hx-post="/cards/{{$.Card.ID}}/assignee" hx-target="#card-{{$.Card.ID}}" hx-swap="outerHTML">
+        <!-- The viewer goes by name, so their own address is not written into
+             every card on the board. -->
+        <input type="hidden" name="assignee" value="{{if eq . $.Viewer.Email}}@me{{else}}{{.}}{{end}}">
+        <button type="submit" class="quick-item" title="{{if eq . $.Viewer.Email}}You{{else}}{{.}}{{end}}">
+          <span class="inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-500
+                       text-[9px] font-semibold uppercase text-white">{{initials .}}</span>
+          <span class="truncate">{{personName .}}{{if eq . $.Viewer.Email}} (you){{end}}</span>
+          {{if eq . $.Card.Assignee}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
+        </button>
+      </form>
+      {{end}}
+      {{if .Card.Assignee}}
+      <form hx-post="/cards/{{.Card.ID}}/assignee" hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML">
+        <input type="hidden" name="assignee" value="">
+        <button type="submit" class="quick-item text-gray-500 dark:text-gray-400">
+          <i class="bi bi-person-dash w-5 shrink-0 text-center"></i><span>Unassign</span>
+        </button>
+      </form>
+      {{end}}
+    </div>
+    <form class="mt-1.5 flex items-center gap-1" hx-post="/cards/{{.Card.ID}}/assignee"
+          hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML">
+      <!-- required, so that Set on an empty box does nothing rather than
+           quietly unassigning the card. Unassign is its own button. -->
+      <input type="email" name="assignee" maxlength="320" required placeholder="somebody@example.com"
+             class="min-w-0 flex-1 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600
+                    bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+      <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white">Set</button>
+    </form>
+  </div>
+
+  {{if .BoardLabels}}
+  <div id="labels-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-gray-100 dark:border-gray-600">
+    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Labels</p>
+    <div class="flex flex-col gap-0.5 max-h-44 overflow-y-auto">
+      {{$card := .Card}}
+      {{range .BoardLabels}}
+      <button type="button" class="quick-item"
+              hx-post="/cards/{{$card.ID}}/labels/{{.ID}}/toggle" hx-target="#card-{{$card.ID}}" hx-swap="outerHTML">
+        <span class="w-3 h-3 shrink-0 rounded-full ring-1 ring-gray-300 dark:ring-gray-500"
+              {{with .Color}}style="background-color: {{.}}"{{end}}></span>
+        <span class="truncate">{{.Name}}</span>
+        {{if hasLabel $card .ID}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
 </div>
 {{end}}
