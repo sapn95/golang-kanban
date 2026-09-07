@@ -48,14 +48,42 @@
     });
   }
 
+  // A drop changes a column's count without the server redrawing the page, so
+  // everything the WIP limit shows has to be brought along by hand: the count,
+  // its colour, the bar under the header and the line under that. The copy
+  // stays in the template — both notices are rendered and one is hidden.
   function refreshCounts() {
     document.querySelectorAll('[data-column]').forEach(function (col) {
-      var badge = document.querySelector('[data-count-for="' + col.dataset.column + '"]');
+      var id = col.dataset.column;
+      var badge = document.querySelector('[data-count-for="' + id + '"]');
       if (!badge) { return; }
       var n = col.querySelectorAll('[data-id]').length;
       var limit = parseInt(badge.dataset.limit || '0', 10);
+      var over = limit > 0 && n > limit;
+      var at = limit > 0 && n === limit;
+
       badge.textContent = limit > 0 ? n + ' / ' + limit : String(n);
-      badge.classList.toggle('text-red-500', limit > 0 && n > limit);
+      badge.classList.toggle('text-red-600', over);
+      badge.classList.toggle('dark:text-red-400', over);
+      badge.classList.toggle('text-amber-600', at);
+      badge.classList.toggle('dark:text-amber-400', at);
+      badge.classList.toggle('text-gray-500', !over && !at);
+      badge.classList.toggle('dark:text-gray-400', !over && !at);
+
+      var bar = document.querySelector('[data-limit-bar-for="' + id + '"]');
+      if (bar && limit > 0) {
+        var fill = bar.firstElementChild;
+        fill.style.width = Math.min(Math.round((n / limit) * 100), 100) + '%';
+        fill.classList.toggle('bg-red-500', over);
+        fill.classList.toggle('bg-amber-500', at);
+        fill.classList.toggle('bg-blue-500', !over && !at);
+        bar.title = n + ' of ' + limit + ' allowed in this column';
+      }
+
+      document.querySelectorAll('[data-limit-note-for="' + id + '"]').forEach(function (note) {
+        var wanted = note.dataset.state === 'over' ? over : at;
+        note.classList.toggle('hidden', !wanted);
+      });
     });
   }
 

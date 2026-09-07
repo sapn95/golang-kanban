@@ -8,13 +8,29 @@
   {{if or .Labels .Due}}
   <div class="flex flex-wrap gap-1 mb-2 text-xs">
     {{range .Labels}}<span class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600"{{with .Color}} style="background-color: {{.}}; color: white"{{end}}>{{.Name}}</span>{{end}}
-    {{if .Due}}<span class="px-2 py-0.5 rounded-full {{if .Overdue}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200{{else}}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200{{end}}"><i class="bi bi-calendar-event mr-1"></i>{{.Due}}</span>{{end}}
+    {{if .Due}}
+    <span class="px-2 py-0.5 rounded-full
+      {{if eq .DueState "overdue"}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200
+      {{else if eq .DueState "today"}}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200
+      {{else if eq .DueState "soon"}}bg-yellow-50 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200
+      {{else}}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200{{end}}"
+      title="{{if eq .DueState "overdue"}}Overdue{{else if eq .DueState "today"}}Due today{{else if eq .DueState "soon"}}Due within days{{else}}Due{{end}}">
+      <i class="bi bi-calendar-event mr-1"></i>{{.Due}}
+    </span>
+    {{end}}
   </div>
   {{end}}
   {{if .Card.Description}}
     <p class="text-gray-600 dark:text-gray-300 text-sm mb-3 whitespace-pre-wrap">{{.Card.Description}}</p>
   {{end}}
   {{if .Card.Subtasks}}
+    <div class="flex items-center gap-2 mb-1.5 text-xs text-gray-500 dark:text-gray-400">
+      <div class="flex-1 h-1.5 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
+        <div class="h-full rounded-full {{if eq .SubtasksDone .SubtasksTotal}}bg-green-500{{else}}bg-blue-500{{end}}"
+             style="width: {{.SubtasksPercent}}%"></div>
+      </div>
+      <span class="tabular-nums shrink-0">{{.SubtasksDone}}/{{.SubtasksTotal}}</span>
+    </div>
     <ul class="space-y-1 mb-3">
       {{range .Card.Subtasks}}
       <li class="flex items-center text-sm">
