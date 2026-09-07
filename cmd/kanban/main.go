@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"kanban/internal/config"
-	"kanban/internal/identity"
 	"kanban/internal/service"
 	"kanban/internal/store"
 	"kanban/internal/store/memory"
@@ -123,7 +122,7 @@ func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Log
 	log.Info("boards ready", "count", len(boards))
 
 	srv := &http.Server{
-		Handler:           identityMiddleware(cfg, log)(web.New(svc, st.Ping, log)),
+		Handler:           web.New(svc, st.Ping, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -155,27 +154,4 @@ func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Log
 		}
 	}
 	return 0
-}
-
-// identityMiddleware builds the request-identity layer from the configuration.
-// In none mode it is a pass-through, so the board works with no identity
-// provider at all and the rest of the app does not have to know the
-// difference: every handler reads identity.FromContext and gets the zero user.
-func identityMiddleware(cfg config.Config, log *slog.Logger) func(http.Handler) http.Handler {
-	ic := identity.Config{Mode: identity.Mode(cfg.AuthMode), Header: cfg.AuthHeader}
-	if cfg.AuthMode == config.AuthAccess {
-		ic.Verifier = &identity.AccessVerifier{
-			CertsURL: cfg.AccessCertsURL(),
-			Audience: cfg.AccessAudience,
-			Issuer:   cfg.AccessIssuer(),
-		}
-		// Logged rather than fatal: an assertion that fails to verify is
-		// usually a key rotation or an expired session, and turning either
-		// into an outage would be worse than serving the page anonymously.
-		ic.OnError = func(err error) { log.Warn("access assertion rejected", "err", err) }
-	}
-	if cfg.AuthMode != config.AuthNone {
-		log.Info("request identity enabled", "mode", cfg.AuthMode)
-	}
-	return identity.Middleware(ic)
 }

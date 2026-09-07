@@ -27,13 +27,6 @@ type Config struct {
 	DBSSLMode   string // DB_SSLMODE, default disable
 	SQLitePath  string // SQLITE_PATH, default /data/kanban.db
 
-	// AUTH_MODE: none | proxy | access. See internal/identity for why proxy
-	// and access are not interchangeable.
-	AuthMode         string
-	AuthHeader       string // AUTH_HEADER, the header read in proxy mode
-	AccessTeamDomain string // ACCESS_TEAM_DOMAIN, e.g. team.cloudflareaccess.com
-	AccessAudience   string // ACCESS_AUD, the Access application's AUD tag
-
 	AutoMigrate bool   // AUTO_MIGRATE, default true
 	LogLevel    string // LOG_LEVEL: debug | info | warn | error
 	LogFormat   string // LOG_FORMAT: text | json
@@ -44,13 +37,6 @@ const (
 	StoragePostgres = "postgres"
 	StorageSQLite   = "sqlite"
 	StorageMemory   = "memory"
-)
-
-// Authentication modes accepted by AUTH_MODE.
-const (
-	AuthNone   = "none"
-	AuthProxy  = "proxy"
-	AuthAccess = "access"
 )
 
 // The image declares VOLUME ["/data"] for this file, so mounting something
@@ -86,12 +72,8 @@ func FromEnv(get Lookup) (Config, error) {
 		DBSSLMode:   env("DB_SSLMODE", "disable"),
 		SQLitePath:  env("SQLITE_PATH", defaultSQLitePath),
 
-		AuthMode:         strings.ToLower(env("AUTH_MODE", AuthNone)),
-		AuthHeader:       env("AUTH_HEADER", "X-Forwarded-Email"),
-		AccessTeamDomain: strings.TrimSuffix(strings.TrimPrefix(env("ACCESS_TEAM_DOMAIN", ""), "https://"), "/"),
-		AccessAudience:   env("ACCESS_AUD", ""),
-		LogLevel:         strings.ToLower(env("LOG_LEVEL", "info")),
-		LogFormat:        strings.ToLower(env("LOG_FORMAT", "text")),
+		LogLevel:  strings.ToLower(env("LOG_LEVEL", "info")),
+		LogFormat: strings.ToLower(env("LOG_FORMAT", "text")),
 	}
 	auto, err := strconv.ParseBool(env("AUTO_MIGRATE", "true"))
 	if err != nil {
@@ -115,24 +97,6 @@ func (c Config) Validate() error {
 	case "text", "json":
 	default:
 		return fmt.Errorf("LOG_FORMAT: unknown format %q (want text or json)", c.LogFormat)
-	}
-	switch c.AuthMode {
-	case AuthNone, AuthProxy:
-	case AuthAccess:
-		// Both are load-bearing. Without the team domain there is nowhere
-		// to fetch signing keys; without the audience, a token minted for
-		// any other application on the same team would be accepted here.
-		if c.AccessTeamDomain == "" {
-			return fmt.Errorf("ACCESS_TEAM_DOMAIN: required when AUTH_MODE is %q", AuthAccess)
-		}
-		if c.AccessAudience == "" {
-			return fmt.Errorf("ACCESS_AUD: required when AUTH_MODE is %q", AuthAccess)
-		}
-	default:
-		return fmt.Errorf("AUTH_MODE: unknown mode %q (want none, proxy or access)", c.AuthMode)
-	}
-	if c.AuthMode == AuthProxy && c.AuthHeader == "" {
-		return fmt.Errorf("AUTH_HEADER: required when AUTH_MODE is %q", AuthProxy)
 	}
 	if c.ListenAddr == "" {
 		if _, err := strconv.Atoi(c.ServerPort); err != nil {
@@ -190,12 +154,4 @@ func (c Config) Logger(w interface{ Write([]byte) (int, error) }) *slog.Logger {
 		return slog.New(slog.NewJSONHandler(w, opts))
 	}
 	return slog.New(slog.NewTextHandler(w, opts))
-}
-
-// AccessIssuer is the iss claim Cloudflare puts on assertions for this team.
-func (c Config) AccessIssuer() string { return "https://" + c.AccessTeamDomain }
-
-// AccessCertsURL is where the team's signing keys are published.
-func (c Config) AccessCertsURL() string {
-	return c.AccessIssuer() + "/cdn-cgi/access/certs"
 }

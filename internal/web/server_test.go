@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"kanban/internal/identity"
 	"kanban/internal/model"
 	"kanban/internal/service"
 	"kanban/internal/store"
@@ -301,55 +300,4 @@ func TestConcurrentRequests(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-}
-
-func TestPagesShowTheSignedInUser(t *testing.T) {
-	e := seeded(t)
-
-	tests := []struct {
-		name string
-		path string
-	}{
-		{"board page", "/b/demo"},
-		{"boards page", "/"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			req = req.WithContext(identity.NewContext(req.Context(),
-				identity.User{Email: "someone@example.com"}))
-			rec := httptest.NewRecorder()
-			e.h.ServeHTTP(rec, req)
-
-			// The boards page redirects when there is exactly one board, so
-			// follow that rather than asserting on a 303 body.
-			if rec.Code == http.StatusSeeOther {
-				req = httptest.NewRequest(http.MethodGet, rec.Header().Get("Location"), nil)
-				req = req.WithContext(identity.NewContext(req.Context(),
-					identity.User{Email: "someone@example.com"}))
-				rec = httptest.NewRecorder()
-				e.h.ServeHTTP(rec, req)
-			}
-			body := rec.Body.String()
-			if !strings.Contains(body, "someone@example.com") {
-				t.Error("the page does not name the signed-in user")
-			}
-			if !strings.Contains(body, ">someone<") && !strings.Contains(body, "someone\n") {
-				t.Error("the page does not show the display name")
-			}
-		})
-	}
-}
-
-func TestPagesSayNothingWhenNobodyIsSignedIn(t *testing.T) {
-	e := seeded(t)
-	req := httptest.NewRequest(http.MethodGet, "/b/demo", nil)
-	rec := httptest.NewRecorder()
-	e.h.ServeHTTP(rec, req)
-
-	// "anonymous" is what Display falls back to; it must not be rendered as
-	// though it were a signed-in user.
-	if strings.Contains(rec.Body.String(), "anonymous") {
-		t.Error("the page shows an avatar for a request with no user")
-	}
 }
