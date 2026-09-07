@@ -11,6 +11,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 ### Features
 - Boards with as many columns as you like, each with an optional WIP limit.
 - Cards with description, due date, labels and a subtask checklist.
+- Labels are made and renamed from the board itself, with a fixed palette; the
+  page says how many cards carry one before you delete it.
 - Assignee per card, shown on the card face, with one click to take it yourself.
 - Archive a card instead of deleting it: it leaves the board, keeps its column
   and labels, and restoring puts back the same card.
