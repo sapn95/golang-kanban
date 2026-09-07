@@ -480,3 +480,43 @@ func TestBulkActions(t *testing.T) {
 		}
 	})
 }
+
+func TestSubtaskCountIsCapped(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+
+	// Measured before the cap existed: 200 000 subtasks rendered a board page
+	// of 39 MB against a 128Mi pod limit, and the card stayed in the database
+	// so every later render failed the same way.
+	many := make([]model.Subtask, MaxSubtasks+1)
+	for i := range many {
+		many[i] = model.Subtask{Title: "x"}
+	}
+	if _, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID,
+		CardInput{Title: "poison", Subtasks: many}); !isValidation(err, "subtasks") {
+		t.Fatalf("err = %v, want a validation error on subtasks", err)
+	}
+
+	// The cap itself is allowed, so it is a limit and not an off-by-one.
+	ok := many[:MaxSubtasks]
+	if _, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID,
+		CardInput{Title: "fine", Subtasks: ok}); err != nil {
+		t.Errorf("exactly MaxSubtasks was refused: %v", err)
+	}
+}
+
+func TestBulkDoesNotEchoTheAction(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "one"})
+
+	_, err := k.Bulk(ctx, b.ID, BulkAction("<script>alert(1)</script>"), []model.ID{c.ID}, "")
+	if err == nil {
+		t.Fatal("an unknown action was accepted")
+	}
+	if strings.Contains(err.Error(), "<script>") {
+		t.Errorf("the caller's input is reflected back: %v", err)
+	}
+}

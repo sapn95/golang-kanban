@@ -15,6 +15,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Select several cards (shift-click for a range) and move, assign or delete them at once.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
 - Dark mode.
+- Cross-site writes are refused, security headers are set, and request bodies
+  are capped; see [docs/adr/0006](docs/adr/0006-cross-site-writes.md).
 - Schema migrations run on start; an existing single-table database is imported automatically.
 
 ### How it looks

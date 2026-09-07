@@ -137,6 +137,8 @@ jobs:
           # A release installed before the auth section existed carries no
           # .Values.auth at all; --reuse-values then hands the templates nil.
           ok --set auth=null
+          ok --set networkPolicy.enabled=true
+          ok --set postgres.existingSecret=kanban-db
           nope --set storage=sqlite
           nope --set storage=memory
           nope --set storage=postgres --set postgres.enabled=false

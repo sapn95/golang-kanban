@@ -247,8 +247,19 @@ func TestStaticAndHealth(t *testing.T) {
 		t.Fatalf("favicon = %d", rr.Code)
 	}
 
-	down := newEnv(t, nil, func(context.Context) error { return errors.New("db down") })
-	want(t, down.do(http.MethodGet, "/readyz", nil), http.StatusServiceUnavailable, "db down")
+	// The probe reports not ready without repeating the store's error. For
+	// Postgres that error names the host, the port and the user, and a probe
+	// path is the first thing anyone carves an auth bypass for.
+	down := newEnv(t, nil, func(context.Context) error { return errors.New("db down at 10.42.0.7:5432") })
+	ready := down.do(http.MethodGet, "/readyz", nil)
+	want(t, ready, http.StatusServiceUnavailable, "not ready")
+	if strings.Contains(ready.Body.String(), "10.42.0.7") {
+		t.Errorf("the readiness probe leaked the database endpoint: %q", ready.Body.String())
+	}
+	// It still has to reach the operator, though.
+	if !strings.Contains(down.log.String(), "db down at 10.42.0.7:5432") {
+		t.Error("the store error was dropped instead of logged")
+	}
 }
 
 // broken fails or panics on ListBoards to exercise the 500 paths.
@@ -573,4 +584,109 @@ func TestEditFormMovesTheCard(t *testing.T) {
 			t.Errorf("title = %q, want %q: the fields were written despite the refused move", after.Title, before.Title)
 		}
 	})
+}
+
+func TestCrossSiteWritesAreRefused(t *testing.T) {
+	// Every one of these was demonstrated against a running instance before
+	// the middleware existed: a form on another origin deleted cards.
+	writes := []struct{ method, path, body, ctype string }{
+		{http.MethodPost, "/b/demo/cards", "title=x&column=", "application/x-www-form-urlencoded"},
+		{http.MethodPost, "/b/demo/cards/bulk", "action=delete&ids=x", "application/x-www-form-urlencoded"},
+		{http.MethodPost, "/cards/x/delete", "", "application/x-www-form-urlencoded"},
+		// The JSON route is not protected by being JSON: text/plain is a CORS
+		// simple request and reaches the handler without a preflight.
+		{http.MethodPost, "/b/demo/columns/c/order", `{"order":["x"]}`, "text/plain;charset=UTF-8"},
+	}
+
+	for _, w := range writes {
+		t.Run(w.path, func(t *testing.T) {
+			e := seeded(t)
+
+			// Cross-site, the way a browser labels a request from another page.
+			req := httptest.NewRequest(w.method, w.path, strings.NewReader(w.body))
+			req.Header.Set("Content-Type", w.ctype)
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			req.Header.Set("Origin", "https://evil.example")
+			rec := httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("cross-site %s %s = %d, want 403", w.method, w.path, rec.Code)
+			}
+
+			// No Fetch Metadata at all: fall back to Origin.
+			req = httptest.NewRequest(w.method, w.path, strings.NewReader(w.body))
+			req.Header.Set("Content-Type", w.ctype)
+			req.Header.Set("Origin", "https://evil.example")
+			rec = httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("foreign Origin %s %s = %d, want 403", w.method, w.path, rec.Code)
+			}
+
+			// Same-origin still works: the middleware must not break the app.
+			req = httptest.NewRequest(w.method, w.path, strings.NewReader(w.body))
+			req.Header.Set("Content-Type", w.ctype)
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			rec = httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			if rec.Code == http.StatusForbidden {
+				t.Errorf("same-origin %s %s was refused", w.method, w.path)
+			}
+		})
+	}
+}
+
+func TestReadsAreNotRefusedCrossSite(t *testing.T) {
+	// A GET changes nothing, and refusing them would break ordinary links.
+	e := seeded(t)
+	req := httptest.NewRequest(http.MethodGet, "/b/demo", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("cross-site GET = %d, want 200", rec.Code)
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	e := seeded(t)
+	rr := e.do(http.MethodGet, "/b/demo", nil)
+
+	for header, want := range map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "same-origin",
+		// The page carries the viewer's address; a shared cache must not keep it.
+		"Cache-Control": "no-store",
+	} {
+		if got := rr.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+
+	csp := rr.Header().Get("Content-Security-Policy")
+	for _, directive := range []string{"default-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"} {
+		if !strings.Contains(csp, directive) {
+			t.Errorf("CSP is missing %q: %s", directive, csp)
+		}
+	}
+
+	// Assets set their own long cache and must not be forced to no-store.
+	if got := e.do(http.MethodGet, "/assets/app.js", nil).Header().Get("Cache-Control"); got == "no-store" {
+		t.Error("assets were made uncacheable")
+	}
+}
+
+func TestOversizedBodyIsRefused(t *testing.T) {
+	e := seeded(t)
+	// Larger than maxBody. Before the limit this went to ParseMultipartForm,
+	// which writes anything over 32MB to a file on the node.
+	big := "name=" + strings.Repeat("a", 2<<20)
+	req := httptest.NewRequest(http.MethodPost, "/boards", strings.NewReader(big))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rec := httptest.NewRecorder()
+	e.h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusSeeOther || rec.Code == http.StatusOK {
+		t.Errorf("a %d-byte body was accepted (%d)", len(big), rec.Code)
+	}
 }

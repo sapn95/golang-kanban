@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
@@ -43,7 +44,16 @@ type AccessVerifier struct {
 	mu        sync.Mutex
 	keys      map[string]*rsa.PublicKey
 	fetchedAt time.Time
+	// missAt remembers when a kid was last looked for and not found. The
+	// lookup happens before the signature is checked, so without this an
+	// unsigned token carrying an invented kid makes an outbound request
+	// every time it arrives.
+	missAt map[string]time.Time
 }
+
+// missTTL is how long a kid that the endpoint did not serve is remembered as
+// missing, so an invented one cannot be used to make this process fetch.
+const missTTL = 30 * time.Second
 
 // ErrNoKey is returned when the token names a key the endpoint does not serve.
 var ErrNoKey = errors.New("identity: signing key not found")
@@ -91,6 +101,18 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		return k, nil
 	}
 
+	// A kid that was missing a moment ago is still missing; a real rotation
+	// is minutes apart, not milliseconds.
+	v.mu.Lock()
+	missed, seen := v.missAt[kid]
+	v.mu.Unlock()
+	if seen && v.now().Sub(missed) < missTTL {
+		if ok {
+			return k, nil
+		}
+		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
+	}
+
 	keys, err := v.fetch(ctx)
 	if err != nil {
 		// A refetch during an outage should not invalidate a key that
@@ -106,6 +128,12 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	k, ok = keys[kid]
 	v.mu.Unlock()
 	if !ok {
+		v.mu.Lock()
+		if v.missAt == nil {
+			v.missAt = map[string]time.Time{}
+		}
+		v.missAt[kid] = v.now()
+		v.mu.Unlock()
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
 	return k, nil
@@ -125,7 +153,9 @@ func (v *AccessVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, 
 		return nil, fmt.Errorf("identity: certs endpoint returned %s", resp.Status)
 	}
 	var set jwks
-	if err := json.NewDecoder(resp.Body).Decode(&set); err != nil {
+	// A key set is a few kilobytes. Anything answering this URL with more is
+	// not one, and should not be read into memory to find that out.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&set); err != nil {
 		return nil, fmt.Errorf("identity: decoding certs: %w", err)
 	}
 	out := make(map[string]*rsa.PublicKey, len(set.Keys))
@@ -238,7 +268,10 @@ func (v *AccessVerifier) Verify(ctx context.Context, token string) (User, error)
 	}
 
 	now := v.now()
-	if c.Exp != 0 && now.After(time.Unix(c.Exp, 0)) {
+	if c.Exp == 0 {
+		return User{}, errors.New("identity: token carries no expiry")
+	}
+	if now.After(time.Unix(c.Exp, 0)) {
 		return User{}, errors.New("identity: token has expired")
 	}
 	if c.Nbf != 0 && now.Before(time.Unix(c.Nbf, 0).Add(-time.Minute)) {
