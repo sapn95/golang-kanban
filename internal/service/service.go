@@ -25,6 +25,10 @@ const (
 	// MaxAssignee is generous for an address; the cap is there so a form
 	// post cannot put a novel in the column.
 	MaxAssignee = 320
+	// MaxSubtasks caps the checklist. Without it one request can store a card
+	// that renders to tens of megabytes, which the pod cannot hold in memory,
+	// and the card stays in the database so every later render fails too.
+	MaxSubtasks = 100
 	MaxSlug     = 64
 )
 
@@ -261,6 +265,9 @@ func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 	if err := checkText("description", in.Description, MaxDescription, false); err != nil {
 		return err
 	}
+	if len(in.Subtasks) > MaxSubtasks {
+		return invalid("subtasks", fmt.Sprintf("at most %d subtasks", MaxSubtasks))
+	}
 	assignee := strings.TrimSpace(in.Assignee)
 	if err := checkText("assignee", assignee, MaxAssignee, false); err != nil {
 		return err
@@ -452,7 +459,7 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 	switch action {
 	case BulkDelete, BulkMove, BulkAssign:
 	default:
-		return res, invalid("action", "unknown action "+string(action))
+		return res, invalid("action", "unknown action")
 	}
 
 	seen := map[model.ID]bool{}

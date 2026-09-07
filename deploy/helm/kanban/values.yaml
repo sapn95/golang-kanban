@@ -65,6 +65,24 @@ postgres:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 512Mi}
 
+# Without a policy every pod in the cluster can reach this one on the app port,
+# so an oauth2-proxy sidecar or a tunnel in front only constrains what comes
+# through them, not what comes from the pod next door. Off by default because a
+# cluster whose CNI ignores policies would silently look protected; k3s enforces
+# them.
+networkPolicy:
+  enabled: false
+  # The kubelet runs on the node and has no pod label to select, so its
+  # addresses are named. Narrow this to the node's real address.
+  probeSources:
+    - 10.42.0.0/16
+  # Extra ingress peers, in NetworkPolicyPeer form. This is where the tunnel
+  # connector or an ingress controller goes:
+  #   - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cloudflared}}
+  allowFrom: []
+  # Extra egress, same form. DNS and the bundled Postgres are already allowed.
+  allowTo: []
+
 # Used when storage is sqlite. The chart creates the claim, mounts it at the
 # directory holding the file, and keeps it when the release is uninstalled.
 sqlite:

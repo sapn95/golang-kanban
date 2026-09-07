@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -68,7 +69,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	return s.logging(s.recover(mux))
+	return s.logging(s.recover(s.secureHeaders(s.crossSite(s.limitBody(mux)))))
 }
 
 func (s *Server) parseTemplates() {
@@ -469,7 +470,7 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 	if s.ready != nil {
 		if err := s.ready(ctx); err != nil {
 			s.log.Warn("not ready", "err", err)
-			plain(w, http.StatusServiceUnavailable, "not ready: "+err.Error())
+			plain(w, http.StatusServiceUnavailable, "not ready")
 			return
 		}
 	}
@@ -509,6 +510,90 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	n, err := w.ResponseWriter.Write(b)
 	w.bytes += n
 	return n, err
+}
+
+// crossSite refuses a state-changing request that a page on another origin
+// made the browser send.
+//
+// The board has no CSRF token because it has no session of its own: the cookie
+// that authenticates a request belongs to whatever sits in front, and a form on
+// an attacker's page rides it. Sec-Fetch-Site is the check that does not need
+// state — the browser sets it and a page cannot forge it — and Origin is the
+// fallback for anything that does not send it.
+func (s *Server) crossSite(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch r.Header.Get("Sec-Fetch-Site") {
+		case "same-origin", "same-site", "none":
+			// none is a user-initiated navigation: typing the URL, a
+			// bookmark. There is no other page involved.
+		case "":
+			// No Fetch Metadata at all. Fall back to Origin, which every
+			// browser sends on a cross-origin POST.
+			if o := r.Header.Get("Origin"); o != "" {
+				u, err := url.Parse(o)
+				if err != nil || u.Host != r.Host {
+					s.log.Warn("refused a cross-site write", "origin", o, "path", r.URL.Path)
+					plain(w, http.StatusForbidden, "cross-site request")
+					return
+				}
+			}
+		default:
+			s.log.Warn("refused a cross-site write",
+				"sec_fetch_site", r.Header.Get("Sec-Fetch-Site"), "path", r.URL.Path)
+			plain(w, http.StatusForbidden, "cross-site request")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// maxBody is what any single request may send. The largest legitimate one is a
+// card with a long description, which is capped at 20000 characters by the
+// service.
+const maxBody = 1 << 20
+
+// limitBody caps the request body before any handler reads it. Without this,
+// FormValue falls through to ParseMultipartForm, which spills anything over
+// 32MB to a temporary file on the node.
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// secureHeaders sets the response headers that do not depend on the request.
+//
+// The CSP allows inline script and style because the page needs both today:
+// layout.html configures Tailwind in a <script> tag, six handlers are inline
+// onclick/onsubmit attributes, and Tailwind's browser build injects a <style>
+// element at runtime. Everything else is locked to this origin.
+func (s *Server) secureHeaders(next http.Handler) http.Handler {
+	const csp = "default-src 'self'; " +
+		"script-src 'self' 'unsafe-inline'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
+		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		// The page carries the viewer's address, so it must not be kept by a
+		// shared cache. Assets set their own Cache-Control and are untouched.
+		if !strings.HasPrefix(r.URL.Path, "/assets/") {
+			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) logging(next http.Handler) http.Handler {

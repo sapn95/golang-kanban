@@ -309,3 +309,39 @@ func TestInitial(t *testing.T) {
 		}
 	}
 }
+
+func TestAnInventedKidDoesNotMakeUsFetchRepeatedly(t *testing.T) {
+	var hits atomic.Int64
+	s := newSigner(t, "k1")
+	v := verifierFor(certServer(t, &hits, s))
+
+	// The key lookup happens before the signature is checked, so an unsigned
+	// token carrying a made-up kid used to cost one outbound request each.
+	bogus := newSigner(t, "invented")
+	for i := 0; i < 10; i++ {
+		if _, err := v.Verify(context.Background(), bogus.token(t, "RS256", nil)); err == nil {
+			t.Fatal("a token signed by an unknown key was accepted")
+		}
+	}
+	if got := hits.Load(); got > 2 {
+		t.Errorf("fetched the key set %d times for ten invented kids, want at most 2", got)
+	}
+
+	// A real key still verifies while the miss is remembered.
+	if _, err := v.Verify(context.Background(), s.token(t, "RS256", nil)); err != nil {
+		t.Errorf("a valid token was refused while a miss was cached: %v", err)
+	}
+}
+
+func TestATokenWithoutAnExpiryIsRefused(t *testing.T) {
+	s := newSigner(t, "k1")
+	v := verifierFor(certServer(t, nil, s))
+
+	// Checking exp only when present means a token minted without one never
+	// expires.
+	if _, err := v.Verify(context.Background(), s.token(t, "RS256", map[string]any{"exp": nil})); err == nil {
+		t.Fatal("a token with no exp claim was accepted")
+	} else if !strings.Contains(err.Error(), "expiry") {
+		t.Errorf("error = %v, want it to mention the missing expiry", err)
+	}
+}
