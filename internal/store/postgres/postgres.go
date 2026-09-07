@@ -29,10 +29,15 @@ func migrations() []store.Migration {
 	if err != nil {
 		panic(err)
 	}
+	archive, err := migrationFiles.ReadFile("migrations/0004_archive.sql")
+	if err != nil {
+		panic(err)
+	}
 	return []store.Migration{
 		{Version: 1, Name: "init", Up: store.SQL(string(init))},
 		{Version: 2, Name: "import_v1", Up: importV1},
 		{Version: 3, Name: "assignee", Up: store.SQL(string(assignee))},
+		{Version: 4, Name: "archive", Up: store.SQL(string(archive))},
 	}
 }
 
@@ -352,16 +357,19 @@ func (s *Store) ReorderColumns(ctx context.Context, boardID model.ID, order []mo
 
 // --- cards ------------------------------------------------------------------
 
-const cardColumns = `c.id, c.board_id, c.column_id, c.title, c.description, c.position, c.due_date, c.assignee, c.created_at, c.updated_at`
+const cardColumns = `c.id, c.board_id, c.column_id, c.title, c.description, c.position, c.due_date, c.assignee, c.archived_at, c.created_at, c.updated_at`
 
 func scanCard(row interface{ Scan(...any) error }) (*model.Card, error) {
 	var c model.Card
-	var due sql.NullTime
-	if err := row.Scan(&c.ID, &c.BoardID, &c.ColumnID, &c.Title, &c.Description, &c.Position, &due, &c.Assignee, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	var due, archived sql.NullTime
+	if err := row.Scan(&c.ID, &c.BoardID, &c.ColumnID, &c.Title, &c.Description, &c.Position, &due, &c.Assignee, &archived, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, mapErr(err)
 	}
 	if due.Valid {
 		c.DueDate = time.Date(due.Time.Year(), due.Time.Month(), due.Time.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	if archived.Valid {
+		c.ArchivedAt = archived.Time.UTC()
 	}
 	c.CreatedAt, c.UpdatedAt = c.CreatedAt.UTC(), c.UpdatedAt.UTC()
 	return &c, nil
@@ -419,9 +427,10 @@ func (s *Store) fillCards(ctx context.Context, cards []*model.Card) error {
 	return rows.Err()
 }
 
-func (s *Store) ListCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+cardColumns+` FROM cards c JOIN columns col ON col.id = c.column_id
-		WHERE c.board_id = $1 ORDER BY col.position, c.position, c.id`, boardID)
+// listCardsWhere runs one of the two card listings; they differ only in the
+// predicate and the order, so the assembly of labels and subtasks is shared.
+func (s *Store) listCardsWhere(ctx context.Context, query string, boardID model.ID) ([]model.Card, error) {
+	rows, err := s.db.QueryContext(ctx, query, boardID)
 	if err != nil {
 		return nil, err
 	}
@@ -446,6 +455,26 @@ func (s *Store) ListCards(ctx context.Context, boardID model.ID) ([]model.Card, 
 		out[i] = *c
 	}
 	return out, nil
+}
+
+func (s *Store) ListCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
+	return s.listCardsWhere(ctx, `SELECT `+cardColumns+` FROM cards c JOIN columns col ON col.id = c.column_id
+		WHERE c.board_id = $1 AND c.archived_at IS NULL
+		ORDER BY col.position, c.position, c.id`, boardID)
+}
+
+func (s *Store) ListArchivedCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
+	return s.listCardsWhere(ctx, `SELECT `+cardColumns+` FROM cards c
+		WHERE c.board_id = $1 AND c.archived_at IS NOT NULL
+		ORDER BY c.archived_at DESC, c.id`, boardID)
+}
+
+func (s *Store) SetCardArchived(ctx context.Context, id model.ID, at time.Time) error {
+	var arg any
+	if !at.IsZero() {
+		arg = at.UTC()
+	}
+	return affected(s.db.ExecContext(ctx, `UPDATE cards SET archived_at = $1 WHERE id = $2`, arg, id))
 }
 
 func (s *Store) GetCard(ctx context.Context, id model.ID) (*model.Card, error) {

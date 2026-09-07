@@ -690,3 +690,79 @@ func TestOversizedBodyIsRefused(t *testing.T) {
 		t.Errorf("a %d-byte body was accepted (%d)", len(big), rec.Code)
 	}
 }
+
+func TestArchiveThroughTheWeb(t *testing.T) {
+	post := func(t *testing.T, e *env, path string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("archiving takes it off the board but keeps it", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+
+		if rec := post(t, e, "/cards/"+string(e.card.ID)+"/archive"); rec.Code != http.StatusOK {
+			t.Fatalf("archive = %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(e.do(http.MethodGet, "/b/demo", nil).Body.String(), "Archive") {
+			t.Error("the board has no link to the archive")
+		}
+		if strings.Contains(e.do(http.MethodGet, "/b/demo", nil).Body.String(), string(e.card.ID)) {
+			t.Error("an archived card is still drawn on the board")
+		}
+		// Not deleted: the archive shows it, and the card still resolves.
+		if !strings.Contains(e.do(http.MethodGet, "/b/demo/archive", nil).Body.String(), string(e.card.ID)) {
+			t.Error("the archived card is not in the archive")
+		}
+		if _, err := e.svc.Card(ctx, e.card.ID); err != nil {
+			t.Errorf("the card was destroyed rather than archived: %v", err)
+		}
+	})
+
+	t.Run("restoring sends the browser back to the board", func(t *testing.T) {
+		e := seeded(t)
+		if rec := post(t, e, "/cards/"+string(e.card.ID)+"/archive"); rec.Code != http.StatusOK {
+			t.Fatal(rec.Code)
+		}
+		rec := post(t, e, "/cards/"+string(e.card.ID)+"/restore?board=demo")
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("restore = %d", rec.Code)
+		}
+		// The card comes back in a column the archive page is not showing, so
+		// patching that page in place would leave it looking wrong.
+		if got := rec.Header().Get("HX-Redirect"); got != "/b/demo" {
+			t.Errorf("HX-Redirect = %q, want /b/demo", got)
+		}
+		if !strings.Contains(e.do(http.MethodGet, "/b/demo", nil).Body.String(), string(e.card.ID)) {
+			t.Error("the restored card is not back on the board")
+		}
+	})
+
+	t.Run("the empty archive says so", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo/archive", nil).Body.String()
+		if !strings.Contains(body, "Nothing archived") {
+			t.Error("an empty archive renders nothing useful")
+		}
+	})
+
+	t.Run("bulk archive", func(t *testing.T) {
+		e := seeded(t)
+		form := url.Values{"action": {"archive"}, "ids": {string(e.card.ID)}}
+		req := httptest.NewRequest(http.MethodPost, "/b/demo/cards/bulk", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("bulk archive = %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(e.do(http.MethodGet, "/b/demo/archive", nil).Body.String(), string(e.card.ID)) {
+			t.Error("the card was not archived by the bulk action")
+		}
+	})
+}

@@ -371,6 +371,27 @@ func (k *Kanban) UpdateCard(ctx context.Context, id model.ID, in CardInput) (*mo
 	return c, nil
 }
 
+// ArchiveCard takes a card off the board. It keeps its column, position,
+// labels and subtasks, so RestoreCard puts back the same card.
+func (k *Kanban) ArchiveCard(ctx context.Context, id model.ID) error {
+	return k.store.SetCardArchived(ctx, id, k.now())
+}
+
+// RestoreCard puts an archived card back on the board, in the column it left.
+//
+// It does not check the destination's WIP limit. A limit is there to stop new
+// work being started, and restoring is undoing a mistake; refusing it would
+// leave the card in the archive with nothing the user can do about it except
+// move something else first.
+func (k *Kanban) RestoreCard(ctx context.Context, id model.ID) error {
+	return k.store.SetCardArchived(ctx, id, time.Time{})
+}
+
+// ArchivedCards returns a board's archived cards, most recently archived first.
+func (k *Kanban) ArchivedCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
+	return k.store.ListArchivedCards(ctx, boardID)
+}
+
 func (k *Kanban) DeleteCard(ctx context.Context, id model.ID) error {
 	return k.store.DeleteCard(ctx, id)
 }
@@ -422,9 +443,10 @@ func (k *Kanban) DeleteLabel(ctx context.Context, id model.ID) error {
 type BulkAction string
 
 const (
-	BulkDelete BulkAction = "delete"
-	BulkMove   BulkAction = "move"
-	BulkAssign BulkAction = "assign"
+	BulkDelete  BulkAction = "delete"
+	BulkMove    BulkAction = "move"
+	BulkAssign  BulkAction = "assign"
+	BulkArchive BulkAction = "archive"
 )
 
 // MaxBulk caps one bulk request. Every card is a separate store call, so an
@@ -457,7 +479,7 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 		return res, invalid("ids", fmt.Sprintf("at most %d cards at a time", MaxBulk))
 	}
 	switch action {
-	case BulkDelete, BulkMove, BulkAssign:
+	case BulkDelete, BulkMove, BulkAssign, BulkArchive:
 	default:
 		return res, invalid("action", "unknown action")
 	}
@@ -484,6 +506,8 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 		switch action {
 		case BulkDelete:
 			err = k.store.DeleteCard(ctx, id)
+		case BulkArchive:
+			err = k.store.SetCardArchived(ctx, id, k.now())
 		case BulkAssign:
 			c.Assignee = strings.TrimSpace(target)
 			c.UpdatedAt = k.now()

@@ -65,6 +65,9 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /cards/{id}/edit", s.editCard)
 	mux.HandleFunc("POST /cards/{id}", s.updateCard)
 	mux.HandleFunc("POST /cards/{id}/delete", s.deleteCard)
+	mux.HandleFunc("POST /cards/{id}/archive", s.archiveCard)
+	mux.HandleFunc("POST /cards/{id}/restore", s.restoreCard)
+	mux.HandleFunc("GET /b/{board}/archive", s.archive)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
@@ -91,7 +94,7 @@ func (s *Server) parseTemplates() {
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/card.html", "templates/card_edit.html"))
 	s.parts = base
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"board", "boards"} {
+	for _, name := range []string{"board", "boards", "archive"} {
 		s.pages[name] = template.Must(template.Must(base.Clone()).ParseFS(templateFiles, "templates/"+name+".html"))
 	}
 }
@@ -125,6 +128,14 @@ type boardPage struct {
 	Board     *model.Board
 	Columns   []columnView
 	EmptyCard cardView
+}
+
+type archivePage struct {
+	Title     string
+	User      identity.User
+	BoardSlug string
+	Board     *model.Board
+	Cards     []cardView
 }
 
 type boardsPage struct {
@@ -462,6 +473,47 @@ func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// archiveCard takes a card off the board. The card row is removed from the
+// page, exactly as a delete does, because from the board's point of view the
+// two look the same; the difference is that this one can be undone.
+func (s *Server) archiveCard(w http.ResponseWriter, r *http.Request) {
+	if err := s.svc.ArchiveCard(r.Context(), model.ID(r.PathValue("id"))); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) restoreCard(w http.ResponseWriter, r *http.Request) {
+	if err := s.svc.RestoreCard(r.Context(), model.ID(r.PathValue("id"))); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// The card reappears in a column this page is not showing, so the archive
+	// asks the browser to go back to the board rather than patching itself.
+	w.Header().Set("HX-Redirect", "/b/"+r.URL.Query().Get("board"))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	cards, err := s.svc.ArchivedCards(r.Context(), b.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	u := identity.FromContext(r.Context())
+	page := archivePage{Title: b.Name + " · archive", User: u, BoardSlug: b.Slug, Board: b}
+	for _, c := range cards {
+		page.Cards = append(page.Cards, s.cardView(u, b, c))
+	}
+	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {

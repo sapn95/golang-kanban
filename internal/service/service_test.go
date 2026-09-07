@@ -520,3 +520,59 @@ func TestBulkDoesNotEchoTheAction(t *testing.T) {
 		t.Errorf("the caller's input is reflected back: %v", err)
 	}
 }
+
+func TestArchiveAndRestore(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	todo := b.Columns[0].ID
+	a, _ := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "one"})
+	keep, _ := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "two"})
+
+	if err := k.ArchiveCard(ctx, a.ID); err != nil {
+		t.Fatalf("ArchiveCard: %v", err)
+	}
+	cards, _ := k.Cards(ctx, b.ID)
+	if len(cards) != 1 || cards[0].ID != keep.ID {
+		t.Fatalf("board holds %d cards, want only the un-archived one", len(cards))
+	}
+	arch, err := k.ArchivedCards(ctx, b.ID)
+	if err != nil || len(arch) != 1 || arch[0].ID != a.ID {
+		t.Fatalf("archive = %+v, err %v", arch, err)
+	}
+
+	if err := k.RestoreCard(ctx, a.ID); err != nil {
+		t.Fatalf("RestoreCard: %v", err)
+	}
+	if cards, _ = k.Cards(ctx, b.ID); len(cards) != 2 {
+		t.Errorf("board holds %d cards after a restore, want 2", len(cards))
+	}
+}
+
+func TestRestoreIsNotRefusedByAWIPLimit(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	todo := b.Columns[0].ID
+	a, _ := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "archived"})
+	if err := k.ArchiveCard(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Fill the column to its limit while the card is away.
+	if _, err := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "took the slot"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := k.UpdateColumn(ctx, todo, b.Columns[0].Name, 1); err != nil {
+		t.Fatalf("setting the WIP limit: %v", err)
+	}
+
+	// Refusing here would strand the card in the archive with no way back
+	// except moving something else first.
+	if err := k.RestoreCard(ctx, a.ID); err != nil {
+		t.Errorf("restore was refused by a WIP limit: %v", err)
+	}
+	cards, _ := k.Cards(ctx, b.ID)
+	if len(cards) != 2 {
+		t.Errorf("board holds %d cards, want the restored one back", len(cards))
+	}
+}

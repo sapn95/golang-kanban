@@ -26,6 +26,7 @@ func Run(t *testing.T, newStore New) {
 		"Columns":       testColumns,
 		"Cards":         testCards,
 		"Assignee":      testAssignee,
+		"Archive":       testArchive,
 		"ReorderCards":  testReorderCards,
 		"Labels":        testLabels,
 		"Timestamps":    testTimestamps,
@@ -579,5 +580,75 @@ func testAssignee(t *testing.T, s store.Store) {
 	}
 	if !found {
 		t.Error("the card did not come back from ListCards")
+	}
+}
+
+func testArchive(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "archive", "A", "B")
+	keep := mustCard(t, s, b, b.Columns[0].ID, "stays")
+	gone := mustCard(t, s, b, b.Columns[0].ID, "archived")
+
+	// Archiving keeps everything else about the card, which is the whole
+	// difference between this and deleting.
+	gone.Labels = nil
+	when := now()
+	if err := s.SetCardArchived(ctx, gone.ID, when); err != nil {
+		t.Fatalf("SetCardArchived: %v", err)
+	}
+
+	active, err := s.ListCards(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("ListCards: %v", err)
+	}
+	if len(active) != 1 || active[0].ID != keep.ID {
+		t.Fatalf("board shows %d cards, want only %s", len(active), keep.ID)
+	}
+
+	archived, err := s.ListArchivedCards(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("ListArchivedCards: %v", err)
+	}
+	if len(archived) != 1 || archived[0].ID != gone.ID {
+		t.Fatalf("archive holds %d cards, want only %s", len(archived), gone.ID)
+	}
+	if !archived[0].Archived() {
+		t.Error("a card from the archive does not report itself archived")
+	}
+	if archived[0].ColumnID != gone.ColumnID {
+		t.Errorf("column = %s, want it kept at %s so restoring puts it back", archived[0].ColumnID, gone.ColumnID)
+	}
+	if archived[0].Title != "archived" {
+		t.Errorf("title = %q, want it unchanged", archived[0].Title)
+	}
+
+	// GetCard still finds it: an archived card is not gone, and a link to it
+	// from somewhere else must not 404.
+	got, err := s.GetCard(ctx, gone.ID)
+	if err != nil {
+		t.Fatalf("GetCard on an archived card: %v", err)
+	}
+	if !got.Archived() {
+		t.Error("GetCard returned it as un-archived")
+	}
+
+	// And back again. Restoring is the same call with a zero time.
+	if err := s.SetCardArchived(ctx, gone.ID, time.Time{}); err != nil {
+		t.Fatalf("restoring: %v", err)
+	}
+	active, err = s.ListCards(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("ListCards after restore: %v", err)
+	}
+	if len(active) != 2 {
+		t.Errorf("board shows %d cards after a restore, want 2", len(active))
+	}
+	if archived, err = s.ListArchivedCards(ctx, b.ID); err != nil || len(archived) != 0 {
+		t.Errorf("archive holds %d cards after a restore (err %v), want 0", len(archived), err)
+	}
+
+	// A card that does not exist is a miss, not a silent success.
+	if err := s.SetCardArchived(ctx, model.ID("nope"), now()); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("archiving an unknown card = %v, want ErrNotFound", err)
 	}
 }

@@ -10,6 +10,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"kanban/internal/model"
 )
@@ -68,6 +69,14 @@ type Store interface {
 	// UpdatedAt. It never changes ColumnID or Position.
 	UpdateCard(ctx context.Context, c *model.Card) error
 	DeleteCard(ctx context.Context, id model.ID) error
+	// SetCardArchived takes a card off the board, or puts it back when at is
+	// zero. Everything else about the card is left alone, so restoring it
+	// returns the same card rather than a copy of it. ListCards never returns
+	// an archived card; ListArchivedCards returns only those.
+	SetCardArchived(ctx context.Context, id model.ID, at time.Time) error
+	// ListArchivedCards returns a board's archived cards, most recently
+	// archived first.
+	ListArchivedCards(ctx context.Context, boardID model.ID) ([]model.Card, error)
 	// ReorderCards is the authoritative order of one column. A listed card
 	// that lives in another column of the same board is moved in; cards of
 	// the column that are not listed keep their relative order after the
