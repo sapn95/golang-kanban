@@ -303,6 +303,9 @@ func TestDisplay(t *testing.T) {
 		{identity.User{Email: "a.winterberger@example.com"}, "a.winterberger"},
 		{identity.User{Email: "no-at-sign"}, "no-at-sign"},
 		{identity.User{Email: "noreply@example.com"}, "noreply"},
+		// A +tag is only routing inside an address. An identity that is not an
+		// address keeps its plus sign, or "build+bot" would read as "build".
+		{identity.User{Email: "build+bot"}, "build+bot"},
 	}
 	for _, tt := range tests {
 		if got := tt.user.Display(); got != tt.want {
@@ -324,6 +327,9 @@ func TestInitials(t *testing.T) {
 		{identity.User{Name: "Über Mensch"}, "ÜM"},           // two bytes: a byte slice would cut it in half
 		{identity.User{Name: "水曜日"}, "水"},
 		{identity.User{Name: "   "}, ""},
+		// Letters only. A bubble reading "1A" says less than one reading "A".
+		{identity.User{Name: "123 Alice"}, "A"},
+		{identity.User{Name: "42"}, ""},
 	}
 	for _, tt := range tests {
 		if got := tt.user.Initials(); got != tt.want {
