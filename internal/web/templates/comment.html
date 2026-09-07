@@ -1,0 +1,52 @@
+{{define "comment"}}
+<div class="flex items-start gap-2.5" id="comment-{{.Comment.ID}}">
+  <span class="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-full text-white text-[10px] font-semibold uppercase
+               {{if .Mine}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}"
+        title="{{with .Comment.Author}}{{.}}{{else}}nobody signed in{{end}}">
+    {{if .Comment.Author}}{{initial .Comment.Author}}{{else}}<i class="bi bi-person"></i>{{end}}
+  </span>
+  <div class="flex-1 min-w-0 rounded-lg bg-gray-100 dark:bg-gray-700 px-3 py-2">
+    <div class="flex items-baseline gap-2 text-xs text-gray-500 dark:text-gray-400">
+      <span class="font-medium text-gray-700 dark:text-gray-200 truncate">
+        {{if .Comment.Author}}{{shortAddress .Comment.Author}}{{else}}Anonymous{{end}}
+      </span>
+      <span title="{{.Exact}}">{{.Ago}}</span>
+      {{if .Mine}}
+      <button type="button" title="Remove this comment"
+        class="ml-auto shrink-0 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+        hx-post="/comments/{{.Comment.ID}}/delete" hx-target="#comment-{{.Comment.ID}}" hx-swap="outerHTML"
+        hx-confirm="Remove this comment? Comments cannot be edited, and this one will not come back.">
+        <i class="bi bi-x-lg text-[11px]"></i>
+      </button>
+      {{end}}
+    </div>
+    <p class="text-sm text-gray-800 dark:text-gray-100 mt-0.5 whitespace-pre-wrap break-words">{{.Comment.Body}}</p>
+  </div>
+</div>
+{{end}}
+
+{{define "comment_thread"}}
+<div class="mt-6 pt-5 border-t border-gray-200 dark:border-gray-600">
+  <h6 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+    Comments{{if .CommentCount}} <span class="font-normal text-gray-400 dark:text-gray-500">{{.CommentCount}}</span>{{end}}
+  </h6>
+  <div id="comments-{{.Card.ID}}" class="space-y-3">
+    {{if not .Comments}}
+    <p class="no-comments text-sm text-gray-400 dark:text-gray-500">Nothing said yet.</p>
+    {{end}}
+    {{range .Comments}}{{template "comment" .}}{{end}}
+  </div>
+  <!-- Outside the edit form on purpose: a form inside a form is not valid HTML,
+       and the browser silently drops the inner one. -->
+  <form class="mt-3 flex items-start gap-2"
+        hx-post="/cards/{{.Card.ID}}/comments" hx-target="#comments-{{.Card.ID}}" hx-swap="beforeend">
+    <textarea name="body" rows="2" required maxlength="5000" placeholder="Add a comment"
+      id="comment-body-{{.Card.ID}}" aria-label="Add a comment"
+      class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"></textarea>
+    <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm shrink-0">Post</button>
+  </form>
+  <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
+    Comments cannot be edited. You can remove your own.
+  </p>
+</div>
+{{end}}

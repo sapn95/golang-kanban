@@ -142,8 +142,21 @@
       showModal('editCardModal');
       initSubtasks(target.querySelector('form'));
     }
+    if (target.id.indexOf('comments-') === 0) {
+      var empty = target.querySelector('.no-comments');
+      if (empty) { empty.remove(); }
+      var poster = evt.detail.requestConfig && evt.detail.requestConfig.elt;
+      if (poster && poster.tagName === 'FORM') {
+        poster.reset();
+        var box = poster.querySelector('textarea[name=body]');
+        if (box) { box.focus(); }
+      }
+    }
     if (target.id.indexOf('card-') === 0) {
-      hideModal('editCardModal');
+      // A comment answers with the card face as an out-of-band swap so its
+      // badge keeps up. That must not close the modal being typed in.
+      var path = (evt.detail.pathInfo && evt.detail.pathInfo.requestPath) || '';
+      if (path.indexOf('/comments') === -1) { hideModal('editCardModal'); }
     }
   });
   document.body.addEventListener('htmx:afterRequest', function (evt) {

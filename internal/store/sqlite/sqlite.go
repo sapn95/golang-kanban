@@ -22,24 +22,24 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
+// sqlFile reads an embedded migration. A missing file is a build mistake, not
+// a runtime condition, so it panics rather than returning an error nobody
+// could act on.
+func sqlFile(name string) string {
+	b, err := migrationFiles.ReadFile("migrations/" + name)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
 func migrations() []store.Migration {
-	init, err := migrationFiles.ReadFile("migrations/0001_init.sql")
-	if err != nil {
-		panic(err)
-	}
-	assignee, err := migrationFiles.ReadFile("migrations/0003_assignee.sql")
-	if err != nil {
-		panic(err)
-	}
-	archive, err := migrationFiles.ReadFile("migrations/0004_archive.sql")
-	if err != nil {
-		panic(err)
-	}
 	return []store.Migration{
-		{Version: 1, Name: "init", Up: initSchema(string(init))},
+		{Version: 1, Name: "init", Up: initSchema(sqlFile("0001_init.sql"))},
 		{Version: 2, Name: "import_v1", Up: importV1},
-		{Version: 3, Name: "assignee", Up: store.SQL(string(assignee))},
-		{Version: 4, Name: "archive", Up: store.SQL(string(archive))},
+		{Version: 3, Name: "assignee", Up: store.SQL(sqlFile("0003_assignee.sql"))},
+		{Version: 4, Name: "archive", Up: store.SQL(sqlFile("0004_archive.sql"))},
+		{Version: 5, Name: "comments", Up: store.SQL(sqlFile("0005_comments.sql"))},
 	}
 }
 
@@ -756,6 +756,74 @@ func (s *Store) ReorderCards(ctx context.Context, boardID, columnID model.ID, or
 		}
 		return nil
 	})
+}
+
+// --- comments ---------------------------------------------------------------
+
+const commentColumns = `id, card_id, author, body, created_at`
+
+func scanComment(row interface{ Scan(...any) error }) (*model.Comment, error) {
+	var c model.Comment
+	var created string
+	if err := row.Scan(&c.ID, &c.CardID, &c.Author, &c.Body, &created); err != nil {
+		return nil, mapErr(err)
+	}
+	var err error
+	if c.CreatedAt, err = parseTime(created); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (s *Store) ListComments(ctx context.Context, cardID model.ID) ([]model.Comment, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+commentColumns+` FROM comments
+		WHERE card_id = ? ORDER BY created_at, id`, cardID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []model.Comment
+	for rows.Next() {
+		c, err := scanComment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetComment(ctx context.Context, id model.ID) (*model.Comment, error) {
+	return scanComment(s.db.QueryRowContext(ctx, `SELECT `+commentColumns+` FROM comments WHERE id = ?`, id))
+}
+
+func (s *Store) CreateComment(ctx context.Context, c *model.Comment) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO comments (id, card_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+		c.ID, c.CardID, c.Author, c.Body, timeArg(c.CreatedAt))
+	return mapErr(err)
+}
+
+func (s *Store) DeleteComment(ctx context.Context, id model.ID) error {
+	return affected(s.db.ExecContext(ctx, `DELETE FROM comments WHERE id = ?`, id))
+}
+
+func (s *Store) CountComments(ctx context.Context, boardID model.ID) (map[model.ID]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT cm.card_id, COUNT(*) FROM comments cm
+		JOIN cards c ON c.id = cm.card_id WHERE c.board_id = ? GROUP BY cm.card_id`, boardID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[model.ID]int{}
+	for rows.Next() {
+		var id model.ID
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
 }
 
 // --- labels -----------------------------------------------------------------

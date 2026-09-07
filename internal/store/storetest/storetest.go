@@ -27,6 +27,7 @@ func Run(t *testing.T, newStore New) {
 		"Cards":         testCards,
 		"Assignee":      testAssignee,
 		"Archive":       testArchive,
+		"Comments":      testComments,
 		"ReorderCards":  testReorderCards,
 		"Labels":        testLabels,
 		"Timestamps":    testTimestamps,
@@ -580,6 +581,92 @@ func testAssignee(t *testing.T, s store.Store) {
 	}
 	if !found {
 		t.Error("the card did not come back from ListCards")
+	}
+}
+
+func mustComment(t *testing.T, s store.Store, card model.ID, author, body string, at time.Time) *model.Comment {
+	t.Helper()
+	c := &model.Comment{ID: newID("m"), CardID: card, Author: author, Body: body, CreatedAt: at}
+	if err := s.CreateComment(context.Background(), c); err != nil {
+		t.Fatalf("CreateComment(%q): %v", body, err)
+	}
+	return c
+}
+
+func testComments(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "comments", "A")
+	card := mustCard(t, s, b, b.Columns[0].ID, "discussed")
+	quiet := mustCard(t, s, b, b.Columns[0].ID, "not discussed")
+
+	base := now()
+	first := mustComment(t, s, card.ID, "her@example.com", "first", base)
+	second := mustComment(t, s, card.ID, "him@example.com", "second", base.Add(time.Minute))
+	mustComment(t, s, quiet.ID, "", "on the other card", base)
+
+	got, err := s.ListComments(ctx, card.ID)
+	if err != nil {
+		t.Fatalf("ListComments: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListComments returned %d, want the 2 on this card", len(got))
+	}
+	// Oldest first, because a thread read out of order is not a thread.
+	if got[0].ID != first.ID || got[1].ID != second.ID {
+		t.Errorf("order = %s, %s; want %s, %s", got[0].ID, got[1].ID, first.ID, second.ID)
+	}
+	if got[0].Author != "her@example.com" || got[0].Body != "first" {
+		t.Errorf("first comment = %+v, want the author and body it was written with", got[0])
+	}
+	if !got[0].CreatedAt.Equal(base) {
+		t.Errorf("CreatedAt = %v, want %v; a timestamp that does not survive a round trip cannot order a thread", got[0].CreatedAt, base)
+	}
+
+	one, err := s.GetComment(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("GetComment: %v", err)
+	}
+	if one.Author != "him@example.com" {
+		t.Errorf("GetComment author = %q, want him@example.com; the delete check reads it from here", one.Author)
+	}
+
+	counts, err := s.CountComments(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("CountComments: %v", err)
+	}
+	if counts[card.ID] != 2 || counts[quiet.ID] != 1 {
+		t.Errorf("counts = %v, want 2 on %s and 1 on %s", counts, card.ID, quiet.ID)
+	}
+
+	if err := s.DeleteComment(ctx, first.ID); err != nil {
+		t.Fatalf("DeleteComment: %v", err)
+	}
+	if got, err = s.ListComments(ctx, card.ID); err != nil || len(got) != 1 {
+		t.Errorf("after a delete the card has %d comments (err %v), want 1", len(got), err)
+	}
+
+	// Deleting the card takes its comments with it. The SQL backends get this
+	// from ON DELETE CASCADE, so the contract is what proves the memory one
+	// does the same thing.
+	if err := s.DeleteCard(ctx, card.ID); err != nil {
+		t.Fatalf("DeleteCard: %v", err)
+	}
+	if got, err = s.ListComments(ctx, card.ID); err != nil || len(got) != 0 {
+		t.Errorf("a deleted card still has %d comments (err %v), want none", len(got), err)
+	}
+	if counts, err = s.CountComments(ctx, b.ID); err != nil || counts[card.ID] != 0 {
+		t.Errorf("counts still hold %d for the deleted card (err %v)", counts[card.ID], err)
+	}
+
+	// Misses are misses, not silent successes.
+	if _, err := s.GetComment(ctx, model.ID("nope")); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetComment on an unknown id = %v, want ErrNotFound", err)
+	}
+	if err := s.DeleteComment(ctx, model.ID("nope")); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("DeleteComment on an unknown id = %v, want ErrNotFound", err)
+	}
+	if err := s.CreateComment(ctx, &model.Comment{ID: newID("m"), CardID: "nope", Body: "orphan", CreatedAt: now()}); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("commenting on an unknown card = %v, want ErrNotFound", err)
 	}
 }
 
