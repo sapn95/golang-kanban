@@ -6,7 +6,7 @@ Backend: Go, standard library `net/http`, one static binary with everything embe
 
 Frontend: HTMX, Tailwind, SortableJS — vendored, nothing is loaded from a CDN, so it works air-gapped.
 
-Database: PostgreSQL (SQLite is next on the list).
+Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and is meant for one board on one machine; PostgreSQL is there when you want more than that. The SQLite driver is pure Go, so the binary stays static and cgo-free — the reasoning is in [docs/adr/0004](docs/adr/0004-sqlite-backend.md).
 
 ### Features
 - Boards with as many columns as you like, each with an optional WIP limit.
@@ -25,11 +25,18 @@ This starts PostgreSQL and the board on http://localhost:17808.
 ### Using the Pre-built Docker Image
 ``` bash
 docker pull ghcr.io/nicolashaas/golang-kanban:latest
+
+# SQLite: one volume, no database to set up
+docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/nicolashaas/golang-kanban:latest
+
+# PostgreSQL
 docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/nicolashaas/golang-kanban:latest
 ```
 
 ### Prerequisites
-PostgreSQL is the only external dependency. Create a database and a user that owns it; the tables are created by the app on first start (or with `kanban migrate`).
+With `STORAGE=sqlite` there are none: point `SQLITE_PATH` at a file in a writable directory (`/data` in the image) and the tables are created on first start. One process on one machine, and writes are serialised, which is plenty for a small team; see [docs/adr/0004](docs/adr/0004-sqlite-backend.md) for what that rules out.
+
+PostgreSQL is the external dependency if you pick it. Create a database and a user that owns it; the tables are created by the app on first start (or with `kanban migrate`).
 
 ``` sql
 CREATE USER kanban WITH PASSWORD 'your_password_here';
@@ -41,7 +48,8 @@ Upgrading from a version that used the single `cards` table? Take a `pg_dump` fi
 ### Environment Variables
 ``` bash
 SERVER_PORT=17808          # or LISTEN_ADDR=0.0.0.0:17808
-STORAGE=postgres           # postgres | memory (memory: nothing is saved, handy for a demo)
+STORAGE=postgres           # postgres | sqlite | memory (memory: nothing is saved, handy for a demo)
+SQLITE_PATH=/data/kanban.db # STORAGE=sqlite only; the image has a volume at /data
 DATABASE_URL=              # full DSN; wins over the DB_* variables below
 DB_USER=user
 DB_PASS=password
@@ -59,7 +67,7 @@ LOG_FORMAT=text            # text | json
 ### Building from source
 ``` bash
 go build ./cmd/kanban
-go test ./...                       # memory backend only
+go test ./...                       # memory and sqlite backends, no database needed
 KANBAN_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/kanban_test?sslmode=disable go test ./...
 ```
 
@@ -68,7 +76,7 @@ If I feel like it I might work on some of these things:
 - [x] darkmode
 - [ ] remove/add/edit collums (the data model has them; the UI is next)
 - [ ] make it pretty
-- [ ] add sqlite option for people too lazy to setup a db
+- [x] add sqlite option for people too lazy to setup a db
 - [ ] tls
 - [ ] oidc
 - [ ] ...

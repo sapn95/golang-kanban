@@ -6,6 +6,13 @@ metadata:
   labels: {{- include "kanban.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if eq .Values.storage "sqlite" }}
+  # A rolling update would start the new pod before the old one lets go of the
+  # file, so the two would either fight over the database or the second would
+  # sit unschedulable on a ReadWriteOnce volume. Old pod first.
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels: {{- include "kanban.selectorLabels" . | nindent 6 }}
   template:
@@ -79,6 +86,10 @@ spec:
                   key: url
                   {{- end }}
             {{- end }}
+            {{- if eq .Values.storage "sqlite" }}
+            - name: SQLITE_PATH
+              value: {{ .Values.sqlite.path | quote }}
+            {{- end }}
             {{- with .Values.app.extraEnv }}{{- toYaml . | nindent 12 }}{{- end }}
           # /healthz answers as soon as the process is up; /readyz additionally
           # checks the store, so it is the one that gates traffic.
@@ -98,6 +109,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if eq .Values.storage "sqlite" }}
+            # The only writable path that survives the pod. fsGroup 65532 in
+            # podSecurityContext is what lets the non-root user write to it.
+            - name: data
+              mountPath: {{ include "kanban.sqliteDir" . | quote }}
+            {{- end }}
         {{- if (.Values.auth | default dict).enabled }}
         {{- $sec := .Values.auth.existingSecret | default (include "kanban.authFullname" .) }}
         - name: oauth2-proxy
@@ -180,6 +197,11 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if eq .Values.storage "sqlite" }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "kanban.sqliteFullname" . }}
+        {{- end }}
         {{- if and (.Values.auth | default dict).enabled ((.Values.auth | default dict).tls | default dict).enabled }}
         - name: tls
           secret:

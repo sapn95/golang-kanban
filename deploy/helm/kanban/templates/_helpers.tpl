@@ -24,6 +24,18 @@ under the app's own name, so the two Deployments would fight over one Service.
 {{- printf "%s-postgres" (include "kanban.fullname" . | trunc 54 | trimSuffix "-") | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/*
+"-data" needs five characters, for the same reason kanban.postgresFullname
+reserves nine.
+*/}}
+{{- define "kanban.sqliteFullname" -}}
+{{- printf "%s-data" (include "kanban.fullname" . | trunc 58 | trimSuffix "-") | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "kanban.sqliteDir" -}}
+{{- dir .Values.sqlite.path -}}
+{{- end -}}
+
 {{- define "kanban.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{ include "kanban.selectorLabels" . }}
@@ -73,11 +85,11 @@ Two consequences, both documented in README.md rather than papered over:
 Fail early on a values combination that would deploy something broken.
 */}}
 {{- define "kanban.validate" -}}
-{{- if not (has .Values.storage (list "postgres" "memory")) -}}
-{{- fail (printf "storage must be postgres or memory, got %q" .Values.storage) -}}
+{{- if not (has .Values.storage (list "postgres" "sqlite" "memory")) -}}
+{{- fail (printf "storage must be postgres, sqlite or memory, got %q" .Values.storage) -}}
 {{- end -}}
-{{- if and (eq .Values.storage "memory") .Values.postgres.enabled -}}
-{{- fail "storage=memory does not use a database: set postgres.enabled=false" -}}
+{{- if and (has .Values.storage (list "sqlite" "memory")) .Values.postgres.enabled -}}
+{{- fail (printf "storage=%s does not use a database: set postgres.enabled=false" .Values.storage) -}}
 {{- end -}}
 {{- if and (eq .Values.storage "postgres") (not .Values.postgres.enabled) (not .Values.externalDatabase.url) (not .Values.externalDatabase.existingSecret) -}}
 {{- fail "storage=postgres with postgres.enabled=false needs externalDatabase.url or externalDatabase.existingSecret" -}}
@@ -85,8 +97,34 @@ Fail early on a values combination that would deploy something broken.
 {{- if and (gt (int .Values.replicaCount) 1) (eq .Values.storage "memory") -}}
 {{- fail "storage=memory keeps state in the pod: replicaCount must be 1, or use postgres" -}}
 {{- end -}}
+{{- if and (gt (int .Values.replicaCount) 1) (eq .Values.storage "sqlite") -}}
+{{- fail "storage=sqlite is one file with one writer: replicaCount must be 1, or use postgres" -}}
+{{- end -}}
+{{- include "kanban.validateSQLite" . -}}
 {{- include "kanban.validateDSNParts" . -}}
 {{- include "kanban.validateAuth" . -}}
+{{- end -}}
+
+{{/*
+The database file is not the mount point: SQLite writes <name>-wal and
+<name>-shm beside it, so the volume has to be the directory. That makes the
+directory the value everything else derives from, and rules out the two paths
+that cannot be one: "/" would mount the volume over the container root, and
+/tmp is already the emptyDir this pod mounts for Go's temporary files.
+*/}}
+{{- define "kanban.validateSQLite" -}}
+{{- if eq .Values.storage "sqlite" -}}
+{{- $path := (.Values.sqlite | default dict).path | default "" -}}
+{{- if not (isAbs $path) -}}
+{{- fail (printf "sqlite.path must be an absolute path, got %q" $path) -}}
+{{- end -}}
+{{- if eq (dir $path) "/" -}}
+{{- fail (printf "sqlite.path must live in a directory of its own, got %q: the volume is mounted at the file's directory, and that one is the container root" $path) -}}
+{{- end -}}
+{{- if eq (dir $path) "/tmp" -}}
+{{- fail (printf "sqlite.path must not be under /tmp, got %q: /tmp is an emptyDir the pod loses on every restart" $path) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "kanban.authFullname" -}}

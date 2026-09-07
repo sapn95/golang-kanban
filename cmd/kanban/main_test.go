@@ -6,6 +6,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -126,6 +129,73 @@ func TestServeMemory(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"msg":"shutting down"`) {
 		t.Fatalf("logs: %s", logs.String())
+	}
+}
+
+// TestServeSQLite is the SQLite wiring end to end: a board created over HTTP
+// is still there after the process that created it has exited.
+func TestServeSQLite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kanban.db")
+	e := env(map[string]string{"STORAGE": "sqlite", "SQLITE_PATH": path, "LISTEN_ADDR": "127.0.0.1:0"})
+	addrs := make(chan net.Addr, 1)
+	old := notifyListening
+	notifyListening = func(a net.Addr) { addrs <- a }
+	defer func() { notifyListening = old }()
+
+	start := func() (string, func()) {
+		ctx, cancel := context.WithCancel(context.Background())
+		logs := &syncBuf{}
+		done := make(chan int, 1)
+		go func() { done <- run(ctx, nil, e, io.Discard, logs) }()
+		var addr net.Addr
+		select {
+		case addr = <-addrs:
+		case <-time.After(5 * time.Second):
+			cancel()
+			t.Fatalf("server did not start: %s", logs.String())
+		}
+		return "http://" + addr.String(), func() {
+			cancel()
+			select {
+			case code := <-done:
+				if code != 0 {
+					t.Errorf("exit code %d: %s", code, logs.String())
+				}
+			case <-time.After(15 * time.Second):
+				t.Error("server did not stop")
+			}
+		}
+	}
+
+	base, stop := start()
+	resp, err := http.PostForm(base+"/boards", url.Values{"name": {"Homelab"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/b/homelab" {
+		t.Fatalf("POST /boards: %d %s", resp.StatusCode, resp.Request.URL)
+	}
+	if !strings.Contains(string(body), "Homelab") {
+		t.Fatalf("board page does not name the board: %s", body)
+	}
+	stop()
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("database file: %v", err)
+	}
+
+	base, stop = start()
+	defer stop()
+	resp, err = http.Get(base + "/b/homelab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "Homelab") {
+		t.Fatalf("GET /b/homelab after restart: %d %s", resp.StatusCode, body)
 	}
 }
 

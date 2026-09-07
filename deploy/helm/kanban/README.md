@@ -1,6 +1,7 @@
 # kanban Helm chart
 
-Deploys the board and, optionally, a Postgres for it to use.
+Deploys the board and, depending on `storage`, a Postgres or a volume for it to
+use.
 
 ```sh
 helm install kanban ./deploy/helm/kanban
@@ -16,9 +17,18 @@ decides where that comes from:
 | `postgres.enabled: true` | the chart runs one, with a generated password and a PVC |
 | `postgres.enabled: false` | set `externalDatabase.url`, or `externalDatabase.existingSecret` |
 
-`storage: memory` needs no database at all. The board lives in the pod and is
-gone when it restarts, which makes it the fastest way to look at the app and
-the wrong way to keep anything:
+`storage: sqlite` runs no database at all. The board is one file on a volume
+this chart claims, so there is no second workload to operate, no init container
+waiting for it, and the board still survives the pod:
+
+```sh
+helm install kanban ./deploy/helm/kanban \
+  --set storage=sqlite --set postgres.enabled=false
+```
+
+`storage: memory` needs no database and no volume. The board lives in the pod
+and is gone when it restarts, which makes it the fastest way to look at the app
+and the wrong way to keep anything:
 
 ```sh
 helm install kanban ./deploy/helm/kanban \
@@ -26,10 +36,12 @@ helm install kanban ./deploy/helm/kanban \
 ```
 
 These combinations fail at template time rather than at runtime: an unknown
-backend, `memory` with a database attached, `postgres` with nowhere to connect,
-more than one replica against `memory`, an ingress with no hosts or a host with
-no paths, and a user, database or password carrying a character that would have
-to be percent-encoded inside the connection string.
+backend, `memory` or `sqlite` with a database attached, `postgres` with nowhere
+to connect, more than one replica against `memory` or `sqlite`, a `sqlite.path`
+that is not absolute or that sits somewhere the chart cannot mount a volume, an
+ingress with no hosts or a host with no paths, and a user, database or password
+carrying a character that would have to be percent-encoded inside the connection
+string.
 
 ## Reaching it
 
@@ -95,6 +107,35 @@ neither `auth.tls` nor `ingress.tls` therefore fails at template time. Set
 The client secret and the generated cookie secret live in a Secret that carries
 `helm.sh/resource-policy: keep`, for the same reason the database Secret does:
 losing the cookie secret signs out every open session.
+
+## The SQLite volume
+
+`storage: sqlite` creates one `ReadWriteOnce` PersistentVolumeClaim and mounts
+it into the app pod. `sqlite.path` is the database file; the mount is the
+directory holding it, because SQLite writes the `-wal` and `-shm` files next to
+the database and has to create them. A `sqlite.path` sitting directly in `/`, or
+anywhere under `/tmp`, is refused: the first would mount the volume over the
+container root, the second lands in the `emptyDir` that holds Go's temporary
+files and goes away with the pod.
+
+`readOnlyRootFilesystem` stays on. The volume and that `/tmp` are the only
+writable paths, and only the volume outlives the pod. `fsGroup: 65532` in
+`podSecurityContext` is what lets the non-root user in the image write to it.
+
+One file takes one writer, so the chart refuses `replicaCount` above 1 and the
+Deployment switches to `strategy: Recreate`: a rolling update would otherwise
+start the second pod while the first still holds the file.
+
+**The claim is kept on uninstall**, for the same reason the Postgres one is: it
+is the board. Removing it is a separate, deliberate step:
+
+```sh
+kubectl delete pvc -l app.kubernetes.io/instance=<release>
+```
+
+Nothing in this chart takes a backup, and there is no `pg_dump` to run. A backup
+is a copy of the directory (the database file and its `-wal` sibling) taken
+while nothing writes to it, which with one replica means scaling to zero first.
 
 ## The bundled Postgres
 

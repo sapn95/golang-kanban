@@ -1,0 +1,21 @@
+{{- if eq .Values.storage "sqlite" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kanban.sqliteFullname" . }}
+  labels: {{- include "kanban.labels" . | nindent 4 }}
+  annotations:
+    {{- /* The board is this volume. Deleting it on uninstall would throw away
+           the only copy of the data, which the bundled Postgres is careful not
+           to do either. */}}
+    helm.sh/resource-policy: keep
+spec:
+  # One file, one writer: the same rule that pins replicaCount to 1.
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.sqlite.persistence.size }}
+  {{- with .Values.sqlite.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

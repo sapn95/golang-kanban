@@ -25,6 +25,7 @@ import (
 	"kanban/internal/store"
 	"kanban/internal/store/memory"
 	"kanban/internal/store/postgres"
+	"kanban/internal/store/sqlite"
 	"kanban/internal/web"
 )
 
@@ -105,6 +106,8 @@ func openStore(cfg config.Config) (store.Store, error) {
 		return memory.New(), nil
 	case config.StoragePostgres:
 		return postgres.Open(cfg.DSN())
+	case config.StorageSQLite:
+		return sqlite.Open(cfg.SQLitePath)
 	}
 	return nil, fmt.Errorf("unknown storage %q", cfg.Storage)
 }

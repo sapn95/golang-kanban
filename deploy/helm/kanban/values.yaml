@@ -1,4 +1,7 @@
-# Storage backend: postgres or memory.
+# Storage backend: postgres, sqlite or memory.
+#
+# sqlite keeps the board in one file on a volume this chart claims. No database
+# server, and one writer: replicaCount has to stay 1.
 #
 # memory keeps everything in the pod and loses it on restart. It needs no
 # database and is the fastest way to look at the app; use it for a demo, never
@@ -18,7 +21,8 @@ replicaCount: 1
 
 # The app holds no state of its own, but two replicas against one Postgres are
 # only safe once the store is proven under concurrency. Keep this at 1 unless
-# you have tested otherwise.
+# you have tested otherwise. With storage=memory or storage=sqlite the chart
+# refuses anything but 1.
 
 service:
   type: ClusterIP
@@ -52,6 +56,16 @@ postgres:
   resources:
     requests: {cpu: 50m, memory: 128Mi}
     limits: {memory: 512Mi}
+
+# Used when storage is sqlite. The chart creates the claim, mounts it at the
+# directory holding the file, and keeps it when the release is uninstalled.
+sqlite:
+  # The database file. The mount is its directory, not the file itself: SQLite
+  # puts the -wal and -shm files next to it and needs to create them.
+  path: /data/kanban.db
+  persistence:
+    size: 1Gi
+    storageClass: ""
 
 # Used when postgres.enabled is false. existingSecret wins over url.
 externalDatabase:

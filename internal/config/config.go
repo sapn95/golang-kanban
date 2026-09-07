@@ -17,7 +17,7 @@ type Config struct {
 	ListenAddr string // LISTEN_ADDR; wins over SERVER_PORT when set
 	ServerPort string // SERVER_PORT, default 17808
 
-	Storage     string // STORAGE: postgres | memory
+	Storage     string // STORAGE: postgres | sqlite | memory
 	DatabaseURL string // DATABASE_URL; wins over the DB_* variables when set
 	DBUser      string
 	DBPass      string
@@ -25,6 +25,7 @@ type Config struct {
 	DBPort      string
 	DBName      string
 	DBSSLMode   string // DB_SSLMODE, default disable
+	SQLitePath  string // SQLITE_PATH, default /data/kanban.db
 
 	AutoMigrate bool   // AUTO_MIGRATE, default true
 	LogLevel    string // LOG_LEVEL: debug | info | warn | error
@@ -34,8 +35,13 @@ type Config struct {
 // Storage backends accepted by STORAGE.
 const (
 	StoragePostgres = "postgres"
+	StorageSQLite   = "sqlite"
 	StorageMemory   = "memory"
 )
+
+// The image declares VOLUME ["/data"] for this file, so mounting something
+// there is the whole of the setup SQLite needs.
+const defaultSQLitePath = "/data/kanban.db"
 
 // Lookup returns the value of an environment variable; the empty string means
 // unset. os.Getenv satisfies it.
@@ -64,8 +70,10 @@ func FromEnv(get Lookup) (Config, error) {
 		DBPort:      env("DB_PORT", "5432"),
 		DBName:      env("DB_NAME", "kanban"),
 		DBSSLMode:   env("DB_SSLMODE", "disable"),
-		LogLevel:    strings.ToLower(env("LOG_LEVEL", "info")),
-		LogFormat:   strings.ToLower(env("LOG_FORMAT", "text")),
+		SQLitePath:  env("SQLITE_PATH", defaultSQLitePath),
+
+		LogLevel:  strings.ToLower(env("LOG_LEVEL", "info")),
+		LogFormat: strings.ToLower(env("LOG_FORMAT", "text")),
 	}
 	auto, err := strconv.ParseBool(env("AUTO_MIGRATE", "true"))
 	if err != nil {
@@ -78,9 +86,9 @@ func FromEnv(get Lookup) (Config, error) {
 // Validate reports the first invalid field.
 func (c Config) Validate() error {
 	switch c.Storage {
-	case StoragePostgres, StorageMemory:
+	case StoragePostgres, StorageSQLite, StorageMemory:
 	default:
-		return fmt.Errorf("STORAGE: unknown backend %q (want postgres or memory)", c.Storage)
+		return fmt.Errorf("STORAGE: unknown backend %q (want postgres, sqlite or memory)", c.Storage)
 	}
 	if _, err := c.SlogLevel(); err != nil {
 		return err

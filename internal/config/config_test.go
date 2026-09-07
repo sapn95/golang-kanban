@@ -22,6 +22,9 @@ func TestDefaults(t *testing.T) {
 	if c.Storage != StoragePostgres || !c.AutoMigrate || c.LogLevel != "info" || c.LogFormat != "text" {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
+	if c.SQLitePath != "/data/kanban.db" {
+		t.Errorf("SQLitePath = %q", c.SQLitePath)
+	}
 	want := "postgres://user:password@postgres:5432/kanban?sslmode=disable"
 	if got := c.DSN(); got != want {
 		t.Errorf("DSN = %q, want %q", got, want)
@@ -68,6 +71,26 @@ func TestOverrides(t *testing.T) {
 	c.Logger(&buf).Info("hello")
 	if !strings.Contains(buf.String(), "msg=hello") {
 		t.Errorf("text logger expected, got %q", buf.String())
+	}
+}
+
+func TestSQLite(t *testing.T) {
+	c, err := FromEnv(lookup(map[string]string{"STORAGE": "SQLite"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Storage != StorageSQLite {
+		t.Errorf("Storage = %q", c.Storage)
+	}
+	if c.SQLitePath != "/data/kanban.db" {
+		t.Errorf("SQLitePath = %q", c.SQLitePath)
+	}
+	c, err = FromEnv(lookup(map[string]string{"STORAGE": "sqlite", "SQLITE_PATH": "/srv/board.db"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SQLitePath != "/srv/board.db" {
+		t.Errorf("SQLitePath = %q", c.SQLitePath)
 	}
 }
 

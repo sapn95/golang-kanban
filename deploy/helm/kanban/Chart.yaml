@@ -1,6 +1,6 @@
 apiVersion: v2
 name: kanban
-description: A self-hosted kanban board — single static binary, Postgres or in-memory storage
+description: A self-hosted kanban board — single static binary, Postgres, SQLite or in-memory storage
 type: application
 version: 0.1.0
 # The image tag this chart pulls by default. 0.1.0 was never published;
