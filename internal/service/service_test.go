@@ -331,3 +331,152 @@ func TestStoreErrors(t *testing.T) {
 		t.Errorf("Error() = %q", ve.Error())
 	}
 }
+
+func TestBulkRejects(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		action BulkAction
+		ids    []model.ID
+		field  string
+	}{
+		{"nothing selected", BulkDelete, nil, "ids"},
+		{"unknown action", BulkAction("burn"), []model.ID{c.ID}, "action"},
+		{"more than the cap", BulkDelete, make([]model.ID, MaxBulk+1), "ids"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := k.Bulk(ctx, b.ID, tt.action, tt.ids, ""); !isValidation(err, tt.field) {
+				t.Errorf("err = %v, want a validation error on %q", err, tt.field)
+			}
+		})
+	}
+}
+
+func TestBulkActions(t *testing.T) {
+	ctx := context.Background()
+
+	setup := func(t *testing.T) (*Kanban, *model.Board, []model.ID) {
+		t.Helper()
+		k := newSvc(t)
+		b, _ := k.CreateBoard(ctx, "B", "", nil)
+		var ids []model.ID
+		for _, title := range []string{"one", "two", "three"} {
+			c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: title})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, c.ID)
+		}
+		return k, b, ids
+	}
+
+	t.Run("assign", func(t *testing.T) {
+		k, b, ids := setup(t)
+		res, err := k.Bulk(ctx, b.ID, BulkAssign, ids[:2], " someone@example.com ")
+		if err != nil || len(res.Changed) != 2 || len(res.Failed) != 0 {
+			t.Fatalf("res = %+v, err = %v", res, err)
+		}
+		for _, id := range ids[:2] {
+			c, err := k.Card(ctx, id)
+			if err != nil || c.Assignee != "someone@example.com" {
+				t.Errorf("card %s assignee = %q (err %v), want it trimmed and set", id, c.Assignee, err)
+			}
+		}
+		if c, _ := k.Card(ctx, ids[2]); c.Assignee != "" {
+			t.Errorf("an unselected card was assigned: %q", c.Assignee)
+		}
+	})
+
+	t.Run("unassign", func(t *testing.T) {
+		k, b, ids := setup(t)
+		if _, err := k.Bulk(ctx, b.ID, BulkAssign, ids, "someone@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := k.Bulk(ctx, b.ID, BulkAssign, ids, ""); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range ids {
+			if c, _ := k.Card(ctx, id); c.Assignee != "" {
+				t.Errorf("card %s still assigned to %q", id, c.Assignee)
+			}
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		k, b, ids := setup(t)
+		res, err := k.Bulk(ctx, b.ID, BulkDelete, ids[:2], "")
+		if err != nil || len(res.Changed) != 2 {
+			t.Fatalf("res = %+v, err = %v", res, err)
+		}
+		cards, _ := k.Cards(ctx, b.ID)
+		if len(cards) != 1 {
+			t.Errorf("%d cards left, want 1", len(cards))
+		}
+	})
+
+	t.Run("move", func(t *testing.T) {
+		k, b, ids := setup(t)
+		doing := b.Columns[1].ID
+		if _, err := k.Bulk(ctx, b.ID, BulkMove, ids, string(doing)); err != nil {
+			t.Fatal(err)
+		}
+		cards, _ := k.Cards(ctx, b.ID)
+		for _, c := range cards {
+			if c.ColumnID != doing {
+				t.Errorf("card %s is in %s, want %s", c.ID, c.ColumnID, doing)
+			}
+		}
+	})
+
+	t.Run("a duplicate id is applied once", func(t *testing.T) {
+		k, b, ids := setup(t)
+		res, err := k.Bulk(ctx, b.ID, BulkDelete, []model.ID{ids[0], ids[0]}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Changed) != 1 || len(res.Failed) != 0 {
+			t.Errorf("res = %+v, want one change and no failure", res)
+		}
+	})
+
+	t.Run("a card on another board is refused, not applied", func(t *testing.T) {
+		k, b, ids := setup(t)
+		other, _ := k.CreateBoard(ctx, "Other", "", nil)
+		victim, err := k.CreateCard(ctx, other.ID, other.Columns[0].ID, CardInput{Title: "theirs"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := k.Bulk(ctx, b.ID, BulkDelete, []model.ID{ids[0], victim.ID}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Changed) != 1 {
+			t.Errorf("changed = %v, want only the card on this board", res.Changed)
+		}
+		if _, ok := res.Failed[victim.ID]; !ok {
+			t.Error("the other board's card was not reported as failed")
+		}
+		if _, err := k.Card(ctx, victim.ID); err != nil {
+			t.Error("the other board's card was deleted")
+		}
+	})
+
+	t.Run("one bad id does not stop the rest", func(t *testing.T) {
+		k, b, ids := setup(t)
+		res, err := k.Bulk(ctx, b.ID, BulkDelete, []model.ID{ids[0], "nope", ids[1]}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Changed) != 2 || len(res.Failed) != 1 {
+			t.Errorf("res = %+v, want two changes and one failure", res)
+		}
+	})
+}

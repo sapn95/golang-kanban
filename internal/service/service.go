@@ -410,3 +410,85 @@ func (k *Kanban) UpdateLabel(ctx context.Context, id model.ID, name, color strin
 func (k *Kanban) DeleteLabel(ctx context.Context, id model.ID) error {
 	return k.store.DeleteLabel(ctx, id)
 }
+
+// BulkAction is one of the operations Bulk applies to a set of cards.
+type BulkAction string
+
+const (
+	BulkDelete BulkAction = "delete"
+	BulkMove   BulkAction = "move"
+	BulkAssign BulkAction = "assign"
+)
+
+// MaxBulk caps one bulk request. Every card is a separate store call, so an
+// unbounded list would hold a request open for as long as someone cared to
+// make it.
+const MaxBulk = 200
+
+// BulkResult reports what a bulk request did. Failures are collected rather
+// than aborting, because the operations are independent: a card someone else
+// deleted a second ago should not stop the other forty-nine from moving.
+type BulkResult struct {
+	Changed []model.ID
+	Failed  map[model.ID]error
+}
+
+// Bulk applies action to ids. target is the destination column for BulkMove
+// and the address for BulkAssign; it is ignored for BulkDelete.
+//
+// There is no transaction across the set, and there deliberately is not one:
+// the store interface is one method per user action so that backends without
+// transactions can implement it, and a bulk operation that needed atomicity
+// would leak that requirement into every backend. Partial success is
+// reported instead of hidden.
+func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, ids []model.ID, target string) (BulkResult, error) {
+	res := BulkResult{Failed: map[model.ID]error{}}
+	if len(ids) == 0 {
+		return res, invalid("ids", "no cards selected")
+	}
+	if len(ids) > MaxBulk {
+		return res, invalid("ids", fmt.Sprintf("at most %d cards at a time", MaxBulk))
+	}
+	switch action {
+	case BulkDelete, BulkMove, BulkAssign:
+	default:
+		return res, invalid("action", "unknown action "+string(action))
+	}
+
+	seen := map[model.ID]bool{}
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+
+		// Every card is re-read and checked against the board in the request,
+		// so a crafted id cannot reach a card on someone else's board.
+		c, err := k.store.GetCard(ctx, id)
+		if err != nil {
+			res.Failed[id] = err
+			continue
+		}
+		if c.BoardID != boardID {
+			res.Failed[id] = store.ErrNotFound
+			continue
+		}
+
+		switch action {
+		case BulkDelete:
+			err = k.store.DeleteCard(ctx, id)
+		case BulkAssign:
+			c.Assignee = strings.TrimSpace(target)
+			c.UpdatedAt = k.now()
+			err = k.store.UpdateCard(ctx, c)
+		case BulkMove:
+			err = k.store.ReorderCards(ctx, boardID, model.ID(target), []model.ID{id})
+		}
+		if err != nil {
+			res.Failed[id] = err
+			continue
+		}
+		res.Changed = append(res.Changed, id)
+	}
+	return res, nil
+}

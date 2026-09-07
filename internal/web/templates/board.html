@@ -5,6 +5,37 @@
   </button>
 </div>
 
+<div id="selectionBar" hidden
+     class="sticky top-0 z-20 mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-4 py-3 shadow">
+  <span class="text-sm font-medium text-blue-900 dark:text-blue-100"><span id="selectionCount">0</span> selected</span>
+  <form class="flex flex-wrap items-center gap-2" hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
+    <input type="hidden" name="action" value="move">
+    <select name="target" class="px-2 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+      {{range .Columns}}<option value="{{.Column.ID}}">{{.Column.Name}}</option>{{end}}
+    </select>
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Move</button>
+  </form>
+  {{if .User.Email}}
+  <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
+    <input type="hidden" name="action" value="assign">
+    <input type="hidden" name="target" value="@me">
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100">Assign to me</button>
+  </form>
+  {{end}}
+  <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
+    <input type="hidden" name="action" value="assign">
+    <input type="hidden" name="target" value="">
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100">Unassign</button>
+  </form>
+  <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none"
+        hx-confirm="Delete the selected cards? This cannot be undone.">
+    <input type="hidden" name="action" value="delete">
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-red-600 hover:bg-red-700 text-white">Delete</button>
+  </form>
+  <button type="button" id="clearSelection"
+          class="ml-auto px-3 py-1.5 text-sm rounded-lg text-blue-900 dark:text-blue-100 hover:bg-blue-100 dark:hover:bg-blue-900">Clear</button>
+</div>
+
 <div class="flex gap-6 overflow-x-auto pb-4 items-start">
   {{range .Columns}}
   <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 min-w-[85vw] sm:min-w-[20rem] flex-1">
