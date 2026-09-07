@@ -1509,3 +1509,53 @@ func TestTheAssetVersionFollowsTheContent(t *testing.T) {
 		t.Error("the version is not stable between calls")
 	}
 }
+
+func TestBoardLayout(t *testing.T) {
+	post := func(e *env, path string, body io.Reader) *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, path, body, "Content-Type", "application/x-www-form-urlencoded",
+			"Sec-Fetch-Site", "same-origin")
+	}
+
+	t.Run("a board starts as columns", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if strings.Contains(body, `class="kanban-scroller rows"`) {
+			t.Error("a new board came up as rows")
+		}
+		// The button offers the layout it is not in.
+		if !strings.Contains(body, `value="rows"`) {
+			t.Error("the board does not offer to switch to rows")
+		}
+	})
+
+	t.Run("switching sticks and the button reverses", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/layout", form("layout", "rows")), http.StatusSeeOther)
+
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, `class="kanban-scroller rows"`) {
+			t.Error("the board did not come back as rows")
+		}
+		if !strings.Contains(body, `value="columns"`) {
+			t.Error("the button does not offer the way back")
+		}
+		b, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// It belongs to the board, not to the browser: a board that reads
+		// better as rows reads better as rows for whoever opens it.
+		if b.Layout != model.LayoutRows {
+			t.Errorf("stored layout = %q, want rows", b.Layout)
+		}
+	})
+
+	t.Run("an unknown layout is refused and changes nothing", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/layout", form("layout", "spiral")), http.StatusBadRequest)
+		b, _ := e.svc.Board(context.Background(), "demo")
+		if b.Layout != model.LayoutColumns {
+			t.Errorf("layout = %q after a refused change, want it untouched", b.Layout)
+		}
+	})
+}

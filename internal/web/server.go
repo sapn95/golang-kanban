@@ -92,6 +92,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /b/{board}/columns/{id}", s.updateColumn)
 	mux.HandleFunc("POST /b/{board}/columns/{id}/delete", s.deleteColumn)
 	mux.HandleFunc("POST /b/{board}/columns/{id}/move", s.moveColumn)
+	mux.HandleFunc("POST /b/{board}/layout", s.setLayout)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
@@ -242,6 +243,10 @@ type boardPage struct {
 	Board     *model.Board
 	Columns   []columnView
 	EmptyCard cardView
+	// Rows is the board drawn as stacked rows rather than side-by-side
+	// columns. Resolved here so the template asks a boolean rather than
+	// comparing strings.
+	Rows bool
 }
 
 type archivePage struct {
@@ -386,7 +391,11 @@ func plural(n int, unit string) string {
 }
 
 func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, comments map[model.ID]int) boardPage {
-	p := boardPage{Title: b.Name, User: u, BoardSlug: b.Slug, Board: b, EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels, Columns: b.Columns}}
+	p := boardPage{
+		Title: b.Name, User: u, BoardSlug: b.Slug, Board: b,
+		Rows:      model.LayoutOrDefault(b.Layout) == model.LayoutRows,
+		EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels, Columns: b.Columns},
+	}
 	byColumn := map[model.ID][]cardView{}
 	for _, c := range cards {
 		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c, comments[c.ID]))
@@ -1082,6 +1091,23 @@ func (s *Server) deleteColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.settingsRedirect(w, r, b)
+}
+
+// setLayout switches the board between columns and rows. It posts from the
+// board itself rather than the settings page: it is a thing you decide while
+// looking at the board, and the answer is visible the moment you land back on
+// it.
+func (s *Server) setLayout(w http.ResponseWriter, r *http.Request) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.SetBoardLayout(r.Context(), b.ID, r.FormValue("layout")); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
 }
 
 // moveColumn swaps a column with its neighbour. A move off either end is a

@@ -28,6 +28,7 @@ func Run(t *testing.T, newStore New) {
 		"Assignee":      testAssignee,
 		"Archive":       testArchive,
 		"Comments":      testComments,
+		"Layout":        testLayout,
 		"ReorderCards":  testReorderCards,
 		"Labels":        testLabels,
 		"Timestamps":    testTimestamps,
@@ -737,5 +738,44 @@ func testArchive(t *testing.T, s store.Store) {
 	// A card that does not exist is a miss, not a silent success.
 	if err := s.SetCardArchived(ctx, model.ID("nope"), now()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("archiving an unknown card = %v, want ErrNotFound", err)
+	}
+}
+
+func testLayout(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "layout", "A")
+
+	// A board written without a layout comes back with the default rather
+	// than with an empty string the front-end would have to interpret.
+	got, err := s.GetBoard(ctx, "layout")
+	if err != nil {
+		t.Fatalf("GetBoard: %v", err)
+	}
+	if got.Layout != model.LayoutColumns {
+		t.Errorf("layout = %q on a fresh board, want %q", got.Layout, model.LayoutColumns)
+	}
+
+	got.Layout = model.LayoutRows
+	got.UpdatedAt = now()
+	if err := s.UpdateBoard(ctx, got); err != nil {
+		t.Fatalf("UpdateBoard: %v", err)
+	}
+	again, err := s.GetBoardByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("GetBoardByID: %v", err)
+	}
+	if again.Layout != model.LayoutRows {
+		t.Errorf("layout = %q after an update, want %q", again.Layout, model.LayoutRows)
+	}
+
+	// And it survives a listing, which is a different query.
+	boards, err := s.ListBoards(ctx)
+	if err != nil {
+		t.Fatalf("ListBoards: %v", err)
+	}
+	for _, l := range boards {
+		if l.ID == b.ID && l.Layout != model.LayoutRows {
+			t.Errorf("ListBoards returned layout %q, want %q", l.Layout, model.LayoutRows)
+		}
 	}
 }
