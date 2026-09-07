@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kanban">
+  <title>Kanban</title>
+  <!-- Three columns, filling from the left: the shape reads as work moving
+       across a board even at favicon size, where any finer detail is lost. -->
+  <defs>
+    <linearGradient id="k" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#9333ea"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="60" height="60" rx="13" fill="url(#k)"/>
+
+  <g fill="#fff">
+    <!-- to do -->
+    <rect x="12" y="16" width="12" height="9" rx="2.5"/>
+    <rect x="12" y="28" width="12" height="9" rx="2.5"/>
+    <rect x="12" y="40" width="12" height="9" rx="2.5"/>
+    <!-- doing -->
+    <rect x="26" y="16" width="12" height="9" rx="2.5"/>
+    <rect x="26" y="28" width="12" height="9" rx="2.5"/>
+    <rect x="26" y="40" width="12" height="9" rx="2.5" opacity=".35"/>
+    <!-- done -->
+    <rect x="40" y="16" width="12" height="9" rx="2.5"/>
+    <rect x="40" y="28" width="12" height="9" rx="2.5" opacity=".35"/>
+    <rect x="40" y="40" width="12" height="9" rx="2.5" opacity=".35"/>
+  </g>
+</svg>
