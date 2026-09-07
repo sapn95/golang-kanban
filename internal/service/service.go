@@ -30,6 +30,9 @@ const (
 	// and the card stays in the database so every later render fails too.
 	MaxSubtasks = 100
 	MaxSlug     = 64
+	// MaxComment is a paragraph or two. A comment cannot be edited, so the cap
+	// is also the point at which someone should have written a card instead.
+	MaxComment = 5000
 )
 
 // Default board created on an empty database.
@@ -43,6 +46,11 @@ var DefaultColumns = []string{"To Do", "In Progress", "Done"}
 
 // ErrWIPLimit is returned when a move or create would exceed a column's limit.
 var ErrWIPLimit = errors.New("column is at its WIP limit")
+
+// ErrNotAuthor is returned when someone tries to remove a comment they did not
+// write. It is separate from a validation error because the request is well
+// formed; it is the person making it who is wrong.
+var ErrNotAuthor = errors.New("only the author can remove a comment")
 
 // ValidationError names the offending field. Handlers turn it into a 400.
 type ValidationError struct {
@@ -451,6 +459,58 @@ func (k *Kanban) ReorderCards(ctx context.Context, boardID, columnID model.ID, o
 		return err
 	}
 	return k.store.ReorderCards(ctx, boardID, columnID, order)
+}
+
+// --- comments ---------------------------------------------------------------
+
+// Comments returns a card's thread, oldest first.
+func (k *Kanban) Comments(ctx context.Context, cardID model.ID) ([]model.Comment, error) {
+	return k.store.ListComments(ctx, cardID)
+}
+
+// CommentCounts returns how many comments each card of a board carries, for
+// the badge on the card face. Cards without any are absent from the map.
+func (k *Kanban) CommentCounts(ctx context.Context, boardID model.ID) (map[model.ID]int, error) {
+	return k.store.CountComments(ctx, boardID)
+}
+
+// AddComment appends a comment to a card. author is whoever the identity layer
+// says is asking; it is stored as given and never looked up.
+func (k *Kanban) AddComment(ctx context.Context, cardID model.ID, author, body string) (*model.Comment, error) {
+	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
+	if err := checkText("body", body, MaxComment, true); err != nil {
+		return nil, err
+	}
+	author = strings.TrimSpace(author)
+	if err := checkText("author", author, MaxAssignee, false); err != nil {
+		return nil, err
+	}
+	c := &model.Comment{ID: k.newID(), CardID: cardID, Author: author, Body: body, CreatedAt: k.now()}
+	if err := k.store.CreateComment(ctx, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// DeleteComment removes a comment, if asker wrote it. It returns the comment
+// it removed, so the caller knows which card the thread belonged to.
+//
+// Two empty addresses count as a match. That is not a hole: it can only happen
+// where the deployment has no authentication at all, and there the board has
+// exactly one user by definition. Where Cloudflare Access is in front, every
+// comment carries an address and this compares two real ones.
+func (k *Kanban) DeleteComment(ctx context.Context, id model.ID, asker string) (*model.Comment, error) {
+	c, err := k.store.GetComment(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(asker), c.Author) {
+		return nil, ErrNotAuthor
+	}
+	if err := k.store.DeleteComment(ctx, id); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // --- labels -----------------------------------------------------------------

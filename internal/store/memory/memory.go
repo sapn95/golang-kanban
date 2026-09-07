@@ -14,14 +14,19 @@ import (
 
 // Store keeps everything in maps behind one mutex.
 type Store struct {
-	mu     sync.RWMutex
-	boards map[model.ID]*model.Board
-	cards  map[model.ID]*model.Card
+	mu       sync.RWMutex
+	boards   map[model.ID]*model.Board
+	cards    map[model.ID]*model.Card
+	comments map[model.ID]*model.Comment
 }
 
 // New returns an empty store.
 func New() *Store {
-	return &Store{boards: map[model.ID]*model.Board{}, cards: map[model.ID]*model.Card{}}
+	return &Store{
+		boards:   map[model.ID]*model.Board{},
+		cards:    map[model.ID]*model.Card{},
+		comments: map[model.ID]*model.Comment{},
+	}
 }
 
 var _ store.Store = (*Store)(nil)
@@ -60,6 +65,18 @@ func (s *Store) boardOfColumn(id model.ID) (*model.Board, *model.Column) {
 		}
 	}
 	return nil, nil
+}
+
+// dropCard removes a card and the comments on it. The SQL backends get that
+// second half from ON DELETE CASCADE; here it has to be written down, and
+// written down once, because three different operations delete cards.
+func (s *Store) dropCard(id model.ID) {
+	delete(s.cards, id)
+	for cid, c := range s.comments {
+		if c.CardID == id {
+			delete(s.comments, cid)
+		}
+	}
 }
 
 func (s *Store) boardOfLabel(id model.ID) (*model.Board, *model.Label) {
@@ -158,7 +175,7 @@ func (s *Store) DeleteBoard(_ context.Context, id model.ID) error {
 	delete(s.boards, id)
 	for cid, c := range s.cards {
 		if c.BoardID == id {
-			delete(s.cards, cid)
+			s.dropCard(cid)
 		}
 	}
 	return nil
@@ -221,7 +238,7 @@ func (s *Store) DeleteColumn(_ context.Context, id, moveCardsTo model.ID) error 
 	} else {
 		for cid, c := range s.cards {
 			if c.ColumnID == id {
-				delete(s.cards, cid)
+				s.dropCard(cid)
 			}
 		}
 	}
@@ -401,7 +418,7 @@ func (s *Store) DeleteCard(_ context.Context, id model.ID) error {
 	if _, ok := s.cards[id]; !ok {
 		return store.ErrNotFound
 	}
-	delete(s.cards, id)
+	s.dropCard(id)
 	return nil
 }
 
@@ -436,6 +453,73 @@ func (s *Store) ReorderCards(_ context.Context, boardID, columnID model.ID, orde
 		c.Position = i + 1
 	}
 	return nil
+}
+
+func (s *Store) ListComments(_ context.Context, cardID model.ID) ([]model.Comment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Comment
+	for _, c := range s.comments {
+		if c.CardID == cardID {
+			out = append(out, *c)
+		}
+	}
+	// Map iteration is unordered, so the tie-break on ID is what makes two
+	// comments written in the same instant come back in the same order twice.
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *Store) GetComment(_ context.Context, id model.ID) (*model.Comment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.comments[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	copied := *c
+	return &copied, nil
+}
+
+func (s *Store) CreateComment(_ context.Context, c *model.Comment) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.cards[c.CardID]; !ok {
+		return store.ErrNotFound
+	}
+	if _, ok := s.comments[c.ID]; ok {
+		return store.ErrConflict
+	}
+	copied := *c
+	s.comments[c.ID] = &copied
+	return nil
+}
+
+func (s *Store) DeleteComment(_ context.Context, id model.ID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.comments[id]; !ok {
+		return store.ErrNotFound
+	}
+	delete(s.comments, id)
+	return nil
+}
+
+func (s *Store) CountComments(_ context.Context, boardID model.ID) (map[model.ID]int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := map[model.ID]int{}
+	for _, c := range s.comments {
+		if card, ok := s.cards[c.CardID]; ok && card.BoardID == boardID {
+			out[c.CardID]++
+		}
+	}
+	return out, nil
 }
 
 func (s *Store) CreateLabel(_ context.Context, l *model.Label) error {

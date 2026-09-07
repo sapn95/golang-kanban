@@ -67,6 +67,8 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /cards/{id}/delete", s.deleteCard)
 	mux.HandleFunc("POST /cards/{id}/archive", s.archiveCard)
 	mux.HandleFunc("POST /cards/{id}/restore", s.restoreCard)
+	mux.HandleFunc("POST /cards/{id}/comments", s.addComment)
+	mux.HandleFunc("POST /comments/{id}/delete", s.deleteComment)
 	mux.HandleFunc("GET /b/{board}/archive", s.archive)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
@@ -91,7 +93,8 @@ func (s *Server) parseTemplates() {
 		"initial":      func(addr string) string { return identity.User{Email: addr}.Initial() },
 		"shortAddress": func(addr string) string { return identity.User{Email: addr}.Display() },
 	}
-	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/card.html", "templates/card_edit.html"))
+	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles,
+		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))
 	s.parts = base
 	s.pages = map[string]*template.Template{}
 	for _, name := range []string{"board", "boards", "archive"} {
@@ -112,6 +115,25 @@ type cardView struct {
 	Due         string         // "" or "2 Jan 2006"
 	DueInput    string         // "" or "2006-01-02"
 	Overdue     bool
+	// CommentCount draws the badge on the card face. The board loads every
+	// card's count in one call; a single-card fragment counts its own.
+	CommentCount int
+	// Comments is the thread, filled only for the edit form. The board does
+	// not read it, because that would be one query per card on every render.
+	Comments []commentView
+	// OOB marks the card as an out-of-band swap: the answer to a comment
+	// carries the card face along so its badge is not left stale behind the
+	// open modal. htmx ignores it when the board is not the page on screen.
+	OOB bool
+}
+
+type commentView struct {
+	Comment model.Comment
+	// Mine is whether the viewer wrote it, which is who may remove it.
+	Mine bool
+	// Ago is "3 hours ago"; Exact is the instant, for the title attribute.
+	Ago   string
+	Exact string
 }
 
 type columnView struct {
@@ -153,8 +175,8 @@ type boardsPage struct {
 	Error     string
 }
 
-func (s *Server) cardView(u identity.User, b *model.Board, c model.Card) cardView {
-	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels, Columns: b.Columns}
+func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comments int) cardView {
+	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
 			v.Labels = append(v.Labels, *l)
@@ -169,11 +191,49 @@ func (s *Server) cardView(u identity.User, b *model.Board, c model.Card) cardVie
 	return v
 }
 
-func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card) boardPage {
+func (s *Server) commentView(u identity.User, c model.Comment) commentView {
+	return commentView{
+		Comment: c,
+		Mine:    strings.EqualFold(u.Email, c.Author),
+		Ago:     ago(s.now().UTC(), c.CreatedAt),
+		Exact:   c.CreatedAt.Format("2 Jan 2006, 15:04") + " UTC",
+	}
+}
+
+// ago renders how long ago something happened.
+//
+// The server does not know what timezone the reader is in — the app stores and
+// shows UTC throughout — so a wall-clock time would be wrong for everyone
+// outside it, while "3 hours ago" is right for everybody. The exact instant is
+// still there, in the title attribute.
+func ago(now, then time.Time) string {
+	d := now.Sub(then)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return plural(int(d.Minutes()), "minute") + " ago"
+	case d < 24*time.Hour:
+		return plural(int(d.Hours()), "hour") + " ago"
+	case d < 30*24*time.Hour:
+		return plural(int(d.Hours()/24), "day") + " ago"
+	default:
+		return then.Format("2 Jan 2006")
+	}
+}
+
+func plural(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
+}
+
+func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, comments map[model.ID]int) boardPage {
 	p := boardPage{Title: b.Name, User: u, BoardSlug: b.Slug, Board: b, EmptyCard: cardView{Viewer: u, BoardLabels: b.Labels, Columns: b.Columns}}
 	byColumn := map[model.ID][]cardView{}
 	for _, c := range cards {
-		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c))
+		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c, comments[c.ID]))
 	}
 	for _, col := range b.Columns {
 		cv := columnView{Column: col, Cards: byColumn[col.ID], Count: len(byColumn[col.ID])}
@@ -191,12 +251,27 @@ func plain(w http.ResponseWriter, status int, msg string) {
 	_, _ = io.WriteString(w, msg)
 }
 
+// fragment is one template and the data to run it with.
+type fragment struct {
+	name string
+	data any
+}
+
 func (s *Server) render(w http.ResponseWriter, t *template.Template, name string, status int, data any) {
+	s.renderAll(w, t, status, fragment{name, data})
+}
+
+// renderAll writes several fragments into one response, in order. htmx applies
+// the first to the target and takes any element marked hx-swap-oob out of the
+// body and applies it wherever it belongs on the page.
+func (s *Server) renderAll(w http.ResponseWriter, t *template.Template, status int, frags ...fragment) {
 	var buf strings.Builder
-	if err := t.ExecuteTemplate(&buf, name, data); err != nil {
-		s.log.Error("render", "template", name, "err", err)
-		plain(w, http.StatusInternalServerError, "template error")
-		return
+	for _, f := range frags {
+		if err := t.ExecuteTemplate(&buf, f.name, f.data); err != nil {
+			s.log.Error("render", "template", f.name, "err", err)
+			plain(w, http.StatusInternalServerError, "template error")
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
@@ -215,6 +290,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		plain(w, http.StatusConflict, "already exists")
 	case errors.Is(err, service.ErrWIPLimit):
 		plain(w, http.StatusConflict, service.ErrWIPLimit.Error())
+	case errors.Is(err, service.ErrNotAuthor):
+		plain(w, http.StatusForbidden, service.ErrNotAuthor.Error())
 	case errors.Is(err, store.ErrInvalid):
 		plain(w, http.StatusBadRequest, "invalid request")
 	default:
@@ -270,6 +347,13 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := identity.FromContext(r.Context())
+	// One call for the whole board rather than one per card. It covers
+	// archived cards too, so a search result carries its badge as well.
+	counts, err := s.svc.CommentCounts(r.Context(), b.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	// The search lives on the board's own URL rather than a page of its own,
 	// so a result set can be linked to and reloading keeps it.
@@ -280,10 +364,10 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		page := s.boardPage(u, b, nil)
+		page := s.boardPage(u, b, nil, counts)
 		page.Query, page.Searching = raw, true
 		for _, c := range hits {
-			page.Results = append(page.Results, s.cardView(u, b, c))
+			page.Results = append(page.Results, s.cardView(u, b, c, counts[c.ID]))
 		}
 		s.render(w, s.pages["board"], "layout", http.StatusOK, page)
 		return
@@ -294,7 +378,7 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.pages["board"], "layout", http.StatusOK, s.boardPage(u, b, cards))
+	s.render(w, s.pages["board"], "layout", http.StatusOK, s.boardPage(u, b, cards, counts))
 }
 
 func cardInput(r *http.Request) service.CardInput {
@@ -337,7 +421,9 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("HX-Retarget", "#cards-"+string(c.ColumnID))
 	w.Header().Set("HX-Reswap", "beforeend")
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
+	// A card that was created a microsecond ago has no comments; counting them
+	// would be a query that can only ever answer zero.
+	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c, 0))
 }
 
 type orderPayload struct {
@@ -422,13 +508,29 @@ func (s *Server) cardAndBoard(r *http.Request) (*model.Card, *model.Board, error
 	return c, b, nil
 }
 
+// cardFragment builds the view for a single-card render. It reads the thread
+// rather than taking a count on trust, so a swap cannot silently drop the
+// badge from a card that has comments.
+func (s *Server) cardFragment(r *http.Request, b *model.Board, c model.Card) (cardView, error) {
+	comments, err := s.svc.Comments(r.Context(), c.ID)
+	if err != nil {
+		return cardView{}, err
+	}
+	return s.cardView(identity.FromContext(r.Context()), b, c, len(comments)), nil
+}
+
 func (s *Server) card(w http.ResponseWriter, r *http.Request) {
 	c, b, err := s.cardAndBoard(r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
+	v, err := s.cardFragment(r, b, *c)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, s.parts, "card", http.StatusOK, v)
 }
 
 func (s *Server) editCard(w http.ResponseWriter, r *http.Request) {
@@ -437,7 +539,77 @@ func (s *Server) editCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.parts, "card_edit", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
+	comments, err := s.svc.Comments(r.Context(), c.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	u := identity.FromContext(r.Context())
+	v := s.cardView(u, b, *c, len(comments))
+	for _, cm := range comments {
+		v.Comments = append(v.Comments, s.commentView(u, cm))
+	}
+	s.render(w, s.parts, "card_edit", http.StatusOK, v)
+}
+
+// refreshedCard builds the card face as an out-of-band fragment, so that a
+// change made inside the modal is reflected on the board behind it. An error
+// here is not fatal to the request that caused it: the comment was written,
+// and a stale badge is a worse answer than a 500 only if it is silent, so it
+// is logged.
+func (s *Server) refreshedCard(r *http.Request, cardID model.ID) (fragment, bool) {
+	v, err := s.cardViewByID(r, cardID)
+	if err != nil {
+		s.log.Warn("could not refresh the card face", "card", cardID, "err", err)
+		return fragment{}, false
+	}
+	v.OOB = true
+	return fragment{"card", v}, true
+}
+
+func (s *Server) cardViewByID(r *http.Request, cardID model.ID) (cardView, error) {
+	c, err := s.svc.Card(r.Context(), cardID)
+	if err != nil {
+		return cardView{}, err
+	}
+	b, err := s.svc.BoardByID(r.Context(), c.BoardID)
+	if err != nil {
+		return cardView{}, err
+	}
+	return s.cardFragment(r, b, *c)
+}
+
+func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
+	u := identity.FromContext(r.Context())
+	cardID := model.ID(r.PathValue("id"))
+	c, err := s.svc.AddComment(r.Context(), cardID, u.Email, r.FormValue("body"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	frags := []fragment{{"comment", s.commentView(u, *c)}}
+	if card, ok := s.refreshedCard(r, cardID); ok {
+		frags = append(frags, card)
+	}
+	s.renderAll(w, s.parts, http.StatusOK, frags...)
+}
+
+// deleteComment answers with nothing but the refreshed card face. The button
+// targets the comment with hx-swap="outerHTML", and htmx lifts the card out of
+// the body as an out-of-band swap first, so what is left to replace the
+// comment with is the empty string.
+func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
+	u := identity.FromContext(r.Context())
+	c, err := s.svc.DeleteComment(r.Context(), model.ID(r.PathValue("id")), u.Email)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if card, ok := s.refreshedCard(r, c.CardID); ok {
+		s.renderAll(w, s.parts, http.StatusOK, card)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
@@ -490,7 +662,12 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(identity.FromContext(r.Context()), b, *c))
+	v, err := s.cardFragment(r, b, *c)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, s.parts, "card", http.StatusOK, v)
 }
 
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
@@ -534,10 +711,15 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	counts, err := s.svc.CommentCounts(r.Context(), b.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	u := identity.FromContext(r.Context())
 	page := archivePage{Title: b.Name + " · archive", User: u, BoardSlug: b.Slug, Board: b}
 	for _, c := range cards {
-		page.Cards = append(page.Cards, s.cardView(u, b, c))
+		page.Cards = append(page.Cards, s.cardView(u, b, c, counts[c.ID]))
 	}
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }

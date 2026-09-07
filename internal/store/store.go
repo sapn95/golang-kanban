@@ -84,6 +84,21 @@ type Store interface {
 	// ErrInvalid for a duplicate ID.
 	ReorderCards(ctx context.Context, boardID, columnID model.ID, order []model.ID) error
 
+	// ListComments returns a card's comments, oldest first.
+	ListComments(ctx context.Context, cardID model.ID) ([]model.Comment, error)
+	// GetComment returns one comment. The service reads it to check who wrote
+	// it before allowing a delete; the store enforces no such rule itself.
+	GetComment(ctx context.Context, id model.ID) (*model.Comment, error)
+	// CreateComment appends c to c.CardID. ErrNotFound when the card is gone.
+	CreateComment(ctx context.Context, c *model.Comment) error
+	// DeleteComment removes one comment. There is no update: comments are
+	// append-only, see model.Comment.
+	DeleteComment(ctx context.Context, id model.ID) error
+	// CountComments returns the number of comments per card of a board, so the
+	// board can be drawn with one call rather than one per card. A card with
+	// no comments is absent from the map rather than present as zero.
+	CountComments(ctx context.Context, boardID model.ID) (map[model.ID]int, error)
+
 	// CreateLabel adds a label to its board. ErrConflict on a duplicate name.
 	CreateLabel(ctx context.Context, l *model.Label) error
 	UpdateLabel(ctx context.Context, l *model.Label) error

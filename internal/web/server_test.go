@@ -840,3 +840,146 @@ func TestSearchOnTheBoardURL(t *testing.T) {
 		}
 	})
 }
+
+// doAs makes a request carrying an identity, the way the middleware would have
+// put one on the context.
+func (e *env) doAs(user, method, path string, body io.Reader) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, body)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	if user != "" {
+		req = req.WithContext(identity.NewContext(req.Context(), identity.User{Email: user}))
+	}
+	rr := httptest.NewRecorder()
+	e.h.ServeHTTP(rr, req)
+	return rr
+}
+
+func TestCommentsThroughTheWeb(t *testing.T) {
+	const her, him = "her@example.com", "him@example.com"
+
+	setup := func(t *testing.T) (*env, string) {
+		t.Helper()
+		e := seeded(t)
+		return e, "/cards/" + string(e.card.ID)
+	}
+
+	t.Run("an empty thread invites one and the card carries no badge", func(t *testing.T) {
+		e, card := setup(t)
+		want(t, e.doAs(her, http.MethodGet, card+"/edit", nil), http.StatusOK,
+			"Nothing said yet", "Comments cannot be edited")
+		if body := e.do(http.MethodGet, "/b/demo", nil).Body.String(); strings.Contains(body, "bi-chat-left-text") {
+			t.Error("a card with no comments still shows the badge")
+		}
+	})
+
+	t.Run("posting answers with the comment and the refreshed card face", func(t *testing.T) {
+		e, card := setup(t)
+		rr := e.doAs(her, http.MethodPost, card+"/comments", form("body", "looks fine to me"))
+		// The card face rides along out of band, so the badge on the board
+		// behind the modal is not left saying nothing has been said.
+		want(t, rr, http.StatusOK, "looks fine to me", `hx-swap-oob="true"`, "bi-chat-left-text")
+
+		want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK, "bi-chat-left-text")
+		want(t, e.doAs(her, http.MethodGet, card+"/edit", nil), http.StatusOK, "looks fine to me")
+	})
+
+	t.Run("only the author is offered the remove button", func(t *testing.T) {
+		e, card := setup(t)
+		e.doAs(her, http.MethodPost, card+"/comments", form("body", "hers"))
+
+		mine := e.doAs(her, http.MethodGet, card+"/edit", nil).Body.String()
+		if !strings.Contains(mine, "/delete") {
+			t.Error("the author is not offered a way to remove their own comment")
+		}
+		theirs := e.doAs(him, http.MethodGet, card+"/edit", nil).Body.String()
+		if strings.Contains(theirs, "/delete") {
+			t.Error("someone else is offered a remove button they cannot use")
+		}
+	})
+
+	t.Run("someone else cannot remove it", func(t *testing.T) {
+		e, card := setup(t)
+		e.doAs(her, http.MethodPost, card+"/comments", form("body", "hers"))
+		id := commentID(t, e, e.card.ID)
+
+		want(t, e.doAs(him, http.MethodPost, "/comments/"+id+"/delete", nil), http.StatusForbidden)
+		if n := len(comments(t, e, e.card.ID)); n != 1 {
+			t.Errorf("the comment count is %d after a refused delete, want 1", n)
+		}
+	})
+
+	t.Run("the author can, and the badge goes with it", func(t *testing.T) {
+		e, card := setup(t)
+		e.doAs(her, http.MethodPost, card+"/comments", form("body", "hers"))
+		id := commentID(t, e, e.card.ID)
+
+		rr := e.doAs(her, http.MethodPost, "/comments/"+id+"/delete", nil)
+		want(t, rr, http.StatusOK, `hx-swap-oob="true"`)
+		// The response replaces the comment with whatever is left after the
+		// out-of-band card is lifted out, so it must not still hold the text.
+		if strings.Contains(rr.Body.String(), "hers") {
+			t.Error("the removed comment came back in the response")
+		}
+		if strings.Contains(rr.Body.String(), "bi-chat-left-text") {
+			t.Error("the refreshed card still shows a comment badge")
+		}
+		if n := len(comments(t, e, e.card.ID)); n != 0 {
+			t.Errorf("%d comments left after the author removed the only one", n)
+		}
+	})
+
+	t.Run("an empty comment is refused and an unknown card is a miss", func(t *testing.T) {
+		e, card := setup(t)
+		want(t, e.doAs(her, http.MethodPost, card+"/comments", form("body", "   ")), http.StatusBadRequest)
+		want(t, e.doAs(her, http.MethodPost, "/cards/nope/comments", form("body", "hello")), http.StatusNotFound)
+		want(t, e.doAs(her, http.MethodPost, "/comments/nope/delete", nil), http.StatusNotFound)
+	})
+}
+
+func comments(t *testing.T, e *env, card model.ID) []model.Comment {
+	t.Helper()
+	list, err := e.svc.Comments(context.Background(), card)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return list
+}
+
+func commentID(t *testing.T, e *env, card model.ID) string {
+	t.Helper()
+	list := comments(t, e, card)
+	if len(list) == 0 {
+		t.Fatal("no comments on the card")
+	}
+	return string(list[0].ID)
+}
+
+func TestAgo(t *testing.T) {
+	now := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		then time.Time
+		want string
+	}{
+		{"seconds", now.Add(-20 * time.Second), "just now"},
+		{"one minute", now.Add(-time.Minute), "1 minute ago"},
+		{"minutes", now.Add(-40 * time.Minute), "40 minutes ago"},
+		{"one hour", now.Add(-time.Hour), "1 hour ago"},
+		{"hours", now.Add(-5 * time.Hour), "5 hours ago"},
+		{"one day", now.Add(-25 * time.Hour), "1 day ago"},
+		{"days", now.AddDate(0, 0, -3), "3 days ago"},
+		// Past a month the elapsed time stops being the useful thing to say.
+		{"long ago", now.AddDate(0, 0, -40), "27 Jul 2026"},
+		// A clock that has drifted backwards must not read "-3 minutes ago".
+		{"in the future", now.Add(time.Hour), "just now"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ago(now, tt.then); got != tt.want {
+				t.Errorf("ago = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

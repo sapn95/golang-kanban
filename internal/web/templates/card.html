@@ -1,5 +1,5 @@
 {{define "card"}}
-<div class="bg-white dark:bg-gray-700 rounded-lg p-3 sm:p-4 shadow-md border border-gray-200 dark:border-gray-600 cursor-move hover:shadow-lg transition-all duration-200" id="card-{{.Card.ID}}" data-id="{{.Card.ID}}">
+<div class="bg-white dark:bg-gray-700 rounded-lg p-3 sm:p-4 shadow-md border border-gray-200 dark:border-gray-600 cursor-move hover:shadow-lg transition-all duration-200" id="card-{{.Card.ID}}"{{if .OOB}} hx-swap-oob="true"{{end}} data-id="{{.Card.ID}}">
   <div class="flex items-start gap-2 mb-2">
     <input type="checkbox" class="card-select mt-1.5 w-4 h-4 rounded shrink-0 cursor-pointer"
            value="{{.Card.ID}}" aria-label="Select card">
@@ -25,15 +25,23 @@
     </ul>
   {{end}}
   <div class="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-600">
-    {{if .Card.Assignee}}
-    <span class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 mr-auto" title="{{.Card.Assignee}}">
-      <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-[10px] font-semibold uppercase
-                   {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}">
-        {{initial .Card.Assignee}}
+    <span class="flex items-center gap-2 mr-auto min-w-0">
+      {{if .Card.Assignee}}
+      <span class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300 min-w-0" title="{{.Card.Assignee}}">
+        <span class="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full text-white text-[10px] font-semibold uppercase
+                     {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}">
+          {{initial .Card.Assignee}}
+        </span>
+        <span class="hidden sm:inline truncate">{{shortAddress .Card.Assignee}}</span>
       </span>
-      <span class="hidden sm:inline">{{shortAddress .Card.Assignee}}</span>
+      {{end}}
+      {{if .CommentCount}}
+      <span class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 shrink-0"
+            title="{{.CommentCount}} comment{{if ne .CommentCount 1}}s{{end}}">
+        <i class="bi bi-chat-left-text"></i>{{.CommentCount}}
+      </span>
+      {{end}}
     </span>
-    {{end}}
     <button type="button" class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900 rounded-lg transition-colors duration-200"
       hx-get="/cards/{{.Card.ID}}/edit" hx-target="#editCardModalContent" hx-swap="innerHTML" title="Edit">
       <i class="bi bi-pencil text-sm"></i>

@@ -576,3 +576,117 @@ func TestRestoreIsNotRefusedByAWIPLimit(t *testing.T) {
 		t.Errorf("board holds %d cards, want the restored one back", len(cards))
 	}
 }
+
+func TestComments(t *testing.T) {
+	newCard := func(t *testing.T) (*Kanban, context.Context, model.ID) {
+		t.Helper()
+		k := newSvc(t)
+		ctx := context.Background()
+		b, err := k.CreateBoard(ctx, "B", "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "card"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k, ctx, c.ID
+	}
+
+	t.Run("a comment keeps its author, body and instant", func(t *testing.T) {
+		k, ctx, card := newCard(t)
+		c, err := k.AddComment(ctx, card, " her@example.com ", "  something\r\nover two lines  ")
+		if err != nil {
+			t.Fatalf("AddComment: %v", err)
+		}
+		if c.Author != "her@example.com" {
+			t.Errorf("author = %q, want it trimmed", c.Author)
+		}
+		if c.Body != "something\nover two lines" {
+			t.Errorf("body = %q, want it trimmed with normalised line endings", c.Body)
+		}
+		if !c.CreatedAt.Equal(fixed) {
+			t.Errorf("CreatedAt = %v, want the service clock %v", c.CreatedAt, fixed)
+		}
+	})
+
+	t.Run("an empty or oversized body is refused", func(t *testing.T) {
+		k, ctx, card := newCard(t)
+		if _, err := k.AddComment(ctx, card, "her@example.com", "   \n  "); !isValidation(err, "body") {
+			t.Errorf("a whitespace-only comment = %v, want a validation error on body", err)
+		}
+		if _, err := k.AddComment(ctx, card, "her@example.com", strings.Repeat("x", MaxComment+1)); !isValidation(err, "body") {
+			t.Errorf("an oversized comment = %v, want a validation error on body", err)
+		}
+	})
+
+	t.Run("only the author may remove one", func(t *testing.T) {
+		k, ctx, card := newCard(t)
+		c, err := k.AddComment(ctx, card, "Her@Example.com", "hers")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := k.DeleteComment(ctx, c.ID, "him@example.com"); !errors.Is(err, ErrNotAuthor) {
+			t.Errorf("someone else removing it = %v, want ErrNotAuthor", err)
+		}
+		// Addresses are not case-sensitive, and an identity provider is free to
+		// hand back a different casing than the one that was stored.
+		gone, err := k.DeleteComment(ctx, c.ID, "her@example.COM")
+		if err != nil {
+			t.Fatalf("the author could not remove their own comment: %v", err)
+		}
+		if gone.CardID != card {
+			t.Errorf("DeleteComment returned card %s, want %s so the caller can redraw it", gone.CardID, card)
+		}
+		list, err := k.Comments(ctx, card)
+		if err != nil || len(list) != 0 {
+			t.Errorf("%d comments left (err %v), want none", len(list), err)
+		}
+	})
+
+	t.Run("with no authentication at all there is one user", func(t *testing.T) {
+		k, ctx, card := newCard(t)
+		c, err := k.AddComment(ctx, card, "", "nobody signed in")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Not a hole: an empty author can only happen where the deployment has
+		// no identity layer, and there the board has exactly one user.
+		if _, err := k.DeleteComment(ctx, c.ID, ""); err != nil {
+			t.Errorf("removing an anonymous comment without authentication = %v, want it allowed", err)
+		}
+	})
+
+	t.Run("counts are per card and skip the ones with none", func(t *testing.T) {
+		k := newSvc(t)
+		ctx := context.Background()
+		b, _ := k.CreateBoard(ctx, "B", "", nil)
+		loud, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "loud"})
+		quiet, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "quiet"})
+		for _, body := range []string{"one", "two"} {
+			if _, err := k.AddComment(ctx, loud.ID, "her@example.com", body); err != nil {
+				t.Fatal(err)
+			}
+		}
+		counts, err := k.CommentCounts(ctx, b.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if counts[loud.ID] != 2 {
+			t.Errorf("count for the discussed card = %d, want 2", counts[loud.ID])
+		}
+		if _, ok := counts[quiet.ID]; ok {
+			t.Error("a card with no comments is present in the map; the badge would render a zero")
+		}
+	})
+
+	t.Run("an unknown card and an unknown comment are misses", func(t *testing.T) {
+		k, ctx, _ := newCard(t)
+		if _, err := k.AddComment(ctx, "nope", "her@example.com", "hello"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("commenting on an unknown card = %v, want ErrNotFound", err)
+		}
+		if _, err := k.DeleteComment(ctx, "nope", "her@example.com"); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("removing an unknown comment = %v, want ErrNotFound", err)
+		}
+	})
+}

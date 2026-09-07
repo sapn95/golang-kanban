@@ -84,6 +84,24 @@ type Label struct {
 	Color   string // CSS colour; empty for the default
 }
 
+// Comment is one message on a card.
+//
+// Comments are append-only. There is no edit, because an edited comment is
+// only trustworthy if something records that it changed, and a board with no
+// user table has nowhere to keep that. The author may remove one they wrote,
+// which is the one case a thread cannot recover from on its own; a removal
+// leaves nothing behind, because a tombstone between two people is theatre.
+type Comment struct {
+	ID     ID
+	CardID ID
+	// Author is the address the identity layer supplied, empty where the
+	// deployment has no authentication at all. Stored as given, for the same
+	// reason Card.Assignee is: there is no user table to point at.
+	Author    string
+	Body      string
+	CreatedAt time.Time
+}
+
 // Subtask is one checklist item on a card.
 type Subtask struct {
 	ID       ID

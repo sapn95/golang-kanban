@@ -38,7 +38,7 @@ func reset(t *testing.T, db *sql.DB) {
 	if !strings.HasSuffix(name, "_test") {
 		t.Fatalf("refusing to drop tables in database %q: KANBAN_TEST_POSTGRES_URL must name a disposable database whose name ends in _test", name)
 	}
-	_, err := db.Exec(`DROP TABLE IF EXISTS card_labels, subtasks, cards, labels, columns, boards, schema_migrations, cards_v1 CASCADE`)
+	_, err := db.Exec(`DROP TABLE IF EXISTS comments, card_labels, subtasks, cards, labels, columns, boards, schema_migrations, cards_v1 CASCADE`)
 	if err != nil {
 		t.Fatal(err)
 	}
