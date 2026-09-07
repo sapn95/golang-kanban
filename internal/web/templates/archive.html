@@ -20,7 +20,11 @@
       <p class="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{{.Card.Description}}</p>
       {{end}}
       <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
-        {{range .Labels}}<span class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600"{{with .Color}} style="background-color: {{.}}; color: white"{{end}}>{{.Name}}</span>{{end}}
+        {{range .Labels}}
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none
+          {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
+          {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</span>
+        {{end}}
         {{if .Card.Assignee}}
         <span class="text-gray-500 dark:text-gray-400" title="{{.Card.Assignee}}">{{shortAddress .Card.Assignee}}</span>
         {{end}}

@@ -7,7 +7,11 @@
   </div>
   {{if or .Labels .Due}}
   <div class="flex flex-wrap gap-1 mb-2 text-xs">
-    {{range .Labels}}<span class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600"{{with .Color}} style="background-color: {{.}}; color: white"{{end}}>{{.Name}}</span>{{end}}
+    {{range .Labels}}
+    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none
+      {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
+      {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</span>
+    {{end}}
     {{if .Due}}
     <span class="px-2 py-0.5 rounded-full
       {{if eq .DueState "overdue"}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200

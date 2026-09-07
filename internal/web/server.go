@@ -115,6 +115,7 @@ func (s *Server) parseTemplates() {
 		// would silently cut a multi-byte character in half.
 		"initial":      func(addr string) string { return identity.User{Email: addr}.Initial() },
 		"shortAddress": func(addr string) string { return identity.User{Email: addr}.Display() },
+		"readableOn":   readableOn,
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles,
 		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))
@@ -123,6 +124,42 @@ func (s *Server) parseTemplates() {
 	for _, name := range []string{"board", "boards", "archive", "settings"} {
 		s.pages[name] = template.Must(template.Must(base.Clone()).ParseFS(templateFiles, "templates/"+name+".html"))
 	}
+}
+
+// readableOn returns a text colour that can be read on the given background.
+//
+// Labels used to print white on whatever colour they carried, which is fine on
+// the red and the blue and close to invisible on the yellow. The palette holds
+// both light and dark entries, so the choice cannot be made once for all of
+// them. An unparseable colour gets white, which is what it had before.
+func readableOn(background string) string {
+	const dark, light = "#111827", "#ffffff"
+	r, g, b, ok := parseHex(background)
+	if !ok {
+		return light
+	}
+	// Rec. 601 luma. The threshold is where white and near-black are about
+	// equally readable; it does not need to be more exact than that.
+	if 299*r+587*g+114*b > 150_000 {
+		return dark
+	}
+	return light
+}
+
+func parseHex(s string) (r, g, b int, ok bool) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
+	if len(s) == 3 {
+		// #abc is #aabbcc; doubling the digit is the definition, not a guess.
+		s = string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
+	}
+	if len(s) != 6 {
+		return 0, 0, 0, false
+	}
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return int(v>>16) & 0xff, int(v>>8) & 0xff, int(v) & 0xff, true
 }
 
 // --- view models --------------------------------------------------------------

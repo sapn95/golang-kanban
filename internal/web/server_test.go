@@ -1402,3 +1402,69 @@ func TestTheCardFormIsInTwoParts(t *testing.T) {
 		}
 	}
 }
+
+func TestReadableOn(t *testing.T) {
+	tests := []struct {
+		name string
+		bg   string
+		want string
+	}{
+		// White on the yellow of the palette is what prompted this.
+		{"palette yellow takes dark text", "#eab308", "#111827"},
+		{"palette red takes white", "#ef4444", "#ffffff"},
+		{"palette blue takes white", "#3b82f6", "#ffffff"},
+		{"palette grey takes white", "#6b7280", "#ffffff"},
+		{"white takes dark text", "#ffffff", "#111827"},
+		{"black takes white", "#000000", "#ffffff"},
+		{"a three-digit colour is doubled, not padded", "#ff0", "#111827"},
+		{"surrounding space is not a parse failure", "  #eab308  ", "#111827"},
+		// Anything unreadable falls back to what labels had before.
+		{"an empty colour", "", "#ffffff"},
+		{"not a colour at all", "chartreuse", "#ffffff"},
+		{"the wrong number of digits", "#abcd", "#ffffff"},
+		{"not hexadecimal", "#gggggg", "#ffffff"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := readableOn(tt.bg); got != tt.want {
+				t.Errorf("readableOn(%q) = %q, want %q", tt.bg, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLabelsAreLegibleOnACard(t *testing.T) {
+	e := newEnv(t, nil, nil)
+	ctx := context.Background()
+	b, err := e.svc.CreateBoard(ctx, "Legible", "legible", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yellow, err := e.svc.CreateLabel(ctx, b.ID, "sunshine", "#eab308")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := e.svc.CreateLabel(ctx, b.ID, "unpainted", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID, service.CardInput{
+		Title: "tagged", Labels: []model.ID{yellow.ID, plain.ID},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := e.do(http.MethodGet, "/b/legible", nil).Body.String()
+	// White on that yellow is close to unreadable; the text colour is chosen
+	// from the background rather than fixed.
+	if !strings.Contains(body, "background-color: #eab308; color: #111827") {
+		t.Error("the yellow label did not get dark text")
+	}
+	// A label with no colour has to be more than grey on grey.
+	if !strings.Contains(body, "ring-1 ring-gray-400") {
+		t.Error("an uncoloured label has no outline, so it disappears into the card")
+	}
+	if strings.Contains(body, "ZgotmplZ") {
+		t.Error("the colour was refused by the template's CSS escaper")
+	}
+}
