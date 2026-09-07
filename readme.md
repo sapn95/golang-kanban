@@ -12,7 +12,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Boards with as many columns as you like, each with an optional WIP limit.
 - Cards with description, due date, labels and a subtask checklist.
 - Assignee per card, shown on the card face, with one click to take it yourself.
-- Select several cards (shift-click for a range) and move, assign or delete them at once.
+- Archive a card instead of deleting it: it leaves the board, keeps its column
+  and labels, and restoring puts back the same card.
+- Select several cards (shift-click for a range) and move, assign, archive or delete them at once.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
 - Dark mode.
 - Cross-site writes are refused, security headers are set, and request bodies

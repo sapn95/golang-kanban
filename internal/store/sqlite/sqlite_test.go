@@ -454,3 +454,61 @@ func TestAssigneeMigrationOnAPopulatedTable(t *testing.T) {
 		t.Fatalf("Assignee = %q (err %v) after assigning post-migration", got.Assignee, err)
 	}
 }
+
+// The live database has cards, so version 4 runs ALTER TABLE against a
+// populated table. That is the only path the deployment takes, and a
+// fresh-database test never touches it.
+func TestArchiveMigrationOnAPopulatedTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kanban.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := st.DB()
+	t.Cleanup(func() { _ = st.Close() })
+	ctx := context.Background()
+
+	before := []store.Migration{}
+	for _, m := range migrations() {
+		if m.Version < 4 {
+			before = append(before, m)
+		}
+	}
+	if _, err := store.RunMigrations(ctx, db, before); err != nil {
+		t.Fatalf("migrating to v3: %v", err)
+	}
+
+	// Seeded with raw SQL: at version 3 the store's own CreateCard would write
+	// a column that does not exist yet, which is the whole point.
+	if _, err := db.ExecContext(ctx, `INSERT INTO boards (id, slug, name) VALUES ('b-arc', 'arc', 'Arc')`); err != nil {
+		t.Fatalf("seeding a board: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO columns (id, board_id, name, position) VALUES ('c-arc', 'b-arc', 'A', 1)`); err != nil {
+		t.Fatalf("seeding a column: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO cards (id, board_id, column_id, title, position) VALUES ('k-arc', 'b-arc', 'c-arc', 'existing', 1)`); err != nil {
+		t.Fatalf("seeding a card: %v", err)
+	}
+
+	if err := st.Migrate(ctx); err != nil {
+		t.Fatalf("migrating to v4 over existing rows: %v", err)
+	}
+
+	// A row that predates the column is on the board, not in the archive.
+	active, err := st.ListCards(ctx, "b-arc")
+	if err != nil || len(active) != 1 || active[0].ID != "k-arc" {
+		t.Fatalf("board holds %+v (err %v), want the pre-existing card", active, err)
+	}
+	if active[0].Archived() {
+		t.Error("a card that predates the column came back archived")
+	}
+
+	// And the column is writable afterwards, not merely readable.
+	if err := st.SetCardArchived(ctx, "k-arc", time.Now().UTC()); err != nil {
+		t.Fatalf("archiving after the migration: %v", err)
+	}
+	arch, err := st.ListArchivedCards(ctx, "b-arc")
+	if err != nil || len(arch) != 1 {
+		t.Fatalf("archive holds %d cards (err %v), want 1", len(arch), err)
+	}
+}

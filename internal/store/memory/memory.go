@@ -6,6 +6,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"kanban/internal/model"
 	"kanban/internal/store"
@@ -284,10 +285,44 @@ func (s *Store) ListCards(_ context.Context, boardID model.ID) ([]model.Card, er
 	var out []model.Card
 	for _, col := range b.Columns {
 		for _, c := range s.columnCards(col.ID) {
+			if c.Archived() {
+				continue
+			}
 			out = append(out, *copyCard(c))
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) ListArchivedCards(_ context.Context, boardID model.ID) ([]model.Card, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []model.Card
+	for _, c := range s.cards {
+		if c.BoardID == boardID && c.Archived() {
+			out = append(out, *copyCard(c))
+		}
+	}
+	// Most recently archived first, and by id after that so a test that
+	// archives several cards in the same instant still sees a stable order.
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].ArchivedAt.Equal(out[j].ArchivedAt) {
+			return out[i].ArchivedAt.After(out[j].ArchivedAt)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *Store) SetCardArchived(_ context.Context, id model.ID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.cards[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	c.ArchivedAt = at.UTC()
+	return nil
 }
 
 func (s *Store) GetCard(_ context.Context, id model.ID) (*model.Card, error) {

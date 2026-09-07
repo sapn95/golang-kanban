@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="flex items-center justify-between gap-3 mb-6">
+  <a href="/b/{{.BoardSlug}}"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm">
+    <i class="bi bi-arrow-left"></i>Back to the board
+  </a>
+  <span class="text-sm text-gray-500 dark:text-gray-400">
+    {{len .Cards}} archived
+  </span>
+</div>
+
+{{if .Cards}}
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg divide-y divide-gray-100 dark:divide-gray-700">
+  {{$board := .BoardSlug}}
+  {{range .Cards}}
+  <div class="p-4 flex items-start gap-3" id="archived-{{.Card.ID}}">
+    <div class="flex-1 min-w-0">
+      <h5 class="font-semibold text-gray-900 dark:text-white break-words">{{.Card.Title}}</h5>
+      {{if .Card.Description}}
+      <p class="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{{.Card.Description}}</p>
+      {{end}}
+      <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
+        {{range .Labels}}<span class="px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600"{{with .Color}} style="background-color: {{.}}; color: white"{{end}}>{{.Name}}</span>{{end}}
+        {{if .Card.Assignee}}
+        <span class="text-gray-500 dark:text-gray-400" title="{{.Card.Assignee}}">{{shortAddress .Card.Assignee}}</span>
+        {{end}}
+      </div>
+    </div>
+    <div class="flex items-center gap-1 shrink-0">
+      <button type="button" title="Put it back on the board"
+        class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+        hx-post="/cards/{{.Card.ID}}/restore?board={{$board}}" hx-swap="none">
+        Restore
+      </button>
+      <button type="button" title="Delete permanently"
+        class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg"
+        hx-post="/cards/{{.Card.ID}}/delete" hx-target="#archived-{{.Card.ID}}" hx-swap="delete"
+        hx-confirm="Delete this card for good? Archiving is the reversible one.">
+        <i class="bi bi-trash text-sm"></i>
+      </button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-10 text-center">
+  <p class="text-gray-500 dark:text-gray-400">Nothing archived.</p>
+  <p class="text-sm text-gray-400 dark:text-gray-500 mt-2">
+    Archiving takes a card off the board and keeps it here, in the column it left.
+  </p>
+</div>
+{{end}}
+{{end}}

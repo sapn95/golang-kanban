@@ -62,12 +62,19 @@ type Card struct {
 	// It is stored as the identity provider gave it rather than as a foreign
 	// key: the board has no user table, and people who log in once and never
 	// again should not leave rows behind.
-	Assignee  string
-	Labels    []ID      // label IDs, sorted
-	Subtasks  []Subtask // ordered by Position
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Assignee string
+	// ArchivedAt is when the card left the board, zero while it is on it.
+	// Archiving is not deleting: the card keeps its column, position, labels
+	// and subtasks, so putting it back is the same card and not a copy.
+	ArchivedAt time.Time
+	Labels     []ID      // label IDs, sorted
+	Subtasks   []Subtask // ordered by Position
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
+
+// Archived reports whether the card has left the board.
+func (c Card) Archived() bool { return !c.ArchivedAt.IsZero() }
 
 // Label is a per-board tag that can be attached to cards.
 type Label struct {
