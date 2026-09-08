@@ -148,6 +148,29 @@ html.dark { color-scheme: dark; background-color: #111827; }
   gap: 0.125rem;
 }
 .quick-row .quick-item { flex: 1 1 auto; min-width: 0; }
+/* The x at the end of a label chip. It takes the chip's own colour, because a
+   label can be any colour and one fixed grey is invisible on half of them. The
+   hover is mixed from that colour for the same reason; browsers without
+   color-mix keep the plain opacity change. */
+.chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.chip-x:hover {
+  opacity: 1;
+  background-color: color-mix(in srgb, currentColor 22%, transparent);
+}
+
 .quick-danger {
   display: flex;
   align-items: center;

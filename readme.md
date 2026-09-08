@@ -28,7 +28,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   word matches the title, the description or a label name:
   `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.
   A label on a card is a link to that search, so the syntax is discoverable
-  rather than something you have to know about.
+  rather than something you have to know about, and the chip carries an `x`
+  that takes the label off the card.
 - Select several cards (shift-click for a range) and move, assign, archive or
   delete them at once. Dragging one card of a selection takes the whole
   selection with it.

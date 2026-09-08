@@ -15,11 +15,22 @@
          on spaces, so an unquoted "in review" would look for two labels.
          draggable="false" so a drag that starts on a chip moves the card
          instead of the browser dragging the link. -->
-    <a href="/b/{{$.BoardSlug}}?q=label:%22{{.Name}}%22" draggable="false"
-      title="Find every card with this label"
-      class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none no-underline hover:opacity-80
+    <span class="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-xs font-semibold leading-none
       {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
-      {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</a>
+      {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>
+      <a href="/b/{{$.BoardSlug}}?q=label:%22{{.Name}}%22" draggable="false"
+        title="Find every card with this label"
+        class="no-underline text-inherit hover:opacity-80">{{.Name}}</a>
+      <!-- Takes the label off this one card. The trash in the panel below
+           deletes it from the board, which is why the two say so in their
+           titles rather than both being a bare icon. -->
+      <button type="button" class="chip-x" aria-label="Take the label {{.Name}} off this card"
+        title="Take “{{.Name}}” off this card"
+        hx-post="/cards/{{$.Card.ID}}/labels/{{.ID}}/toggle"
+        hx-target="#card-{{$.Card.ID}}" hx-swap="outerHTML">
+        <i class="bi bi-x"></i>
+      </button>
+    </span>
     {{end}}
     {{if .Due}}
     <span class="px-2 py-0.5 rounded-full
