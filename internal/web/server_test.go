@@ -1532,6 +1532,33 @@ func TestALabelChipSearchesForItsOwnLabel(t *testing.T) {
 		}
 	})
 
+	t.Run("the chip carries an x that takes the label off the card", func(t *testing.T) {
+		e := setup(t)
+		id := string(e.card.ID)
+		label := string(e.board.Labels[0].ID)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, `hx-post="/cards/`+id+`/labels/`+label+`/toggle"`) {
+			t.Errorf("the chip has no x:\n%s", body)
+		}
+
+		// And it does the same thing the panel's toggle does, so the label
+		// leaves this card and stays on the board.
+		rr := e.do(http.MethodPost, "/cards/"+id+"/labels/"+label+"/toggle", nil, "HX-Request", "true")
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), `q=label:%22bug%22`) {
+			t.Error("the chip is still on the card the label was taken off")
+		}
+		b, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b.Labels) != 2 {
+			t.Errorf("the board has %d of its 2 labels, so the x deleted one instead of unlinking it", len(b.Labels))
+		}
+	})
+
 	t.Run("following it returns the labelled card and nothing else", func(t *testing.T) {
 		e := setup(t)
 		body := e.do(http.MethodGet, `/b/demo?q=label:%22bug%22`, nil).Body.String()
