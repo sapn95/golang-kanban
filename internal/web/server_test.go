@@ -1728,6 +1728,22 @@ func TestAvatarsAreServedFromThisOrigin(t *testing.T) {
 		}
 	})
 
+	t.Run("the signed-in person has one in the header too", func(t *testing.T) {
+		e, _ := setup(t, servePNG)
+		// The card face was the first place this landed and for a while the
+		// only one, so the viewer's own bubble in the header kept its initials.
+		// Its classes are the anchor: no card renders that combination.
+		body := e.doAs("Somebody@Example.com", http.MethodGet, "/b/demo", nil).Body.String()
+		const bubble = `text-xs font-semibold uppercase`
+		i := strings.Index(body, bubble)
+		if i < 0 {
+			t.Fatalf("the header shows no bubble for the signed-in person:\n%s", body)
+		}
+		if header := body[i:min(i+400, len(body))]; !strings.Contains(header, `src="/avatar/sapn95"`) {
+			t.Errorf("the header bubble is initials only:\n%s", header)
+		}
+	})
+
 	t.Run("something that is not an image is refused", func(t *testing.T) {
 		e, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
