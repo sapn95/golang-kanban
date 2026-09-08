@@ -181,8 +181,12 @@ func parseHex(s string) (r, g, b int, ok bool) {
 type cardView struct {
 	// Viewer is who is looking, so a card can offer "assign to me" and mark
 	// the ones that are already theirs.
-	Viewer      identity.User
-	Card        model.Card
+	Viewer identity.User
+	Card   model.Card
+	// BoardSlug is in the card so a label chip can link to a search of its own
+	// board. The card face is rendered from six handlers, not only from the
+	// board page, so it cannot reach up to the board being drawn around it.
+	BoardSlug   string
 	Labels      []model.Label  // resolved from the board
 	BoardLabels []model.Label  // every label of the board, for the edit form
 	Columns     []model.Column // every column, so the edit form can move the card
@@ -317,7 +321,7 @@ type settingsPage struct {
 }
 
 func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comments int, people []string) cardView {
-	v := cardView{Viewer: u, Card: c, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments, People: people}
+	v := cardView{Viewer: u, Card: c, BoardSlug: b.Slug, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments, People: people}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
 			v.Labels = append(v.Labels, *l)
