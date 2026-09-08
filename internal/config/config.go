@@ -34,6 +34,10 @@ type Config struct {
 	AccessTeamDomain string // ACCESS_TEAM_DOMAIN, e.g. team.cloudflareaccess.com
 	AccessAudience   string // ACCESS_AUD, the Access application's AUD tag
 
+	// AVATARS: who has a picture, as address=github-login pairs. Empty means
+	// the board draws initials and makes no outbound request.
+	Avatars map[string]string
+
 	AutoMigrate bool   // AUTO_MIGRATE, default true
 	LogLevel    string // LOG_LEVEL: debug | info | warn | error
 	LogFormat   string // LOG_FORMAT: text | json
@@ -98,7 +102,62 @@ func FromEnv(get Lookup) (Config, error) {
 		return c, fmt.Errorf("AUTO_MIGRATE: %w", err)
 	}
 	c.AutoMigrate = auto
+	avatars, err := parseAvatars(env("AVATARS", ""))
+	if err != nil {
+		return c, err
+	}
+	c.Avatars = avatars
 	return c, c.Validate()
+}
+
+// parseAvatars reads "somebody@example.com=their-login, other@example.com=theirs"
+// into a map. A GitHub noreply address carries the login after the plus sign, so
+// for those the pair is a copy of two things that are already on screen.
+//
+// A wrong pair is an error rather than a pair that is skipped: a picture that
+// never appears is the kind of thing nobody investigates, and the process would
+// otherwise be the only place that knows why.
+func parseAvatars(spec string) (map[string]string, error) {
+	if spec == "" {
+		return nil, nil
+	}
+	out := map[string]string{}
+	for _, pair := range strings.Split(spec, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		addr, login, ok := strings.Cut(pair, "=")
+		addr, login = strings.ToLower(strings.TrimSpace(addr)), strings.TrimSpace(login)
+		if !ok || addr == "" || login == "" {
+			return nil, fmt.Errorf("AVATARS: %q is not an address=login pair", pair)
+		}
+		if !isGitHubLogin(login) {
+			return nil, fmt.Errorf("AVATARS: %q is not a GitHub login", login)
+		}
+		out[addr] = login
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// isGitHubLogin reports whether s is shaped like a GitHub account name: up to 39
+// letters, digits or single hyphens. It is checked here because the login ends
+// up in a URL this process fetches.
+func isGitHubLogin(s string) bool {
+	if s == "" || len(s) > 39 || strings.HasPrefix(s, "-") || strings.HasSuffix(s, "-") || strings.Contains(s, "--") {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Validate reports the first invalid field.

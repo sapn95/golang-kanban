@@ -16,6 +16,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   face shows checklist progress, and grades a due date rather than only
   marking it late.
 - Assignee per card, shown on the card face, with one click to take it yourself.
+  With `AVATARS` set, the bubble shows the person's GitHub picture, fetched by
+  the server and served from your own origin so that GitHub never sees who is
+  looking at the board; see [docs/adr/0008](docs/adr/0008-avatars-are-proxied.md).
 - Archive a card instead of deleting it: it leaves the board, keeps its column
   and labels, and restoring puts back the same card.
 - Comments on a card, with who wrote them and when. They cannot be edited and
@@ -26,7 +29,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.
   A label on a card is a link to that search, so the syntax is discoverable
   rather than something you have to know about.
-- Select several cards (shift-click for a range) and move, assign, archive or delete them at once.
+- Select several cards (shift-click for a range) and move, assign, archive or
+  delete them at once. Dragging one card of a selection takes the whole
+  selection with it.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
 - Dark mode.
 - Cross-site writes are refused, security headers are set, and request bodies
@@ -85,6 +90,11 @@ AUTH_MODE=none             # none | proxy | access
 AUTH_HEADER=X-Forwarded-Email  # AUTH_MODE=proxy only
 ACCESS_TEAM_DOMAIN=        # AUTH_MODE=access only, e.g. team.cloudflareaccess.com
 ACCESS_AUD=                # AUTH_MODE=access only, the application's AUD tag
+
+# Who has a picture instead of initials, as address=github-login pairs. Unset
+# means initials and no outbound request. A GitHub noreply address carries the
+# login after the plus sign.
+AVATARS=me@example.com=octocat,1+other@users.noreply.github.com=other
 ```
 
 `kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban version` prints the version. `/healthz` says the process is up, `/readyz` says the database answers, and `/version` says which build is answering — which is how you find out whether a deploy actually landed, without fetching a page and looking for markup only the new version renders.

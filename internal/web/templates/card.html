@@ -68,9 +68,16 @@
               data-panel="assignee-{{.Card.ID}}" aria-label="Assignee"
               title="{{if .Card.Assignee}}{{.Card.Assignee}}{{else}}Nobody is assigned{{end}}">
         {{if .Card.Assignee}}
-        <span class="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full text-white text-[10px] font-semibold uppercase
+        <span class="relative inline-flex items-center justify-center w-6 h-6 shrink-0 overflow-hidden rounded-full text-white text-[10px] font-semibold uppercase
                      {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}">
           {{initials .Card.Assignee}}
+          <!-- The picture covers the initials rather than replacing them, so
+               they are the fallback for free: an <img> with an empty alt that
+               fails to load draws nothing at all, and a board on a network that
+               cannot reach the pictures looks like it did before. -->
+          {{with avatar .Card.Assignee}}
+          <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
+          {{end}}
         </span>
         <span class="hidden sm:inline truncate text-gray-600 dark:text-gray-300">{{personName .Card.Assignee}}</span>
         {{else}}
@@ -119,8 +126,10 @@
              every card on the board. -->
         <input type="hidden" name="assignee" value="{{if eq . $.Viewer.Email}}@me{{else}}{{.}}{{end}}">
         <button type="submit" class="quick-item" title="{{if eq . $.Viewer.Email}}You{{else}}{{.}}{{end}}">
-          <span class="inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-full bg-gray-300 dark:bg-gray-500
-                       text-[9px] font-semibold uppercase text-white">{{initials .}}</span>
+          <span class="relative inline-flex items-center justify-center w-5 h-5 shrink-0 overflow-hidden rounded-full
+                       bg-gray-300 dark:bg-gray-500 text-[9px] font-semibold uppercase text-white">{{initials .}}
+            {{with avatar .}}<img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">{{end}}
+          </span>
           <span class="truncate">{{personName .}}{{if eq . $.Viewer.Email}} (you){{end}}</span>
           {{if eq . $.Card.Assignee}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
         </button>
@@ -152,13 +161,26 @@
     <div class="flex flex-col gap-0.5 max-h-44 overflow-y-auto">
       {{$card := .Card}}
       {{range .BoardLabels}}
-      <button type="button" class="quick-item"
-              hx-post="/cards/{{$card.ID}}/labels/{{.ID}}/toggle" hx-target="#card-{{$card.ID}}" hx-swap="outerHTML">
-        <span class="w-3 h-3 shrink-0 rounded-full ring-1 ring-gray-300 dark:ring-gray-500"
-              {{with .Color}}style="background-color: {{.}}"{{end}}></span>
-        <span class="truncate">{{.Name}}</span>
-        {{if hasLabel $card .ID}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
-      </button>
+      <div class="quick-row">
+        <button type="button" class="quick-item"
+                hx-post="/cards/{{$card.ID}}/labels/{{.ID}}/toggle" hx-target="#card-{{$card.ID}}" hx-swap="outerHTML">
+          <span class="w-3 h-3 shrink-0 rounded-full ring-1 ring-gray-300 dark:ring-gray-500"
+                {{with .Color}}style="background-color: {{.}}"{{end}}></span>
+          <span class="truncate">{{.Name}}</span>
+          {{if hasLabel $card .ID}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
+        </button>
+        <!-- This deletes the label from the board, where the button beside it
+             only takes it off this card. It is here because the alternative is
+             the settings page, and a label that was a typo is noticed on a
+             card. A separate button and not a form: a form inside the panel
+             would nest inside the ones the assignee list uses. -->
+        <button type="button" class="quick-danger" aria-label="Delete the label {{.Name}} from the board"
+                title="Delete “{{.Name}}” from the board"
+                hx-post="/b/{{$.BoardSlug}}/labels/{{.ID}}/delete" hx-swap="none"
+                hx-confirm="Delete the label “{{.Name}}” from the board? It comes off every card that carries it.">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
       {{end}}
     </div>
   </div>

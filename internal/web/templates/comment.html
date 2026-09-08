@@ -1,9 +1,10 @@
 {{define "comment"}}
 <div class="flex items-start gap-2.5" id="comment-{{.Comment.ID}}">
-  <span class="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-full text-white text-[10px] font-semibold uppercase
+  <span class="relative inline-flex items-center justify-center w-7 h-7 shrink-0 overflow-hidden rounded-full text-white text-[10px] font-semibold uppercase
                {{if .Mine}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}"
         title="{{with .Comment.Author}}{{.}}{{else}}nobody signed in{{end}}">
     {{if .Comment.Author}}{{initials .Comment.Author}}{{else}}<i class="bi bi-person"></i>{{end}}
+    {{with avatar .Comment.Author}}<img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">{{end}}
   </span>
   <div class="flex-1 min-w-0 rounded-lg bg-gray-100 dark:bg-gray-700 px-3 py-2">
     <div class="flex items-baseline gap-2 text-xs text-gray-500 dark:text-gray-400">

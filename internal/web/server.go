@@ -37,6 +37,7 @@ type Server struct {
 	now     func() time.Time
 	version string
 	commit  string
+	avatars *avatars                      // nil unless pictures are configured
 	pages   map[string]*template.Template // full pages, keyed by name
 	parts   *template.Template            // fragments: card, card_edit
 }
@@ -51,6 +52,14 @@ func WithClock(now func() time.Time) Option { return func(s *Server) { s.now = n
 // endpoint says so rather than making something up.
 func WithBuild(version, commit string) Option {
 	return func(s *Server) { s.version, s.commit = version, commit }
+}
+
+// WithAvatars shows people's pictures instead of their initials, for the
+// addresses in the map, which maps an address to a GitHub login. Leave it out
+// and the board keeps the initials it has always drawn and this process makes
+// no outbound request. See avatar.go for why the pictures are proxied.
+func WithAvatars(logins map[string]string) Option {
+	return func(s *Server) { s.avatars = newAvatars(logins) }
 }
 
 // New builds the handler. ready is called by /readyz; pass the store's Ping.
@@ -98,6 +107,11 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /b/{board}/columns/{id}/move", s.moveColumn)
 	mux.HandleFunc("POST /b/{board}/layout", s.setLayout)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
+	// Registered only when there are pictures to serve, so a board without them
+	// has no route that reaches out of the process at all.
+	if s.avatars != nil {
+		mux.HandleFunc("GET /avatar/{login}", s.serveAvatar)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { plain(w, http.StatusOK, "ok") })
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /version", s.buildInfo)
@@ -120,6 +134,9 @@ func (s *Server) parseTemplates() {
 		// would silently cut a multi-byte character in half.
 		"initials":   func(addr string) string { return identity.User{Email: addr}.Initials() },
 		"personName": func(addr string) string { return identity.User{Email: addr}.Display() },
+		// "" for anybody without a configured picture, which is everybody
+		// unless WithAvatars was passed. The bubble draws initials on "".
+		"avatar":     s.avatarURL,
 		"readableOn": readableOn,
 		// Every asset URL carries the digest of the embedded tree, so a new
 		// build is a new URL and the browser cannot serve yesterday's script
@@ -1276,6 +1293,15 @@ func (s *Server) deleteLabel(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.svc.DeleteLabel(r.Context(), l.ID); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	// Deleting a label takes it off every card that carried it, so there is no
+	// fragment that expresses the change. The quick panel on a card face asks
+	// over htmx and gets a reload; the settings page posts a plain form and
+	// gets its redirect.
+	if isHTMX(r) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	s.settingsRedirect(w, r, b)

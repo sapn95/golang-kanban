@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ type env struct {
 	log   *bytes.Buffer
 }
 
-func newEnv(t *testing.T, st store.Store, ready func(context.Context) error) *env {
+func newEnv(t *testing.T, st store.Store, ready func(context.Context) error, opts ...Option) *env {
 	t.Helper()
 	if st == nil {
 		st = memory.New()
@@ -40,13 +41,13 @@ func newEnv(t *testing.T, st store.Store, ready func(context.Context) error) *en
 	svc := service.New(st, service.WithClock(func() time.Time { return today }))
 	logBuf := &bytes.Buffer{}
 	logger := slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	h := New(svc, ready, logger, WithClock(func() time.Time { return today }))
+	h := New(svc, ready, logger, append([]Option{WithClock(func() time.Time { return today })}, opts...)...)
 	return &env{h: h, svc: svc, log: logBuf}
 }
 
-func seeded(t *testing.T) *env {
+func seeded(t *testing.T, opts ...Option) *env {
 	t.Helper()
-	e := newEnv(t, nil, nil)
+	e := newEnv(t, nil, nil, opts...)
 	ctx := context.Background()
 	b, err := e.svc.CreateBoard(ctx, "Demo Board", "demo", nil)
 	if err != nil {
@@ -199,6 +200,31 @@ func TestReorder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader(body)), http.StatusConflict, "WIP limit")
+}
+
+// Dragging a selection posts one order to the destination column, and the cards
+// in it can come from anywhere on the board. The browser does the gathering, so
+// what this pins down is the contract it relies on.
+func TestReorderTakesCardsFromSeveralColumnsAtOnce(t *testing.T) {
+	e := seeded(t)
+	ctx := context.Background()
+	doing, done := e.board.Columns[1].ID, e.board.Columns[2].ID
+	inDoing, _ := e.svc.CreateCard(ctx, e.board.ID, doing, service.CardInput{Title: "In doing"})
+
+	// e.card is in To Do, inDoing is in In Progress, and both are dropped into
+	// Done in one request.
+	body := `{"order":["` + string(inDoing.ID) + `","` + string(e.card.ID) + `"]}`
+	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(done)+"/order", strings.NewReader(body)), http.StatusOK, "OK")
+
+	cards, _ := e.svc.Cards(ctx, e.board.ID)
+	for _, c := range cards {
+		if c.ColumnID != done {
+			t.Errorf("%q stayed in %s, so the rest of the selection was left behind", c.Title, c.ColumnID)
+		}
+	}
+	if len(cards) != 2 || cards[0].ID != inDoing.ID {
+		t.Fatalf("the dropped order was not kept: %+v", cards)
+	}
 }
 
 func TestCardFragments(t *testing.T) {
@@ -1543,6 +1569,189 @@ func TestALabelChipSearchesForItsOwnLabel(t *testing.T) {
 		body := e.do(http.MethodGet, "/b/demo/archive", nil).Body.String()
 		if !strings.Contains(body, `href="/b/demo?q=is:archived%20label:%22bug%22"`) {
 			t.Errorf("the archive's chip drops is:archived and jumps to the live board:\n%s", body)
+		}
+	})
+}
+
+func TestALabelCanBeDeletedFromTheCardFace(t *testing.T) {
+	t.Run("the quick panel offers a delete beside every label", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		label := e.board.Labels[0]
+		if !strings.Contains(body, `hx-post="/b/demo/labels/`+string(label.ID)+`/delete"`) {
+			t.Errorf("no delete beside the label in the quick panel:\n%s", body)
+		}
+		// The confirm is the only thing between a mis-click and a label that is
+		// gone from every card.
+		if !strings.Contains(body, "hx-confirm=") {
+			t.Error("the delete asks nothing before it takes the label off every card")
+		}
+	})
+
+	t.Run("deleting over htmx reloads the board", func(t *testing.T) {
+		e := seeded(t)
+		label := e.board.Labels[0]
+		rr := e.do(http.MethodPost, "/b/demo/labels/"+string(label.ID)+"/delete", nil, "HX-Request", "true")
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204: %s", rr.Code, rr.Body.String())
+		}
+		// A fragment cannot express the change: the label leaves every card on
+		// the board, not only the one the panel was open on.
+		if got := rr.Header().Get("HX-Refresh"); got != "true" {
+			t.Errorf("HX-Refresh = %q, want true, so the cards that carried it are redrawn", got)
+		}
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if strings.Contains(body, "q=label:%22bug%22") {
+			t.Errorf("the deleted label is still on a card:\n%s", body)
+		}
+	})
+
+	t.Run("the settings page still gets its redirect", func(t *testing.T) {
+		e := seeded(t)
+		label := e.board.Labels[0]
+		rr := e.do(http.MethodPost, "/b/demo/labels/"+string(label.ID)+"/delete", nil)
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("status = %d, want 303: %s", rr.Code, rr.Body.String())
+		}
+		if got := rr.Header().Get("Location"); got != "/b/demo/settings" {
+			t.Errorf("Location = %q, want the settings page", got)
+		}
+	})
+}
+
+// withAvatarHost points the proxy at a test server. WithAvatars has to be passed
+// before it, since it is what builds the proxy this replaces the host on.
+func withAvatarHost(host string) Option {
+	return func(s *Server) { s.avatars.host = host }
+}
+
+func TestAvatarsAreServedFromThisOrigin(t *testing.T) {
+	const png = "\x89PNG\r\n\x1a\nnot really a png"
+	// The setup returns the board with "First card" assigned to somebody who has
+	// a picture, and a count of how often the upstream was actually asked.
+	setup := func(t *testing.T, upstream http.HandlerFunc) (*env, *atomic.Int64) {
+		t.Helper()
+		hits := &atomic.Int64{}
+		github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			upstream(w, r)
+		}))
+		t.Cleanup(github.Close)
+		e := seeded(t,
+			WithAvatars(map[string]string{"Somebody@Example.com": "sapn95"}),
+			withAvatarHost(github.URL))
+		if _, err := e.svc.SetCardAssignee(context.Background(), e.card.ID, "somebody@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		return e, hits
+	}
+
+	servePNG := func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sapn95.png" || r.URL.Query().Get("size") == "" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = io.WriteString(w, png)
+	}
+
+	t.Run("the card points at this origin and not at github", func(t *testing.T) {
+		e, _ := setup(t, servePNG)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, `src="/avatar/sapn95"`) {
+			t.Errorf("the assignee has no picture on the card:\n%s", body)
+		}
+		// The whole point of the proxy: nothing on the page reaches out to
+		// GitHub, so it learns neither the viewer's address nor who is on the
+		// board. img-src stays 'self' as well.
+		if strings.Contains(body, "github.com") {
+			t.Error("the page loads something from github.com")
+		}
+		// The initials stay behind the picture, which is what a failed load
+		// falls back to.
+		if !strings.Contains(body, "alt=\"\"") || !strings.Contains(body, "object-cover") {
+			t.Error("the picture is not laid over the initials bubble")
+		}
+	})
+
+	t.Run("a picture is fetched once and then cached", func(t *testing.T) {
+		e, hits := setup(t, servePNG)
+		for range 3 {
+			rr := e.do(http.MethodGet, "/avatar/sapn95", nil)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("Content-Type"); got != "image/png" {
+				t.Errorf("Content-Type = %q", got)
+			}
+			if rr.Body.String() != png {
+				t.Error("the bytes served are not the ones fetched")
+			}
+			// no-store would mean one request per card per render.
+			if got := rr.Header().Get("Cache-Control"); !strings.Contains(got, "max-age") || !strings.Contains(got, "private") {
+				t.Errorf("Cache-Control = %q, want it privately cacheable", got)
+			}
+		}
+		if hits.Load() != 1 {
+			t.Errorf("the upstream was asked %d times for one picture", hits.Load())
+		}
+	})
+
+	t.Run("a login nobody configured is not fetched at all", func(t *testing.T) {
+		e, hits := setup(t, servePNG)
+		// Otherwise this is an open proxy for github.com/<anything>.png.
+		if rr := e.do(http.MethodGet, "/avatar/torvalds", nil); rr.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", rr.Code)
+		}
+		if hits.Load() != 0 {
+			t.Error("an unconfigured login reached the upstream")
+		}
+	})
+
+	t.Run("an upstream that says no is answered with 404 and not asked again", func(t *testing.T) {
+		e, hits := setup(t, func(w http.ResponseWriter, r *http.Request) { http.Error(w, "gone", http.StatusNotFound) })
+		for range 2 {
+			if rr := e.do(http.MethodGet, "/avatar/sapn95", nil); rr.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404", rr.Code)
+			}
+		}
+		// Without the failure being cached, a card that carries this person is
+		// a request to GitHub on every render, forever.
+		if hits.Load() != 1 {
+			t.Errorf("the failed fetch was retried %d times", hits.Load())
+		}
+		// And the card still shows the person: the bubble is the initials with
+		// the picture over it, so a picture that never arrives changes nothing.
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, `title="somebody@example.com"`) {
+			t.Errorf("the assignee vanished with their picture:\n%s", body)
+		}
+	})
+
+	t.Run("something that is not an image is refused", func(t *testing.T) {
+		e, _ := setup(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, "<html>login page</html>")
+		})
+		rr := e.do(http.MethodGet, "/avatar/sapn95", nil)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rr.Code)
+		}
+		if strings.Contains(rr.Body.String(), "login page") {
+			t.Error("the upstream's HTML was passed through")
+		}
+	})
+
+	t.Run("without the option there are no pictures and no route", func(t *testing.T) {
+		e := seeded(t)
+		if _, err := e.svc.SetCardAssignee(context.Background(), e.card.ID, "somebody@example.com"); err != nil {
+			t.Fatal(err)
+		}
+		if rr := e.do(http.MethodGet, "/avatar/sapn95", nil); rr.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 with the feature off", rr.Code)
+		}
+		if body := e.do(http.MethodGet, "/b/demo", nil).Body.String(); strings.Contains(body, "/avatar/") {
+			t.Error("a picture is rendered although none is configured")
 		}
 	})
 }

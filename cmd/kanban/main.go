@@ -123,7 +123,8 @@ func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Log
 	log.Info("boards ready", "count", len(boards))
 
 	srv := &http.Server{
-		Handler:           identityMiddleware(cfg, log)(web.New(svc, st.Ping, log, web.WithBuild(version, commit))),
+		Handler: identityMiddleware(cfg, log)(web.New(svc, st.Ping, log,
+			web.WithBuild(version, commit), web.WithAvatars(cfg.Avatars))),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

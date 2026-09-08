@@ -232,3 +232,51 @@ func TestAuthMode(t *testing.T) {
 		})
 	}
 }
+
+func TestAvatars(t *testing.T) {
+	t.Run("unset means no pictures", func(t *testing.T) {
+		c, err := FromEnv(lookup(nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(c.Avatars) != 0 {
+			t.Errorf("Avatars = %v, want none", c.Avatars)
+		}
+	})
+
+	t.Run("pairs are read and the address is case-insensitive", func(t *testing.T) {
+		c, err := FromEnv(lookup(map[string]string{
+			"AVATARS": "Me@Example.com=sapn95, 116176330+NicolasHaas@users.noreply.github.com=NicolasHaas",
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := c.Avatars["me@example.com"]; got != "sapn95" {
+			t.Errorf("Avatars[me@example.com] = %q", got)
+		}
+		if got := c.Avatars["116176330+nicolashaas@users.noreply.github.com"]; got != "NicolasHaas" {
+			t.Errorf("the noreply address was not read: %v", c.Avatars)
+		}
+	})
+
+	for _, bad := range []struct{ name, spec, want string }{
+		{"no login", "me@example.com", "address=login pair"},
+		{"empty login", "me@example.com=", "address=login pair"},
+		{"no address", "=sapn95", "address=login pair"},
+		// The login ends up in the URL this process fetches, so anything that
+		// is not a GitHub account name is refused here rather than sent.
+		{"a path", "me@example.com=../../etc/passwd", "not a GitHub login"},
+		{"a host", "me@example.com=evil.example.com/x", "not a GitHub login"},
+		{"an underscore", "me@example.com=some_body", "not a GitHub login"},
+	} {
+		t.Run("refused: "+bad.name, func(t *testing.T) {
+			_, err := FromEnv(lookup(map[string]string{"AVATARS": bad.spec}))
+			if err == nil {
+				t.Fatalf("accepted %q", bad.spec)
+			}
+			if !strings.Contains(err.Error(), bad.want) || !strings.Contains(err.Error(), "AVATARS") {
+				t.Errorf("error = %v, want it to name AVATARS and %q", err, bad.want)
+			}
+		})
+	}
+}
