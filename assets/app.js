@@ -85,6 +85,39 @@
     });
   }
 
+  // Dragging a selection. SortableJS moves the one card that was picked up, so
+  // dragging three ticked cards left the other two behind. Its MultiDrag plugin
+  // is a second script with a selection model of its own, which would compete
+  // with the checkboxes the board already has, so the rest of the selection is
+  // moved here instead, after the drop.
+  //
+  // The set is read from the checkboxes at drop time rather than kept in a
+  // variable, for the same reason the toolbar reads them on submit: what is on
+  // screen is the only state that cannot drift.
+  function dragged(item) {
+    var cards = Array.prototype.map.call(document.querySelectorAll('.card-select:checked'), function (box) {
+      return box.closest('[data-id]');
+    }).filter(function (card) { return card; });
+    // Grabbing a card that is not ticked moves that card, whatever else is
+    // selected. Anything else would move cards the pointer never touched.
+    return cards.indexOf(item) === -1 ? [item] : cards;
+  }
+
+  function moveSelection(evt) {
+    var after = evt.item;
+    dragged(evt.item).forEach(function (card) {
+      if (card === evt.item) { return; }
+      // In document order, so the cards keep their order among themselves and
+      // land together under the one that was dragged.
+      after.insertAdjacentElement('afterend', card);
+      after = card;
+    });
+    // One request, to the destination: it is the authoritative order of that
+    // column and the server moves each card in from wherever it was, so the
+    // columns the cards left need no request of their own.
+    postOrder(evt.to);
+  }
+
   function initSortable() {
     if (typeof Sortable === 'undefined') { return; }
     document.querySelectorAll('[data-column]').forEach(function (container) {
@@ -99,7 +132,7 @@
         delay: 200,
         delayOnTouchOnly: true,
         touchStartThreshold: 5,
-        onEnd: function (evt) { postOrder(evt.to); }
+        onEnd: function (evt) { moveSelection(evt); }
       });
     });
   }
