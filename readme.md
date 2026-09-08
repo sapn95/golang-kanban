@@ -118,7 +118,7 @@ If I feel like it I might work on some of these things:
 - [ ] ...
 
 #### Contributing
-The code layout and the rules it follows are in [docs/architecture.md](docs/architecture.md); decisions are recorded in [docs/adr/](docs/adr/).
+The code layout and the rules it follows are in [docs/architecture.md](docs/architecture.md); every route with what it takes and what it answers is in [docs/api.md](docs/api.md); decisions are recorded in [docs/adr/](docs/adr/).
 
 Contributions are welcome! If you have ideas, bug fixes, or enhancements, feel free to fork the repository, open an issue, or submit a pull request.
 
