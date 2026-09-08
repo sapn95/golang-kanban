@@ -90,28 +90,24 @@ browser ──► web.Router (net/http mux, Go 1.22 patterns)
 
 ## URL scheme
 
-The current handlers are internal to the HTMX pages, so the paths can change
-without breaking anyone. Boards become first-class, and the hand-rolled
-`cardRouter` goes away in favour of method patterns.
+The paths are not versioned. They are the pages' own vocabulary rather than a
+published API, so a rename is cheap inside a release and breaks anything that
+calls a path directly, a script or a bookmark. `/b/{board}/labels` is the one
+that has already happened, and it kept a `301`. Boards are first-class and the
+hand-rolled `cardRouter` is gone in favour of method patterns.
 
-| Method | Path                                   | Purpose                                              |
-|--------|----------------------------------------|------------------------------------------------------|
-| GET    | `/`                                    | redirect to the only board, or list boards           |
-| GET    | `/b/{board}`                           | render a board (`{board}` is the slug)               |
-| POST   | `/b/{board}/cards`                     | create a card in a column (form field `column`)      |
-| GET    | `/cards/{id}`                          | card fragment (re-render after edit)                 |
-| GET    | `/cards/{id}/edit`                     | edit form fragment                                   |
-| POST   | `/cards/{id}`                          | update title/description/due date/labels/subtasks    |
-| POST   | `/cards/{id}/assignee`                 | quick edit: form field `assignee`, `@me` or empty    |
-| POST   | `/cards/{id}/labels/{label}/toggle`    | quick edit: put one of the board's labels on or off  |
-| POST   | `/cards/{id}/delete`                   | delete                                               |
-| POST   | `/b/{board}/columns/{column}/order`    | JSON `{"order":[ids]}`: authoritative card order     |
-| POST   | `/b/{board}/columns`                   | (Phase 2) create column                              |
-| POST   | `/b/{board}/columns/{column}`          | (Phase 2) rename / WIP limit                         |
-| POST   | `/b/{board}/columns/order`             | (Phase 2) reorder columns                            |
-| GET    | `/assets/…`                            | embedded static files, long cache, content-hashed    |
-| GET    | `/healthz`                             | process is up; always 200                            |
-| GET    | `/readyz`                              | `store.Ping` succeeds; 503 otherwise                 |
+Every route, what it takes and what it answers is in
+[`docs/api.md`](api.md), and a test compares that file against the
+registrations in `internal/web/server.go`, so it says what the build does. The
+shape worth knowing here:
+
+- Reads are `GET`, writes are `POST`, and a write answers a fragment for htmx
+  or a `303` for a plain form.
+- A board is addressed by slug (`/b/{board}`), a card and a comment by id.
+- `/assets/…` serves the embedded tree with a year-long cache, because the URL
+  carries the digest.
+- `/healthz` says the process is up, `/readyz` runs `store.Ping`, `/version`
+  says which build is answering.
 
 A drag between columns sends one `order` request for the destination column.
 `ReorderCards` moves any listed card that currently lives in another column
