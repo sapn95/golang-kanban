@@ -35,9 +35,14 @@
     {{if .User.Email}}
     <span class="hidden sm:flex items-center gap-2 mr-3 text-sm text-gray-600 dark:text-gray-300"
           title="{{.User.Email}}">
-      <span class="inline-flex items-center justify-center w-7 h-7 rounded-full
+      <span class="relative inline-flex items-center justify-center w-7 h-7 shrink-0 overflow-hidden rounded-full
                    bg-gradient-to-br from-blue-600 to-purple-600 text-white text-xs font-semibold uppercase">
         {{.User.Initials}}
+        <!-- Same as on a card: the picture covers the initials rather than
+             replacing them, so they stay as the fallback. -->
+        {{with avatar .User.Email}}
+        <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
+        {{end}}
       </span>
       {{.User.Display}}
     </span>
