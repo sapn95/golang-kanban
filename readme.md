@@ -24,6 +24,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Search on the board's own URL, so a result set can be linked to. A bare
   word matches the title, the description or a label name:
   `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.
+  A label on a card is a link to that search, so the syntax is discoverable
+  rather than something you have to know about.
 - Select several cards (shift-click for a range) and move, assign, archive or delete them at once.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
 - Dark mode.

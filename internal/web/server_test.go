@@ -1470,6 +1470,83 @@ func TestLabelsAreLegibleOnACard(t *testing.T) {
 	}
 }
 
+func TestALabelChipSearchesForItsOwnLabel(t *testing.T) {
+	setup := func(t *testing.T) *env {
+		t.Helper()
+		e := seeded(t) // "First card" carries the label "bug"
+		ctx := context.Background()
+		b, err := e.svc.Board(ctx, "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		review, err := e.svc.CreateLabel(ctx, b.ID, "in review", "#22c55e")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID,
+			service.CardInput{Title: "Second card", Labels: []model.ID{review.ID}}); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+
+	t.Run("the chip on the card face links to the board's own search", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, `href="/b/demo?q=label:%22bug%22"`) {
+			t.Errorf("the bug chip is not a search link:\n%s", body)
+		}
+		// A drag that begins on a chip has to move the card. Without this the
+		// browser drags the link instead and the card stays where it was.
+		if !strings.Contains(body, `draggable="false"`) {
+			t.Error("the chip link is draggable, which takes the drag away from the card")
+		}
+		if strings.Contains(body, "ZgotmplZ") {
+			t.Error("the link was refused by the template's URL escaper")
+		}
+	})
+
+	t.Run("following it returns the labelled card and nothing else", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, `/b/demo?q=label:%22bug%22`, nil).Body.String()
+		if !strings.Contains(body, "First card") {
+			t.Error("the labelled card is not in the results")
+		}
+		if strings.Contains(body, "Second card") {
+			t.Error("a card that does not carry the label was returned too")
+		}
+	})
+
+	t.Run("a name with a space in it is quoted", func(t *testing.T) {
+		e := setup(t)
+		const link = `/b/demo?q=label:%22in%20review%22`
+		board := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(board, `href="`+link+`"`) {
+			t.Fatalf("the two-word label was not quoted in its link:\n%s", board)
+		}
+		// Unquoted, this splits into two terms and finds nothing. Typing it by
+		// hand is the search that was reported as broken.
+		body := e.do(http.MethodGet, link, nil).Body.String()
+		if !strings.Contains(body, "Second card") {
+			t.Error("the link for a two-word label found nothing")
+		}
+		if strings.Contains(body, "First card") {
+			t.Error("the two-word label matched a card carrying a different one")
+		}
+	})
+
+	t.Run("a chip in the archive keeps you in the archive", func(t *testing.T) {
+		e := setup(t)
+		if err := e.svc.ArchiveCard(context.Background(), e.card.ID); err != nil {
+			t.Fatal(err)
+		}
+		body := e.do(http.MethodGet, "/b/demo/archive", nil).Body.String()
+		if !strings.Contains(body, `href="/b/demo?q=is:archived%20label:%22bug%22"`) {
+			t.Errorf("the archive's chip drops is:archived and jumps to the live board:\n%s", body)
+		}
+	})
+}
+
 func TestAssetURLsCarryAVersion(t *testing.T) {
 	e := seeded(t)
 	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()

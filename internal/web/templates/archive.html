@@ -21,9 +21,13 @@
       {{end}}
       <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
         {{range .Labels}}
-        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none
+        <!-- Same link as on the board, with is:archived, so a chip clicked here
+             narrows the archive rather than jumping back to the live board. -->
+        <a href="/b/{{$board}}?q=is:archived%20label:%22{{.Name}}%22"
+          title="Find every archived card with this label"
+          class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none no-underline hover:opacity-80
           {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
-          {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</span>
+          {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</a>
         {{end}}
         {{if .Card.Assignee}}
         <span class="text-gray-500 dark:text-gray-400" title="{{.Card.Assignee}}">{{personName .Card.Assignee}}</span>

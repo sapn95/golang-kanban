@@ -8,9 +8,18 @@
   {{if or .Labels .Due .BoardLabels}}
   <div class="flex flex-wrap items-center gap-1 mb-2 text-xs">
     {{range .Labels}}
-    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none
+    <!-- The chip is a link to a search for its own label. Nothing on the board
+         advertises that the label: syntax exists, and clicking a label to see
+         the rest of its cards is what everyone tries first.
+         The name is quoted because label: matches exactly and the search splits
+         on spaces, so an unquoted "in review" would look for two labels.
+         draggable="false" so a drag that starts on a chip moves the card
+         instead of the browser dragging the link. -->
+    <a href="/b/{{$.BoardSlug}}?q=label:%22{{.Name}}%22" draggable="false"
+      title="Find every card with this label"
+      class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold leading-none no-underline hover:opacity-80
       {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
-      {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</span>
+      {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>{{.Name}}</a>
     {{end}}
     {{if .Due}}
     <span class="px-2 py-0.5 rounded-full
