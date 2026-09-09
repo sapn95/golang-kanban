@@ -98,7 +98,15 @@ func (s *Schedule) runOnce(ctx context.Context) {
 			// Shutdown, not a failure. The next start takes one.
 			return
 		}
-		s.log().Error("backup failed", "target", s.Target.String(), "err", err)
+		if name == "" {
+			s.log().Error("backup failed", "target", s.Target.String(), "err", err)
+			return
+		}
+		// A name with an error is the snapshot that was written and the
+		// retention that then failed. Saying "backup failed" would send someone
+		// looking for a backup that is sitting right there.
+		s.log().Error("backup written, retention failed", "target", s.Target.String(), "name", name,
+			"took", s.now().Sub(start), "err", err)
 		return
 	}
 	s.log().Info("backup written", "target", s.Target.String(), "name", name, "took", s.now().Sub(start))

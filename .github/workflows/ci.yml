@@ -219,6 +219,7 @@ jobs:
              --set backup.dir.enabled=true --set backup.dir.persistence.enabled=false \
              --set backup.dir.path=/data/snapshots
           ok --set backup.dir.enabled=true --set backup.interval=0
+          ok --set backup.dir.enabled=true --set backup.interval=1h30m
           ok "${bucket[@]}"
           ok --set backup.s3.bucket=snapshots --set backup.s3.region=eu-central-2 \
              --set backup.s3.accessKeyID=key --set backup.s3.secretAccessKey=secret \
@@ -241,6 +242,10 @@ jobs:
           fi
           nope --set backup.dir.enabled=true "${bucket[@]}"
           nope --set backup.dir.enabled=true --set backup.interval=24
+          # The app refuses a schedule under a minute, and no template can tell
+          # 90s from 90m, so the chart takes minutes and hours and nothing else.
+          nope --set backup.dir.enabled=true --set backup.interval=30s
+          nope --set backup.dir.enabled=true --set backup.interval=500ms
           nope --set backup.dir.enabled=true --set backup.keep=-1
           nope --set backup.dir.enabled=true --set backup.dir.path=snapshots
           nope --set backup.dir.enabled=true --set backup.dir.path=/tmp/snapshots
