@@ -27,7 +27,7 @@ Which store holds the boards and how to reach it. The `DB_*` variables build a P
 | Variable | Default | Notes |
 |---|---|---|
 | `STORAGE` | `postgres` | postgres \| sqlite \| memory |
-| `DATABASE_URL` | *(unset)* | a full DSN; wins over the five below; a secret: reports keep the address and take out the password |
+| `DATABASE_URL` | *(unset)* | a full DSN; wins over every `DB_*` variable; a secret: reports keep the address and take out the password |
 | `DB_USER` | `user` |  |
 | `DB_PASS` | `password` | a secret: reports say `[set]` and never the value |
 | `DB_HOST` | `postgres` |  |
