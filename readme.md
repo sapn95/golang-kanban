@@ -47,14 +47,17 @@ A sample docker-compose.yml is provided, just use `docker compose up --build`.
 This starts PostgreSQL and the board on http://localhost:17808.
 
 ### Using the Pre-built Docker Image
+The image is built for linux/amd64 and linux/arm64 with a provenance
+attestation, so it runs on a laptop and on a Raspberry Pi from the same tag.
+
 ``` bash
-docker pull ghcr.io/nicolashaas/golang-kanban:latest
+docker pull ghcr.io/sapn95/golang-kanban:2.0.0
 
 # SQLite: one volume, no database to set up
-docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/nicolashaas/golang-kanban:latest
+docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.0.0
 
 # PostgreSQL
-docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/nicolashaas/golang-kanban:latest
+docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.0.0
 ```
 
 ### Prerequisites
@@ -113,8 +116,10 @@ If I feel like it I might work on some of these things:
 - [x] remove/add/edit collums
 - [ ] make it pretty
 - [x] add sqlite option for people too lazy to setup a db
-- [ ] tls
-- [ ] oidc
+- [x] tls, terminated in front of the app by the ingress or by the
+  oauth2-proxy sidecar in [deploy/helm](deploy/helm/kanban)
+- [x] oidc, in the same place: Entra, GitHub or any OIDC provider signs people
+  in, and the app reads who they are from the header the proxy sets
 - [ ] ...
 
 #### Contributing

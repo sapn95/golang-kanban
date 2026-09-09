@@ -3,6 +3,14 @@ version: 2
 # once the checks are green — majors included; the `no-automerge` label is the
 # manual hold. See .github/workflows/dependabot-auto-merge.yml for both halves
 # of that, and https://github.com/sapn95/.github/blob/main/CI.md for the rest.
+#
+# Dependabot reads this file from the default branch and opens its pull requests
+# against it, and it had never run here: the file lives on `homelab`, and the
+# default branch was `main`, which tracks upstream. `homelab` is the default
+# branch as of 2026-09-09, which is what makes the three ecosystems below
+# actually run. There is no `target-branch` here on purpose: naming a branch
+# turns off Dependabot's security updates for that ecosystem, and those are the
+# ones that must not wait for the weekly slot.
 updates:
   - package-ecosystem: github-actions
     directory: /
