@@ -89,10 +89,13 @@ docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=...
 ```
 
 ### On Unraid
-[`deploy/unraid/kanban.xml`](deploy/unraid) is a template for the Docker tab.
-Paste its raw URL into the Template field, or copy the file to
+[`deploy/unraid/kanban.xml`](deploy/unraid/kanban.xml) is a template for the
+Docker tab. It is not in Community Applications, so install it by hand: paste its
+raw URL into the Template field, or copy the file to
 `/boot/config/plugins/dockerMan/templates-user/`. The form then comes up with the
-port, `/data` on appdata, SQLite and a daily snapshot already filled in.
+port, `/data` on appdata, SQLite and a daily snapshot already filled in. The
+[notes beside it](deploy/unraid/README.md) cover PostgreSQL, snapshots and
+sign-in.
 
 ### In Kubernetes
 [`deploy/helm/kanban`](deploy/helm/kanban) is a chart with a read-only root

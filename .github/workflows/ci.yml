@@ -343,8 +343,10 @@ jobs:
             exit 1
           fi
           pattern='(golang-kanban:|KANBAN_TAG[=:-]+)[0-9]+\.[0-9]+\.[0-9]+'
-          found="$( { grep -rhoE "$pattern" deploy; grep -hoE "$pattern" readme.md; } \
-            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u)"
+          # A grep that matches nothing exits 1, and under `set -e` that would end
+          # the step before it could say what it found.
+          found="$( { grep -rhoE "$pattern" deploy || true; grep -hoE "$pattern" readme.md || true; } \
+            | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true; } | sort -u)"
           if [ "$found" != "$want" ]; then
             echo "::error::Chart.yaml says $want; deploy/ and the readme name $(echo "$found" | tr '\n' ' ')"
             echo "::error::a release bumps the chart, the compose file, .env.example, the unraid template and the readme together"
