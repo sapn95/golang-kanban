@@ -1,9 +1,9 @@
 # Architecture
 
-This document describes the target layout of the code base and the rules that
-keep it that way. It is the reference for the restructuring in Phase 0 of the
-roadmap; every later phase (storage backends, auth, JSON API, backup, deploy)
-adds a package here rather than a file to `main.go`.
+This document describes the layout of the code base and the rules that keep it
+that way. Everything this fork added to upstream's single `main.go` came in as a
+package of its own: the storage backends, request identity, the JSON API,
+snapshots and the deployment templates.
 
 Decisions that are hard to reverse are recorded as ADRs in [`docs/adr/`](adr/).
 Numbers in brackets below point at them.
@@ -23,9 +23,11 @@ Numbers in brackets below point at them.
 - **Configuration is environment variables.** Existing variables keep their
   names and defaults. A config file, if it ever comes, is a thin layer that
   sets the same values.
-- **Every new Go dependency gets an ADR.** Phase 0 adds none; Phase 1 adds
-  `modernc.org/sqlite` ([0004](adr/0004-sqlite-backend.md)), which is pure Go
-  because the `CGO_ENABLED=0` rule above outranks the faster cgo driver.
+- **Every new Go dependency gets an ADR.** There are two: `lib/pq`, which came
+  from upstream, and `modernc.org/sqlite`
+  ([0004](adr/0004-sqlite-backend.md)), which is pure Go because the
+  `CGO_ENABLED=0` rule above outranks the faster cgo driver. Markdown, S3 signing
+  and the JSON API are stdlib for the same reason.
 
 ## Package layout
 
@@ -46,7 +48,7 @@ Numbers in brackets below point at them.
 │   ├── api/               JSON handlers over the same service, under /api/v1  [0009]
 │   ├── identity/          identity middleware: none | proxy | access          [0005]
 │   └── backup/            snapshot Export/Import, directory and S3 targets, schedule [0012]
-├── docs/                  plain markdown, ADRs under docs/adr/
+├── docs/                  plain markdown; configuration.md is generated, ADRs under docs/adr/
 └── deploy/                helm/ chart, compose/ profiles, unraid/ container template
 ```
 
@@ -170,38 +172,23 @@ export` on their own schedule.
 
 ## Configuration
 
-| Variable        | Default     | Notes                                                      |
-|-----------------|-------------|------------------------------------------------------------|
-| `SERVER_PORT`   | `17808`     | unchanged                                                  |
-| `LISTEN_ADDR`   | `:$SERVER_PORT` | new; wins over `SERVER_PORT` when set                  |
-| `STORAGE`       | `postgres`  | `postgres`, `sqlite` or `memory`; the default stays `postgres` so upgrades keep their database ([0004](adr/0004-sqlite-backend.md)) |
-| `DATABASE_URL`  | *(unset)*   | new; full DSN, wins over the `DB_*` variables              |
-| `DB_USER` `DB_PASS` `DB_HOST` `DB_PORT` `DB_NAME` | as today | unchanged                              |
-| `DB_SSLMODE`    | `disable`   | new; today's hard-coded value becomes the default          |
-| `SQLITE_PATH`   | `/data/kanban.db` | `STORAGE=sqlite` only; the image declares `VOLUME ["/data"]` |
-| `AUTO_MIGRATE`  | `true`      | run migrations on `serve` start; `false` to require `kanban migrate` |
-| `LOG_LEVEL`     | `info`      | `debug` `info` `warn` `error`                              |
-| `LOG_FORMAT`    | `text`      | `text` or `json`                                           |
-| `AUTH_MODE`     | `none`      | `none`, `proxy` or `access`; the three are not interchangeable ([0005](adr/0005-request-identity.md)) |
-| `AUTH_HEADER`   | `X-Forwarded-Email` | `AUTH_MODE=proxy` only                             |
-| `ACCESS_TEAM_DOMAIN` `ACCESS_AUD` | *(unset)* | `AUTH_MODE=access` only; both required, the issuer and the certs URL are derived |
-| `AVATARS`       | *(unset)*   | `address=github-login` pairs; unset draws initials and makes no outbound request ([0008](adr/0008-avatars-are-proxied.md)) |
-| `BACKUP_INTERVAL` | `24h`     | gap between snapshots; `0` turns the schedule off, under a minute is refused |
-| `BACKUP_KEEP`   | `7`         | snapshots the target holds; `0` keeps every one            |
-| `BACKUP_DIR`    | *(unset)*   | a directory to write snapshots to; a target is what turns the schedule on |
-| `BACKUP_S3_BUCKET` | *(unset)* | the other target; set one of the two, not both             |
-| `BACKUP_S3_PREFIX` | *(unset)* | key prefix, so one bucket can hold several deployments     |
-| `BACKUP_S3_REGION` | `$AWS_REGION` | required with a bucket; it is part of the signature     |
-| `BACKUP_S3_ENDPOINT` | *(unset)* | empty for AWS; anything else is an S3-compatible server addressed path-style |
-| `AWS_ACCESS_KEY_ID` `AWS_SECRET_ACCESS_KEY` | *(unset)* | required with a bucket; there is no credential chain ([0012](adr/0012-snapshots-are-the-portable-format.md)) |
-| `AWS_SESSION_TOKEN` | *(unset)* | for temporary credentials somebody else refreshes         |
+Every variable, its default and what it does is in
+[`docs/configuration.md`](configuration.md). That page is not written by hand:
+`go generate ./internal/config/` renders it from `Config`, taking the names from
+the `env` tags, the Notes column from the comment beside each field, the
+paragraphs from the comment above each group, and the defaults from `FromEnv` with
+an empty environment. A test renders it again and fails when the committed page
+differs, so a variable cannot arrive without its row. The same tags drive the
+`kanban doctor` report, which makes a new setting a tagged field and nothing
+else.
 
-`config.FromEnv()` is the only place that reads the environment, and
-`Validate()` refuses what cannot work before the server binds: two backup
-targets, a bucket with no region or no credentials, a prefix that would need
-escaping in a signed URL. The reference table in `docs/configuration.md` is
-generated from the struct tags by `go generate` (Phase 7), so the table above is
-the hand-written stopgap.
+`config.FromEnv()` is the only place that reads the environment, and `Validate()`
+refuses what cannot work before the server binds: two backup targets, a bucket
+with no region or no credentials, a prefix that would need escaping in a signed
+URL. The precedence rules worth knowing outside the table: `LISTEN_ADDR` wins over
+`SERVER_PORT`, `DATABASE_URL` wins over the `DB_*` variables, `BACKUP_S3_REGION`
+falls back to `AWS_REGION`, and `STORAGE` still defaults to `postgres` so an
+upgrade keeps the database it had ([0004](adr/0004-sqlite-backend.md)).
 
 ## Migrations
 
@@ -244,6 +231,11 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   produced for the same requests, and the key derivation is checked against the
   `get-vanilla` vector AWS publishes. A test that only agreed with the code
   beside it would say nothing about whether a real bucket accepts the header.
+- Documentation that describes an interface is tested against the interface:
+  `docs/api.md` against the route registrations in `internal/web/server.go`,
+  `docs/configuration.md` by rendering it again from `Config`, and the readme's
+  environment block against the same list of variables. Each of those is a page
+  somebody reads instead of the code, so being wrong is worse than being missing.
 
 ## Deployment
 

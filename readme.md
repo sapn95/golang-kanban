@@ -115,6 +115,11 @@ CREATE DATABASE kanban OWNER kanban;
 Upgrading from a version that used the single `cards` table? Take a `pg_dump` first. The old table is imported into a default board on the first start and then dropped.
 
 ### Environment Variables
+Every variable, its default and what it does is in
+[docs/configuration.md](docs/configuration.md). That page is generated from the
+struct that reads them, so it cannot fall behind the code. The ones a deployment
+usually sets:
+
 ``` bash
 SERVER_PORT=17808          # or LISTEN_ADDR=0.0.0.0:17808
 STORAGE=postgres           # postgres | sqlite | memory (memory: nothing is saved, handy for a demo)
@@ -254,12 +259,18 @@ go test ./...                       # memory and sqlite backends, no database ne
 KANBAN_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/kanban_test?sslmode=disable go test ./...
 ```
 
-Adding a Tailwind class to a template or to `app.js` needs the stylesheet
-rebuilt, which fetches one pinned binary and no package manager:
+Two things are generated and committed. Adding a Tailwind class to a template or
+to `app.js` needs the stylesheet rebuilt, which fetches one pinned binary and no
+package manager; adding an environment variable to `config.Config` needs the
+reference page rendered again from it.
 
 ``` bash
 go generate ./assets/               # writes assets/tailwind.css; commit it
+go generate ./internal/config/      # writes docs/configuration.md; commit it
 ```
+
+Both are checked in CI against what is committed, so forgetting one is a failing
+build rather than a stale file.
 
 #### Todo's
 If I feel like it I might work on some of these things:
@@ -276,7 +287,7 @@ If I feel like it I might work on some of these things:
 - [ ] ...
 
 #### Contributing
-The code layout and the rules it follows are in [docs/architecture.md](docs/architecture.md); every route with what it takes and what it answers is in [docs/api.md](docs/api.md); decisions are recorded in [docs/adr/](docs/adr/).
+The code layout and the rules it follows are in [docs/architecture.md](docs/architecture.md); every route with what it takes and what it answers is in [docs/api.md](docs/api.md); every setting is in [docs/configuration.md](docs/configuration.md); decisions are recorded in [docs/adr/](docs/adr/).
 
 Contributions are welcome! If you have ideas, bug fixes, or enhancements, feel free to fork the repository, open an issue, or submit a pull request.
 
