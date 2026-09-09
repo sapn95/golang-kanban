@@ -40,7 +40,7 @@ Numbers in brackets below point at them.
 │   │   ├── postgres/      lib/pq backend, embedded migrations/*.sql
 │   │   └── sqlite/        modernc.org/sqlite backend, embedded migrations/*.sql [0004]
 │   ├── service/           use cases: one method per user action, validation, WIP limits, IDs
-│   ├── web/               HTMX handlers, embedded templates/, view models
+│   ├── web/               HTMX handlers, embedded templates/, view models, markdown  [0010]
 │   ├── api/               JSON handlers over the same service, under /api/v1  [0009]
 │   ├── identity/          identity middleware: none | proxy | access          [0005]
 │   └── backup/            (Phase 5) Export/Import snapshot, S3 scheduler

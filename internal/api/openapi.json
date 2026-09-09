@@ -953,7 +953,7 @@
           "board_id": { "type": "string" },
           "column_id": { "type": "string" },
           "title": { "type": "string" },
-          "description": { "type": "string", "description": "Markdown. The page renders it; this is the source." },
+          "description": { "type": "string", "description": "Markdown, as it was written. The pages render a subset of it; see docs/adr/0010." },
           "position": { "type": "integer", "description": "1 is the top of the column." },
           "due_date": { "type": "string", "description": "YYYY-MM-DD, empty for none." },
           "assignee": { "type": "string", "description": "An address, empty for nobody." },
