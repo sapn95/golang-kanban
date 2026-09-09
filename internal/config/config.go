@@ -291,6 +291,14 @@ func (c Config) validateBackup() error {
 		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q is not an http or https URL", c.BackupS3Endpoint)
 		}
+		// A gateway may sit under a path, and that path is signed along with the
+		// key, so it is held to the same characters for the same reason.
+		if !isSafeKeyPrefix(strings.TrimPrefix(strings.TrimSuffix(u.Path, "/"), "/")) {
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: path %q; use letters, digits, dots, dashes, underscores and slashes", u.Path)
+		}
+		if u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q; a scheme, a host and at most a path, no query, fragment or credentials", c.BackupS3Endpoint)
+		}
 	}
 	return nil
 }

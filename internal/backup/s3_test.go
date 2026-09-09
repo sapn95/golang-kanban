@@ -228,6 +228,24 @@ func TestS3EndpointStyles(t *testing.T) {
 		t.Errorf("list URL = %s", got)
 	}
 
+	// An endpoint under a path of its own, as a gateway that puts the whole of S3
+	// behind one prefix does. The prefix is part of the request and therefore
+	// part of the signature, so losing it would sign for another resource.
+	s = testS3(t, "https://gateway.example.com/s3/")
+	req, err = s.request(ctx, http.MethodPut, s.key("kanban-20260304T050607Z.json"), nil, []byte("{}"))
+	must(t, "request", err)
+	if got := req.URL.String(); got != "https://gateway.example.com/s3/kanban-backups/pi/kanban-20260304T050607Z.json" {
+		t.Errorf("URL = %s", got)
+	}
+	if got, want := canonicalPath(req.URL), "/s3/kanban-backups/pi/kanban-20260304T050607Z.json"; got != want {
+		t.Errorf("signed path = %s, want %s", got, want)
+	}
+	req, err = s.request(ctx, http.MethodGet, "", url.Values{"list-type": {"2"}}, nil)
+	must(t, "request", err)
+	if got := req.URL.String(); got != "https://gateway.example.com/s3/kanban-backups?list-type=2" {
+		t.Errorf("list URL = %s", got)
+	}
+
 	for _, bad := range []string{"://nope", "not-a-url"} {
 		s := testS3(t, bad)
 		if _, err := s.endpoint("k", nil); err == nil {

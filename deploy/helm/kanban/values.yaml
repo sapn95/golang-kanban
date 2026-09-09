@@ -120,8 +120,10 @@ externalDatabase:
 # A target is what turns the schedule on. With neither a directory nor a bucket
 # nothing is scheduled, and a backup is whatever you run yourself.
 backup:
-  # The gap between snapshots, as a Go duration. 0 turns the schedule off while
-  # leaving the target configured; under a minute is refused.
+  # The gap between snapshots, in whole minutes or hours: 24h, 90m, 1h30m. 0
+  # turns the schedule off while leaving the target configured. The app refuses
+  # anything under a minute, and the chart cannot do the arithmetic to tell 90s
+  # from 90m, so it takes m and h and nothing smaller.
   interval: 24h
   # How many snapshots the target keeps. Older ones are deleted after a
   # successful write, so a target that stops accepting deletions never costs a

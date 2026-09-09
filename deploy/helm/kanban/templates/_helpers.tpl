@@ -161,8 +161,12 @@ backups, which is the failure nobody notices until they need one.
 {{- if not (kindIs "invalid" $backup.interval) -}}
 {{- $iv = toString $backup.interval -}}
 {{- end -}}
-{{- if not (regexMatch "^(0|([0-9]+(\\.[0-9]+)?(ms|s|m|h))+)$" $iv) -}}
-{{- fail (printf "backup.interval must be a Go duration such as 24h, 90m or 30s, got %q. Quote it: YAML reads 24h as a string but 30 as a number, and the app wants a unit." $iv) -}}
+{{- /* Minutes and hours only, and whole ones. The app refuses a schedule under a
+       minute, so `30s` here would render a pod that exits at startup, and the
+       chart has no arithmetic to tell 90s from 90m. That rules out a few
+       intervals the app would take, such as `60s`, and the message says so. */ -}}
+{{- if not (regexMatch "^(0|([1-9][0-9]*[mh])+)$" $iv) -}}
+{{- fail (printf "backup.interval must be whole minutes or hours, such as 24h, 90m or 1h30m, got %q. Anything under a minute is refused by the app, and 0 turns the schedule off. Quote it in a values file: YAML reads 24h as a string but 30 as a number, and the app wants the unit." $iv) -}}
 {{- end -}}
 {{- if lt (int ($backup.keep | default 0)) 0 -}}
 {{- fail (printf "backup.keep must not be negative, got %v: 0 keeps every snapshot" $backup.keep) -}}

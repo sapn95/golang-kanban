@@ -226,6 +226,35 @@ func TestPruneFailureStillReportsTheSnapshot(t *testing.T) {
 	}
 }
 
+// TestPruneFailureIsNotLoggedAsALostBackup: the log is the only place an
+// operator hears about either half, and "backup failed" would send them looking
+// for a snapshot that is sitting in the target.
+func TestPruneFailureIsNotLoggedAsALostBackup(t *testing.T) {
+	ctx := context.Background()
+	tg := newTarget(t)
+	sch, l := testSchedule(t, tg)
+	sch.Keep = 1
+	_, err := sch.Once(ctx)
+	must(t, "first", err)
+
+	tg.failDelete.Store(true)
+	sch.runOnce(ctx)
+	if strings.Contains(l.String(), "backup failed") {
+		t.Errorf("a written snapshot was logged as a failed backup:\n%s", l.String())
+	}
+	if !strings.Contains(l.String(), "retention failed") {
+		t.Errorf("the failed retention was not logged:\n%s", l.String())
+	}
+	names, err := tg.Dir.List(ctx)
+	must(t, "list", err)
+	if len(names) != 2 {
+		t.Errorf("target holds %v, want the snapshot the log named", names)
+	}
+	if !strings.Contains(l.String(), names[1]) {
+		t.Errorf("the log does not name the snapshot it wrote:\n%s", l.String())
+	}
+}
+
 func TestOnceReportsWhatFailed(t *testing.T) {
 	ctx := context.Background()
 	t.Run("the store", func(t *testing.T) {

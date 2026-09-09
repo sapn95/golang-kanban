@@ -336,6 +336,20 @@ func TestBackupTargets(t *testing.T) {
 				}
 			},
 		},
+		{
+			// A gateway that puts the whole of S3 under one path.
+			name: "an endpoint may carry a path",
+			env: map[string]string{
+				"BACKUP_S3_BUCKET": "b", "BACKUP_S3_ENDPOINT": "https://gw.example.com/s3/",
+				"BACKUP_S3_REGION":  "eu-central-2",
+				"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "secret",
+			},
+			check: func(t *testing.T, c Config) {
+				if c.BackupS3Endpoint != "https://gw.example.com/s3" {
+					t.Errorf("endpoint = %q", c.BackupS3Endpoint)
+				}
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := FromEnv(lookup(tc.env))
@@ -389,6 +403,12 @@ func TestBackupRefusesWhatCannotWork(t *testing.T) {
 		{"a prefix with a space", "BACKUP_S3_PREFIX", s3(map[string]string{"BACKUP_S3_PREFIX": "my snapshots"})},
 		{"an endpoint that is a host name", "not an http or https URL", s3(map[string]string{"BACKUP_S3_ENDPOINT": "minio.example.com"})},
 		{"an endpoint with no host", "not an http or https URL", s3(map[string]string{"BACKUP_S3_ENDPOINT": "https://"})},
+		// A gateway under a path is supported, and that path is signed along with
+		// the key, so it is held to the same characters as the prefix.
+		{"an endpoint path with a space", "path", s3(map[string]string{"BACKUP_S3_ENDPOINT": "https://gw.example.com/my s3"})},
+		{"an endpoint path that climbs", "path", s3(map[string]string{"BACKUP_S3_ENDPOINT": "https://gw.example.com/s3/../x"})},
+		{"an endpoint with a query", "no query", s3(map[string]string{"BACKUP_S3_ENDPOINT": "https://gw.example.com/s3?debug=1"})},
+		{"an endpoint with credentials", "no query", s3(map[string]string{"BACKUP_S3_ENDPOINT": "https://user:pw@gw.example.com"})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := FromEnv(lookup(tc.env))

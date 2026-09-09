@@ -172,10 +172,13 @@ func (s *S3) endpoint(key string, query url.Values) (*url.URL, error) {
 	if u.Host == "" {
 		return nil, fmt.Errorf("endpoint %q: no host", base)
 	}
-	path := "/"
+	// An endpoint may carry a path of its own, as a gateway that puts the whole
+	// of S3 under one prefix does. Dropping it would sign a request for a
+	// resource the operator did not name.
+	path := strings.TrimSuffix(u.Path, "/") + "/"
 	if s.Endpoint != "" {
-		// Path-style: the bucket is the first segment.
-		path = "/" + s.Bucket + "/"
+		// Path-style: the bucket is the first segment after that prefix.
+		path += s.Bucket + "/"
 	}
 	u.Path = strings.TrimSuffix(path+key, "/")
 	if u.Path == "" {

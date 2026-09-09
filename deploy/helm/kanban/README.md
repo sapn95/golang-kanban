@@ -216,10 +216,12 @@ helm upgrade kanban ./deploy/helm/kanban \
 ```
 
 Snapshots are named `kanban-<timestamp>.json`, the newest `backup.keep` are kept,
-and the pruning happens after a successful write. `backup.interval` is a Go
-duration, so quote it in a values file: YAML reads `24h` as a string but `30` as
-a number, and the app wants the unit. `backup.interval: 0` leaves the target
-configured and takes no snapshot until something else asks for one.
+and the pruning happens after a successful write. `backup.interval` takes whole
+minutes or hours (`24h`, `90m`, `1h30m`), so quote it in a values file: YAML
+reads `24h` as a string but `30` as a number, and the app wants the unit. It
+refuses seconds, because the app refuses a schedule under a minute and a template
+cannot tell `90s` from `90m`. `backup.interval: 0` leaves the target configured
+and takes no snapshot until something else asks for one.
 
 ### The directory target
 
