@@ -100,6 +100,43 @@ spec:
             - name: AUTH_HEADER
               value: {{ $auth.identityHeader | quote }}
             {{- end }}
+            {{- $backup := .Values.backup | default dict }}
+            {{- $bdir := $backup.dir | default dict }}
+            {{- $bs3 := $backup.s3 | default dict }}
+            {{- if or $bdir.enabled $bs3.bucket }}
+            {{- /* A target is what turns the schedule on, so the interval and the
+                   retention are only written down when there is one. */}}
+            - name: BACKUP_INTERVAL
+              value: {{ $backup.interval | quote }}
+            - name: BACKUP_KEEP
+              value: {{ $backup.keep | default 0 | quote }}
+            {{- if $bdir.enabled }}
+            - name: BACKUP_DIR
+              value: {{ $bdir.path | quote }}
+            {{- else }}
+            {{- $bsec := include "kanban.backupSecretName" . }}
+            - name: BACKUP_S3_BUCKET
+              value: {{ $bs3.bucket | quote }}
+            {{- with $bs3.prefix }}
+            - name: BACKUP_S3_PREFIX
+              value: {{ . | quote }}
+            {{- end }}
+            - name: BACKUP_S3_REGION
+              value: {{ $bs3.region | quote }}
+            {{- with $bs3.endpoint }}
+            - name: BACKUP_S3_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- /* The app signs its own requests, so these are the whole
+                   credential chain. AWS_SESSION_TOKEN is deliberately not here:
+                   nothing in this chart refreshes one, so it belongs in
+                   app.extraEnv beside whatever does. */}}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: {{ $bsec }}, key: access-key-id}}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: {{ $bsec }}, key: secret-access-key}}
+            {{- end }}
+            {{- end }}
             {{- with .Values.app.extraEnv }}{{- toYaml . | nindent 12 }}{{- end }}
           # /healthz answers as soon as the process is up; /readyz additionally
           # checks the store, so it is the one that gates traffic.
@@ -124,6 +161,11 @@ spec:
             # podSecurityContext is what lets the non-root user write to it.
             - name: data
               mountPath: {{ include "kanban.sqliteDir" . | quote }}
+            {{- end }}
+            {{- if include "kanban.backupMountsAVolume" . }}
+            # Its own volume, so a snapshot outlives the volume it is a copy of.
+            - name: backups
+              mountPath: {{ .Values.backup.dir.path | quote }}
             {{- end }}
         {{- if (.Values.auth | default dict).enabled }}
         {{- $sec := .Values.auth.existingSecret | default (include "kanban.authFullname" .) }}
@@ -220,6 +262,11 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "kanban.sqliteFullname" . }}
+        {{- end }}
+        {{- if include "kanban.backupMountsAVolume" . }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ .Values.backup.dir.persistence.existingClaim | default (include "kanban.backupFullname" .) }}
         {{- end }}
         {{- if and (.Values.auth | default dict).enabled ((.Values.auth | default dict).tls | default dict).enabled }}
         - name: tls

@@ -176,6 +176,7 @@ jobs:
           ok --set auth=null
           ok --set networkPolicy.enabled=true
           ok --set postgres.existingSecret=kanban-db
+          ok --set storage=sqlite --set postgres.enabled=false
           # Sign-in, configured the way the failures below say it has to be.
           auth=(--set auth.enabled=true
                 --set auth.redirectURL=https://board.example.com/oauth2/callback
@@ -207,6 +208,58 @@ jobs:
           # Narrowing GitHub renders a sign-in that cannot finish, so the chart
           # refuses it; see the comment on auth.scopes in values.yaml.
           nope "${auth[@]}" --set auth.provider=github --set 'auth.scopes={user:email}'
+          # Snapshots. A target is what turns the schedule on, and the pod's root
+          # filesystem is read-only, so most of what follows is about whether the
+          # directory the app is told to write to exists in the pod at all.
+          bucket=(--set backup.s3.bucket=snapshots --set backup.s3.region=eu-central-2
+                  --set backup.s3.existingSecret=kanban-backup)
+          ok --set backup.dir.enabled=true
+          ok --set backup.dir.enabled=true --set backup.dir.persistence.existingClaim=snapshots
+          ok --set storage=sqlite --set postgres.enabled=false \
+             --set backup.dir.enabled=true --set backup.dir.persistence.enabled=false \
+             --set backup.dir.path=/data/snapshots
+          ok --set backup.dir.enabled=true --set backup.interval=0
+          ok "${bucket[@]}"
+          ok --set backup.s3.bucket=snapshots --set backup.s3.region=eu-central-2 \
+             --set backup.s3.accessKeyID=key --set backup.s3.secretAccessKey=secret \
+             --set backup.s3.prefix=pi/ --set backup.s3.endpoint=https://minio.example.com:9000
+          # A release installed before the backup section existed, as with auth.
+          ok --set backup=null
+          # Whichever target is configured has to reach the app as BACKUP_*, or
+          # the chart has described a schedule that never runs.
+          snapshots="$(helm template t deploy/helm/kanban "${bucket[@]}")"
+          for expected in "name: BACKUP_S3_BUCKET" "name: BACKUP_S3_REGION" "name: BACKUP_INTERVAL" \
+                          "name: kanban-backup, key: access-key-id"; do
+            if ! grep -qF -- "$expected" <<<"$snapshots"; then
+              echo "::error::backup.s3 renders without $expected"
+              exit 1
+            fi
+          done
+          if grep -qF -- "name: BACKUP_" <<<"$(helm template t deploy/helm/kanban)"; then
+            echo "::error::the schedule is configured with no target to write to"
+            exit 1
+          fi
+          nope --set backup.dir.enabled=true "${bucket[@]}"
+          nope --set backup.dir.enabled=true --set backup.interval=24
+          nope --set backup.dir.enabled=true --set backup.keep=-1
+          nope --set backup.dir.enabled=true --set backup.dir.path=snapshots
+          nope --set backup.dir.enabled=true --set backup.dir.path=/tmp/snapshots
+          # Nothing is mounted, so the app would write into the read-only root.
+          nope --set backup.dir.enabled=true --set backup.dir.persistence.enabled=false
+          nope --set storage=sqlite --set postgres.enabled=false \
+               --set backup.dir.enabled=true --set backup.dir.persistence.enabled=false
+          # One claim, ReadWriteOnce, two pods that both want it.
+          nope --set replicaCount=2 --set backup.dir.enabled=true
+          nope --set backup.s3.bucket=snapshots --set backup.s3.existingSecret=kanban-backup
+          nope --set backup.s3.bucket=snapshots --set backup.s3.region=eu-central-2
+          nope "${bucket[@]}" --set backup.s3.prefix=/pi
+          nope "${bucket[@]}" --set backup.s3.endpoint=minio.example.com:9000
+          # The policy allows DNS and the bundled Postgres, and a bucket is
+          # neither, so the peer has to be named instead of assumed.
+          nope "${bucket[@]}" --set networkPolicy.enabled=true
+          ok "${bucket[@]}" --set networkPolicy.enabled=true \
+             --set 'networkPolicy.allowTo[0].to[0].ipBlock.cidr=0.0.0.0/0' \
+             --set 'networkPolicy.allowTo[0].ports[0].port=443'
           nope --set storage=sqlite
           nope --set storage=memory
           nope --set storage=postgres --set postgres.enabled=false

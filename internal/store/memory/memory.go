@@ -393,6 +393,10 @@ func (s *Store) CreateCard(_ context.Context, c *model.Card) error {
 	}
 	c.Position = max + 1
 	stored := copyCard(c)
+	// A new card is on the board. The SQL backends get that from leaving
+	// archived_at out of the INSERT; here it has to be written, or this would be
+	// the only backend where CreateCard can archive one.
+	stored.ArchivedAt = time.Time{}
 	normalise(stored)
 	s.cards[c.ID] = stored
 	normalise(c)

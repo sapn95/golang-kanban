@@ -87,7 +87,14 @@ networkPolicy:
   # connector or an ingress controller goes:
   #   - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cloudflared}}
   allowFrom: []
-  # Extra egress, same form. DNS and the bundled Postgres are already allowed.
+  # Extra egress. DNS and the bundled Postgres are already allowed, and
+  # everything else the pod talks to has to be named here: an external database,
+  # the sign-in provider behind auth.enabled, an S3 bucket for backup.s3.
+  #
+  # These are whole egress rules rather than peers, because a rule without a
+  # port allows every port on the peer:
+  #   - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+  #     ports: [{protocol: TCP, port: 443}]
   allowTo: []
 
 # Used when storage is sqlite. The chart creates the claim, mounts it at the
@@ -105,6 +112,60 @@ externalDatabase:
   url: ""
   existingSecret: ""
   existingSecretKey: url
+
+# Snapshots of every board, taken by the app itself and written somewhere else.
+# One JSON document per snapshot, the same one `kanban export` writes and
+# `kanban import` reads, on every storage backend; see docs/adr/0012.
+#
+# A target is what turns the schedule on. With neither a directory nor a bucket
+# nothing is scheduled, and a backup is whatever you run yourself.
+backup:
+  # The gap between snapshots, as a Go duration. 0 turns the schedule off while
+  # leaving the target configured; under a minute is refused.
+  interval: 24h
+  # How many snapshots the target keeps. Older ones are deleted after a
+  # successful write, so a target that stops accepting deletions never costs a
+  # backup. 0 keeps every snapshot and grows forever.
+  keep: 7
+
+  # A directory. Set this or s3.bucket, not both.
+  dir:
+    enabled: false
+    path: /snapshots
+    # A claim of its own, because a snapshot on the volume it is meant to
+    # protect only survives a bad import, not a lost volume. Point
+    # existingClaim at an NFS or ReadWriteMany claim to put the snapshots on
+    # different hardware than the database.
+    #
+    # persistence.enabled=false with no existingClaim mounts nothing, and the
+    # path then has to be inside a volume this pod already has, which with
+    # storage=sqlite means a directory under sqlite.path's. The root filesystem
+    # is read-only, so anywhere else fails at the first snapshot.
+    persistence:
+      enabled: true
+      existingClaim: ""
+      size: 1Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+
+  # An S3 bucket, or anything that speaks enough of the protocol: MinIO, Garage,
+  # Ceph, Backblaze B2 through its S3 endpoint. The requests are signed by the
+  # app itself, which is why there is no credential chain here: no ~/.aws, no
+  # instance metadata, no IRSA. Give it a key and a secret.
+  #
+  # Temporary credentials work (AWS_SESSION_TOKEN) but nothing in this chart
+  # refreshes them, so they belong in app.extraEnv beside whatever does.
+  s3:
+    bucket: ""
+    prefix: ""       # e.g. pi/, so one bucket can hold several deployments
+    region: ""       # required with a bucket: it is part of the signature
+    endpoint: ""     # empty for AWS; https://minio.example.com:9000 for the rest
+    accessKeyID: ""
+    secretAccessKey: ""
+    # Name a Secret that already holds keys "access-key-id" and
+    # "secret-access-key" and the chart creates none. This is the answer for
+    # GitOps, where the rendered output is committed.
+    existingSecret: ""
 
 # Sign-in in front of the board, and TLS with it.
 #
