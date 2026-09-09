@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -907,6 +908,25 @@ func TestEverySettingsRowSaveIsMarked(t *testing.T) {
 	// they are the only way to add.
 	if got, want := strings.Count(body, `class="row-save`), len(b.Columns)+len(b.Labels); got != want {
 		t.Errorf("%d marked Save buttons, want %d (%d columns, %d labels)", got, want, len(b.Columns), len(b.Labels))
+	}
+}
+
+// A search box with nothing but a placeholder is announced as an unnamed field
+// once somebody starts typing, which is when the placeholder disappears.
+func TestEverySearchBoxIsNamed(t *testing.T) {
+	e := seeded(t)
+	box := regexp.MustCompile(`(?s)<input[^>]*type="search"[^>]*>`)
+	for _, path := range []string{"/b/demo", "/b/demo?q=login", "/b/demo/archive", "/b/demo/archive?q=login"} {
+		body := e.do(http.MethodGet, path, nil).Body.String()
+		found := box.FindAllString(body, -1)
+		if len(found) == 0 {
+			t.Errorf("%s: no search box", path)
+		}
+		for _, tag := range found {
+			if !strings.Contains(tag, "aria-label=") {
+				t.Errorf("%s: search box with no aria-label: %s", path, tag)
+			}
+		}
 	}
 }
 
