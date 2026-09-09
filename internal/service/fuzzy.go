@@ -39,8 +39,10 @@ func closeToAny(term string, words []string) bool {
 }
 
 // cardWords is everything a bare word is matched against, split into words: the
-// title, the description and the names of the labels the card carries. The first
-// two arrive lowercased because the caller has them that way already.
+// title, the description and the names of the labels the card carries. All three
+// are lowercase already, the first two because the caller lowercased them and
+// the label names because Match takes them that way, which is what the literal
+// label match relies on too.
 //
 // Words and not the whole text, because the distance between a mistyped word and
 // a paragraph is roughly the length of the paragraph. Compared as a whole, a
