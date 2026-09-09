@@ -256,9 +256,10 @@ Three shapes, one image, and no special build for any of them:
 - [`deploy/compose`](../deploy/compose) for one machine: `sqlite`, `postgres` and
   `demo` profiles over a released tag. The `docker-compose.yml` in the root stays
   what it was, the developer's build from the working tree.
-- [`deploy/unraid`](../deploy/unraid) for the Docker tab, as a Community
-  Applications template. It carries `--user 99:100` because the image runs as uid
-  65532 and `/mnt/user/appdata` belongs to `nobody:users`.
+- [`deploy/unraid`](../deploy/unraid) for the Docker tab, in the shape Community
+  Applications uses but installed by hand rather than published there. It carries
+  `--user 99:100` because the image runs as uid 65532 and `/mnt/user/appdata`
+  belongs to `nobody:users`.
 
 The image has no shell, so `kanban doctor` is a subcommand rather than a recipe
 in the readme: `docker exec kanban /kanban doctor` is the only way to ask a
