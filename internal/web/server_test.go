@@ -1914,6 +1914,14 @@ func TestQuickEditOnTheCardFace(t *testing.T) {
 		}
 		return c.Assignee
 	}
+	dueDate := func(t *testing.T, e *env) time.Time {
+		t.Helper()
+		c, err := e.svc.Card(context.Background(), e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.DueDate
+	}
 
 	t.Run("the card face carries both menus", func(t *testing.T) {
 		e := seeded(t)
@@ -1993,6 +2001,62 @@ func TestQuickEditOnTheCardFace(t *testing.T) {
 		}
 		if got := assignee(t, e); got != "" {
 			t.Errorf("assignee = %q, want empty", got)
+		}
+	})
+
+	t.Run("the date is set from the card face, whether or not it has one", func(t *testing.T) {
+		e := seeded(t)
+		blank, err := e.svc.CreateCard(context.Background(), e.board.ID, e.board.Columns[0].ID,
+			service.CardInput{Title: "no date yet"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The chip with a date opens on a double click, because a single click
+		// on a card belongs to ticking it and to starting a drag. A card
+		// without one has nothing to double-click, so it gets the dashed chip
+		// the other quick edits use.
+		want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK,
+			`class="dbl-toggle select-none`,
+			`data-panel="due-`+string(e.card.ID),
+			`id="due-`+string(e.card.ID),
+			`type="date" name="due_date" value="2026-09-01"`,
+			`data-panel="due-`+string(blank.ID))
+	})
+
+	t.Run("picking a date sets it and redraws the card", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(t, e, "", "/cards/"+string(e.card.ID)+"/due", form("due_date", "2026-12-24")),
+			http.StatusOK, `id="card-`+string(e.card.ID), "24 Dec 2026")
+		if got := dueDate(t, e).Format("2006-01-02"); got != "2026-12-24" {
+			t.Errorf("due date = %s, want 2026-12-24", got)
+		}
+		// One field, same as the assignee: the rest of the card is not sent.
+		c, _ := e.svc.Card(context.Background(), e.card.ID)
+		if c.Title != "First card" || len(c.Labels) != 1 || len(c.Subtasks) != 2 {
+			t.Errorf("the picker disturbed the rest of the card: %+v", c)
+		}
+	})
+
+	t.Run("clearing takes the date off and leaves a way back", func(t *testing.T) {
+		e := seeded(t)
+		body := post(t, e, "", "/cards/"+string(e.card.ID)+"/due", form("due_date", "")).Body.String()
+		if strings.Contains(body, "Sep 2026") {
+			t.Error("the date survived being cleared from the card face")
+		}
+		if !strings.Contains(body, `data-panel="due-`+string(e.card.ID)) {
+			t.Error("the cleared card came back with no way to set a date again")
+		}
+		if got := dueDate(t, e); !got.IsZero() {
+			t.Errorf("due date = %v, want none", got)
+		}
+	})
+
+	t.Run("a date the picker could not have sent is refused", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(t, e, "", "/cards/"+string(e.card.ID)+"/due", form("due_date", "24.12.2026")),
+			http.StatusBadRequest)
+		if got := dueDate(t, e).Format("2006-01-02"); got != "2026-09-01" {
+			t.Errorf("due date = %s after a refused post, want it untouched", got)
 		}
 	})
 

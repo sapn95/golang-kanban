@@ -147,6 +147,21 @@
     });
   }
 
+  // Opens one panel and puts the cursor in it. The date field is the only one
+  // worth focusing, and showPicker only saves the click that would open the
+  // calendar anyway: not every browser has it, and Firefox and Safari open on
+  // focus, so a failure here is not one.
+  function openPanel(trigger) {
+    var panel = document.getElementById(trigger.dataset.panel);
+    if (!panel) { return; }
+    closePanels(panel);
+    panel.classList.remove('hidden');
+    var field = panel.querySelector('input[type=date]');
+    if (!field) { return; }
+    field.focus();
+    try { field.showPicker(); } catch (err) { /* the focus is the fallback */ }
+  }
+
   function initQuickEdit() {
     // Delegated: cards are replaced wholesale by htmx swaps, so a listener
     // bound to a trigger would go out with the card it was on.
@@ -158,8 +173,22 @@
         if (panel) { panel.classList.toggle('hidden'); }
         return;
       }
+      // Enter or Space on the due date fires a click that counts no clicks,
+      // which is the keyboard's way in. Without it the date would open on a
+      // double click and so with a mouse only.
+      var pressed = e.target.closest('.dbl-toggle');
+      if (pressed && e.detail === 0) {
+        openPanel(pressed);
+        return;
+      }
       // A click inside an open panel is somebody using it.
       if (!e.target.closest('.quick-panel')) { closePanels(null); }
+    });
+    // The due date opens on a double click, and the panel it opens holds an
+    // <input type="date">, so the calendar is the browser's own.
+    document.addEventListener('dblclick', function (e) {
+      var trigger = e.target.closest('.dbl-toggle');
+      if (trigger) { openPanel(trigger); }
     });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { closePanels(null); }

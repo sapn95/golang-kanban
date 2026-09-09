@@ -97,9 +97,10 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /cards/{id}", s.card)
 	mux.HandleFunc("GET /cards/{id}/edit", s.editCard)
 	mux.HandleFunc("POST /cards/{id}", s.updateCard)
-	// The two quick edits from the card face. Each writes one field, so they
-	// are not the update form with most of its inputs left out.
+	// The quick edits from the card face. Each writes one field, so they are
+	// not the update form with most of its inputs left out.
 	mux.HandleFunc("POST /cards/{id}/assignee", s.setCardAssignee)
+	mux.HandleFunc("POST /cards/{id}/due", s.setCardDue)
 	mux.HandleFunc("POST /cards/{id}/labels/{label}/toggle", s.toggleCardLabel)
 	mux.HandleFunc("POST /cards/{id}/delete", s.deleteCard)
 	mux.HandleFunc("POST /cards/{id}/archive", s.archiveCard)
@@ -950,6 +951,22 @@ func (s *Server) setCardAssignee(w http.ResponseWriter, r *http.Request) {
 		assignee = u.Email
 	}
 	c, err := s.svc.SetCardAssignee(r.Context(), model.ID(r.PathValue("id")), assignee)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.quickEdited(w, r, c)
+}
+
+// setCardDue is the date picker on the card face: double-clicking the due chip
+// opens an <input type="date">, and this is what it posts to. An empty field
+// takes the date off, which is what the Clear button beside it sends.
+func (s *Server) setCardDue(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	c, err := s.svc.SetCardDueDate(r.Context(), model.ID(r.PathValue("id")), r.FormValue("due_date"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
