@@ -261,6 +261,69 @@ func enumOf(t *testing.T, schema map[string]any, property string) []string {
 	return strList(prop["enum"])
 }
 
+// TestTheSearchExamplesUseFiltersTheServiceHonours reads the examples on the q
+// parameter and puts them through the parser. An unrecognised prefix is not
+// refused, it is searched for as text, so is:overdue in an example looks like a
+// filter and finds nothing. That is the one mistake in this document a reader
+// cannot spot and no other test would catch.
+func TestTheSearchExamplesUseFiltersTheServiceHonours(t *testing.T) {
+	examples := searchExamples(t)
+	if len(examples) == 0 {
+		t.Fatal("the q parameter has no examples, and this test then checks nothing")
+	}
+	for name, value := range examples {
+		q := service.ParseQuery(value)
+		filters := 0
+		for _, tok := range strings.Fields(value) {
+			key, _, ok := strings.Cut(tok, ":")
+			if !ok {
+				continue
+			}
+			if slices.Contains(q.Text, strings.ToLower(tok)) {
+				t.Errorf("example %q searches for %q as text: %s: is not a filter the service has",
+					name, tok, key)
+				continue
+			}
+			filters++
+		}
+		if filters > 0 && q.Empty() {
+			t.Errorf("example %q reads like a filter and matches every card", name)
+		}
+	}
+}
+
+// searchExamples collects the examples of every q parameter in the document, by
+// name. Walking is what makes it hold for the next path that takes a search
+// rather than only for the one that does today.
+func searchExamples(t *testing.T) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if v["name"] == "q" && v["in"] == "query" {
+				examples, _ := v["examples"].(map[string]any)
+				for name, e := range examples {
+					entry, _ := e.(map[string]any)
+					if value, ok := entry["value"].(string); ok {
+						out[name] = value
+					}
+				}
+			}
+			for _, child := range v {
+				walk(child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(child)
+			}
+		}
+	}
+	walk(spec(t).doc)
+	return out
+}
+
 func TestEveryRefResolves(t *testing.T) {
 	sp := spec(t)
 	var walk func(v any, where string)
