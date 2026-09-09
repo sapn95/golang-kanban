@@ -67,14 +67,34 @@ boards. This decides *who may enter*, not *whose board it is*.
 
 Three providers are pre-wired:
 
-| `auth.provider` | What it needs |
-|---|---|
-| `entra` | `auth.entra.tenant` (a directory id, or `common`), client id and secret |
-| `github` | client id and secret, and normally `auth.github.org` or `auth.github.users` |
-| `oidc` | `auth.oidc.issuerURL`, client id and secret |
+| `auth.provider` | What it needs | What it asks the provider for |
+|---|---|---|
+| `entra` | `auth.entra.tenant` (a directory id, or `common`), client id and secret | `openid email` |
+| `github` | client id and secret, and normally `auth.github.org` or `auth.github.users` | `user:email read:org` |
+| `oidc` | `auth.oidc.issuerURL`, client id and secret | `openid email` |
 
 `auth.redirectURL` is your external URL plus `/oauth2/callback`, and it has to
 match what you registered with the provider exactly.
+
+### What the consent screen says
+
+The third column is the list the person signing in has to agree to, so the chart
+sets it rather than inheriting whatever oauth2-proxy defaults to. The address is
+the only thing the sidecar passes to the app, so for `entra` and `oidc` the
+address is all it asks for. `auth.scopes` overrides the list: add `profile` to
+get the display name and picture the provider holds instead of the name the app
+reads out of the address.
+
+GitHub cannot be narrowed, and its consent screen is the reason this section
+exists. It offers to let the app "read your organization, team membership, and
+private project boards", which is `read:org`, and oauth2-proxy needs that even
+with no organisation configured: it calls `/user/orgs` and `/user/teams` on
+every sign-in, and GitHub answers 403 to a token without the scope, which fails
+the sign-in itself rather than a membership check. The chart refuses a `github`
+scope list without `read:org` instead of rendering a sign-in that cannot
+complete. Where granting it is not acceptable, `entra` and `oidc` ask for the
+address only, and Cloudflare Access in front of the board does the same job
+without this sidecar at all.
 
 ```sh
 helm install kanban ./deploy/helm/kanban \

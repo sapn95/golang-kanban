@@ -4,7 +4,7 @@ description: A self-hosted kanban board. One static binary, with Postgres, SQLit
 type: application
 # The chart is installed from this path in git, not from a registry, so this
 # version is a marker in the history rather than something anyone can pull.
-version: 0.2.0
+version: 0.3.0
 # The image tag this chart pulls by default, published by .github/workflows/release.yml
 # on a v* tag. Upstream's own packages stop at 1.0.1, which is where this fork
 # started; the boards, identity, search, comments and archive came after it.
@@ -17,6 +17,8 @@ sources:
 maintainers:
   - name: sapn95
     url: https://github.com/sapn95
+  - name: NicolasHaas
+    url: https://github.com/NicolasHaas
 keywords:
   - kanban
   - board
