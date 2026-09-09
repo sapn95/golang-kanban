@@ -213,6 +213,41 @@
     });
   }
 
+  // --- settings rows -------------------------------------------------------
+  // The settings page carries one Save per column and one per label, which on a
+  // board with three of each is six blue buttons shouting at once, none of them
+  // with anything to save. A row's Save waits until something in that row has
+  // been typed or picked.
+  //
+  // The template renders them visible and this hides them, not the other way
+  // round: with no script every button is simply there, which is how the page
+  // worked before.
+  //
+  // Two ways of hiding, because the button sits differently at the two widths.
+  // From sm up it is inline with the WIP field or the swatches, so invisible
+  // keeps its width and revealing it shifts nothing. On a phone the label rows
+  // put it on a line of its own, where reserving the space leaves a visibly
+  // empty line in every row, so there it is taken out of the layout instead.
+  var IDLE = ['hidden', 'sm:inline-block', 'sm:invisible'];
+
+  function initRowSaves() {
+    var saves = document.querySelectorAll('.row-save');
+    if (!saves.length) { return; }
+    saves.forEach(function (btn) { btn.classList.add.apply(btn.classList, IDLE); });
+    // input is the typing, change is the colour swatches and the number
+    // stepper. The form the field belongs to is the row, so only that row's
+    // Save comes back.
+    ['input', 'change'].forEach(function (type) {
+      document.addEventListener(type, function (e) {
+        var form = e.target.form;
+        if (!form) { return; }
+        form.querySelectorAll('.row-save').forEach(function (btn) {
+          btn.classList.remove.apply(btn.classList, IDLE);
+        });
+      });
+    });
+  }
+
   // --- subtasks ------------------------------------------------------------
   // The form posts one hidden field, "subtasks", in the line format
   // "flag|title" where flag is 1 for done.
@@ -312,6 +347,7 @@
     initDarkMode();
     initHtmxHooks();
     initQuickEdit();
+    initRowSaves();
     initSortable();
     var addForm = document.getElementById('addCardForm');
     if (addForm) { initSubtasks(addForm); }

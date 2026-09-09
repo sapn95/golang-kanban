@@ -308,6 +308,11 @@ type archivePage struct {
 	BoardSlug string
 	Board     *model.Board
 	Cards     []cardView
+	// Query is the raw search, echoed back into the box so reloading keeps it.
+	// Searching says the box had something in it, which is the difference
+	// between an empty archive and a search that found nothing in it.
+	Query     string
+	Searching bool
 }
 
 type boardsPage struct {
@@ -1044,7 +1049,14 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	cards, err := s.svc.ArchivedCards(r.Context(), b.ID)
+	// The board's search, on the board's syntax, scoped to the archive whether
+	// or not the query says so: this page is the archive, and a search made here
+	// that came back with live cards would be answering a different question.
+	// An empty q is the whole archive, which is what the page showed before.
+	raw := strings.TrimSpace(r.URL.Query().Get("q"))
+	q := service.ParseQuery(raw)
+	q.Archived = true
+	cards, err := s.svc.Search(r.Context(), b.ID, q)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -1055,7 +1067,8 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := identity.FromContext(r.Context())
-	page := archivePage{Title: b.Name + " · archive", User: u, BoardSlug: b.Slug, Board: b}
+	page := archivePage{Title: b.Name + " · archive", User: u, BoardSlug: b.Slug, Board: b,
+		Query: raw, Searching: raw != ""}
 	for _, c := range cards {
 		// No people list: the archive draws its own rows, and the action there
 		// is to restore a card rather than to reassign it.

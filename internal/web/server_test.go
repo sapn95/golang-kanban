@@ -794,6 +794,122 @@ func TestArchiveThroughTheWeb(t *testing.T) {
 	})
 }
 
+func TestSearchTheArchive(t *testing.T) {
+	setup := func(t *testing.T) *env {
+		t.Helper()
+		e := seeded(t)
+		ctx := context.Background()
+		b, err := e.svc.Board(ctx, "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, title := range []string{"Fix the login page", "Rotate the certificates"} {
+			c, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID, service.CardInput{Title: title})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := e.svc.ArchiveCard(ctx, c.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// e.card, "First card", stays on the board.
+		return e
+	}
+
+	t.Run("the archive has a box of its own", func(t *testing.T) {
+		e := setup(t)
+		want(t, e.do(http.MethodGet, "/b/demo/archive", nil), http.StatusOK,
+			`action="/b/demo/archive"`, `type="search" name="q"`)
+	})
+
+	t.Run("a word narrows the archive and is echoed back", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, "/b/demo/archive?q=login", nil).Body.String()
+		if !strings.Contains(body, "Fix the login page") {
+			t.Error("the matching archived card is not in the results")
+		}
+		if strings.Contains(body, "Rotate the certificates") {
+			t.Error("a card that does not match was still drawn")
+		}
+		if !strings.Contains(body, `value="login"`) {
+			t.Error("the query was not put back in the box, so a reload would lose it")
+		}
+		if !strings.Contains(body, "1 matching") {
+			t.Error("the count still says how much is archived rather than how much matched")
+		}
+	})
+
+	t.Run("a typo finds it anyway", func(t *testing.T) {
+		e := setup(t)
+		if !strings.Contains(e.do(http.MethodGet, "/b/demo/archive?q=logni", nil).Body.String(), "Fix the login page") {
+			t.Error("a swapped pair of letters lost the card")
+		}
+	})
+
+	t.Run("the search stays in the archive", func(t *testing.T) {
+		e := setup(t)
+		// "First card" is on the board and matches the word, so a search that
+		// returned it would be answering a question this page did not ask.
+		for _, path := range []string{"/b/demo/archive?q=card", "/b/demo/archive?q=card+is%3Aarchived"} {
+			if strings.Contains(e.do(http.MethodGet, path, nil).Body.String(), "First card") {
+				t.Errorf("%s returned a card that is still on the board", path)
+			}
+		}
+	})
+
+	t.Run("the board's syntax works here too", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, "/b/demo/archive?q=label%3Abug", nil).Body.String()
+		if strings.Contains(body, "Fix the login page") {
+			t.Error("label: did not filter the archive")
+		}
+	})
+
+	t.Run("nothing matching says so, and not that the archive is empty", func(t *testing.T) {
+		e := setup(t)
+		body := e.do(http.MethodGet, "/b/demo/archive?q=nothingmatchesthis", nil).Body.String()
+		if !strings.Contains(body, "Nothing in the archive matches that") {
+			t.Error("an empty result set rendered nothing useful")
+		}
+		if strings.Contains(body, "Nothing archived") {
+			t.Error("a search with no hits claimed the archive is empty")
+		}
+	})
+
+	t.Run("no query is the whole archive", func(t *testing.T) {
+		e := setup(t)
+		for _, path := range []string{"/b/demo/archive", "/b/demo/archive?q=", "/b/demo/archive?q=%20%20"} {
+			body := e.do(http.MethodGet, path, nil).Body.String()
+			for _, title := range []string{"Fix the login page", "Rotate the certificates"} {
+				if !strings.Contains(body, title) {
+					t.Errorf("%s did not show %q", path, title)
+				}
+			}
+			if !strings.Contains(body, "2 archived") {
+				t.Errorf("%s did not count the archive", path)
+			}
+		}
+	})
+}
+
+// The settings page hides a row's Save until that row changes, and app.js finds
+// the buttons by class. Losing the class would put all six of them back on the
+// page and nothing would fail, so the markup is asserted here.
+func TestEverySettingsRowSaveIsMarked(t *testing.T) {
+	e := seeded(t)
+	b, err := e.svc.Board(context.Background(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
+	// One per column row and one per label row. The two "+ Add" buttons are not
+	// rows: there is nothing to save until something has been typed anyway, and
+	// they are the only way to add.
+	if got, want := strings.Count(body, `class="row-save`), len(b.Columns)+len(b.Labels); got != want {
+		t.Errorf("%d marked Save buttons, want %d (%d columns, %d labels)", got, want, len(b.Columns), len(b.Labels))
+	}
+}
+
 func TestSearchOnTheBoardURL(t *testing.T) {
 	setup := func(t *testing.T) *env {
 		t.Helper()
