@@ -19,7 +19,7 @@
 <form method="get" action="/b/{{.BoardSlug}}/archive" class="flex items-center gap-2 mb-6" role="search">
   <div class="relative flex-1 min-w-0">
     <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
-    <input type="search" name="q" value="{{.Query}}" autocomplete="off"
+    <input type="search" name="q" value="{{.Query}}" autocomplete="off" aria-label="Search the archive"
       placeholder="Search the archive, or label:bug assignee:me due:overdue"
       class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
   </div>
