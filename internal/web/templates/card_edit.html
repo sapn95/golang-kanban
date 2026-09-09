@@ -11,8 +11,17 @@
 </div>
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description</label>
+  <!-- The source, not the rendered card: this is where it is written. -->
   <textarea name="description" rows="8" placeholder="Description"
     class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">{{.Card.Description}}</textarea>
+  <!-- Said here because a box that quietly understands markdown is a box
+       nobody uses it in. The list is what the renderer supports, in the order
+       people reach for it. -->
+  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>`code`</code>,
+    <code>-</code> or <code>1.</code> lists, <code>&gt;</code> quotes,
+    <code>#</code> headings, <code>[text](https://…)</code>. A newline stays a newline.
+  </p>
 </div>
 </div>
 <div class="card-fields__side">

@@ -17,7 +17,7 @@
     <div class="flex-1 min-w-0">
       <h5 class="font-semibold text-gray-900 dark:text-white break-words">{{.Card.Title}}</h5>
       {{if .Card.Description}}
-      <p class="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{{.Card.Description}}</p>
+      <div class="md text-sm text-gray-600 dark:text-gray-300 mt-1">{{markdown .Card.Description}}</div>
       {{end}}
       <div class="flex flex-wrap items-center gap-2 mt-2 text-xs">
         {{range .Labels}}

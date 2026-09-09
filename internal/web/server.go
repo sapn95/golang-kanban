@@ -159,6 +159,10 @@ func (s *Server) parseTemplates() {
 		// unless WithAvatars was passed. The bubble draws initials on "".
 		"avatar":     s.avatarURL,
 		"readableOn": readableOn,
+		// A card description is markdown. The renderer escapes the source
+		// before it looks at it, which is what allows its result to be marked
+		// as HTML here; markdown.go carries that argument in full.
+		"markdown": renderMarkdown,
 		// Every asset URL carries the digest of the embedded tree, so a new
 		// build is a new URL and the browser cannot serve yesterday's script
 		// against today's markup.
