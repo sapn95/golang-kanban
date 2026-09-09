@@ -5,7 +5,8 @@
            value="{{.Card.ID}}" aria-label="Select card">
     <h5 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex-1 break-words">{{.Card.Title}}</h5>
   </div>
-  {{if or .Labels .Due .BoardLabels}}
+  <!-- Always drawn: the due date is set from here, so the row has to be there
+       even on a card that has neither a date nor a label yet. -->
   <div class="flex flex-wrap items-center gap-1 mb-2 text-xs">
     {{range .Labels}}
     <!-- The chip is a link to a search for its own label. Nothing on the board
@@ -33,14 +34,27 @@
     </span>
     {{end}}
     {{if .Due}}
-    <span class="px-2 py-0.5 rounded-full
+    <!-- Double-click, not click: a single click on a card belongs to ticking it
+         and to starting a drag, and a date that opened an editor whenever it
+         was brushed would be in the way. It is a button so that Enter opens it
+         too, and the dashed chip below is the way in on a card with no date,
+         which has nothing to double-click. -->
+    <button type="button" class="dbl-toggle select-none px-2 py-0.5 rounded-full
       {{if eq .DueState "overdue"}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200
       {{else if eq .DueState "today"}}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200
       {{else if eq .DueState "soon"}}bg-yellow-50 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200
       {{else}}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200{{end}}"
-      title="{{if eq .DueState "overdue"}}Overdue{{else if eq .DueState "today"}}Due today{{else if eq .DueState "soon"}}Due within days{{else}}Due{{end}}">
+      data-panel="due-{{.Card.ID}}"
+      title="{{if eq .DueState "overdue"}}Overdue{{else if eq .DueState "today"}}Due today{{else if eq .DueState "soon"}}Due within days{{else}}Due{{end}}. Double-click to change it">
       <i class="bi bi-calendar-event mr-1"></i>{{.Due}}
-    </span>
+    </button>
+    {{else}}
+    <button type="button" class="quick-toggle inline-flex items-center px-2 py-1 rounded-full leading-none border border-dashed
+                                 border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-400
+                                 hover:text-blue-600 hover:border-blue-400 dark:hover:text-blue-400"
+            data-panel="due-{{.Card.ID}}" title="No due date. Click to set one" aria-label="Due date">
+      <i class="bi bi-calendar-event"></i>
+    </button>
     {{end}}
     {{if .BoardLabels}}
     <button type="button" class="quick-toggle inline-flex items-center px-2 py-1 rounded-full leading-none border border-dashed
@@ -51,7 +65,6 @@
     </button>
     {{end}}
   </div>
-  {{end}}
   {{if .Card.Description}}
     <!-- The description is markdown, rendered by the server. The md class is
          what app.css styles: Tailwind's reset takes the bullets off a list and
@@ -167,6 +180,33 @@
                     bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
       <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white">Set</button>
     </form>
+  </div>
+
+  <!-- The date picker is the browser's own: an input of type date opens the
+       calendar the platform ships, which is the one nobody has to learn and
+       costs no script. The form posts on a change as well as on submit, so
+       picking a day in that calendar is the whole interaction and Set is only
+       there for a browser that leaves a text field instead. -->
+  <div id="due-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-gray-100 dark:border-gray-600">
+    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Due date</p>
+    <div class="flex items-center gap-1">
+      <form class="flex min-w-0 flex-1 items-center gap-1" hx-post="/cards/{{.Card.ID}}/due"
+            hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML" hx-trigger="change, submit">
+        <input type="date" name="due_date" value="{{.DueInput}}" aria-label="Due date"
+               class="min-w-0 flex-1 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+        <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white">Set</button>
+      </form>
+      {{if .Due}}
+      <!-- A button with hx-vals rather than a second form: an empty date input
+           in a form of its own would send the same field name twice and the
+           first value wins, so Clear would post the date it was clearing. -->
+      <button type="button" class="shrink-0 px-2 py-1 text-xs rounded text-gray-500 dark:text-gray-400
+                                   hover:bg-gray-100 dark:hover:bg-gray-600"
+              hx-post="/cards/{{.Card.ID}}/due" hx-vals='{"due_date": ""}'
+              hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML" title="Take the due date off this card">Clear</button>
+      {{end}}
+    </div>
   </div>
 
   {{if .BoardLabels}}

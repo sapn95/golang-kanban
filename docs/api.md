@@ -1,11 +1,11 @@
 # Endpoints
 
-Every route the server answers, all 34 of them, registered in one block in
+Every route the server answers, all 35 of them, registered in one block in
 `internal/web/server.go`. A test compares this file against that block and
 fails when either side has something the other does not, so a route cannot be
 added or removed without the table changing with it.
 
-The last of those 34 is the JSON API, which brings its own thirty routes under
+The last of those 35 is the JSON API, which brings its own thirty routes under
 `/api/v1/` and its own document; the [table below](#the-json-api) gives it one
 row. This file is about the page routes.
 
@@ -61,6 +61,7 @@ names, and understands `label:`, `assignee:`, `due:` and `is:archived`, with
 | `GET /cards/{id}/edit` | | The edit form with the card's comments |
 | `POST /cards/{id}` | the fields above, plus `column` to move it | The card face. `204` with `HX-Refresh: true` when the column changed, because the card now belongs to a list this response cannot reach. `303` to the board without htmx |
 | `POST /cards/{id}/assignee` | `assignee`: an address, `@me`, or empty to unassign | The card face, or `303` without htmx. `403` on `@me` when nobody is signed in |
+| `POST /cards/{id}/due` | `due_date`: `YYYY-MM-DD`, or empty to take the date off | The card face, or `303` without htmx. `400` on anything else |
 | `POST /cards/{id}/labels/{label}/toggle` | | The card face with that label put on or taken off. The label stays on the board either way |
 | `POST /cards/{id}/archive` | | `200` and an empty body. The caller removes the row |
 | `POST /cards/{id}/delete` | | `200` and an empty body |

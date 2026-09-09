@@ -820,6 +820,67 @@ func TestSetCardAssigneeToTheSamePersonChangesNothing(t *testing.T) {
 	}
 }
 
+func TestSetCardDueDate(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "T", Description: "why"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := k.SetCardDueDate(ctx, c.ID, "  2026-12-24  "); err != nil {
+		t.Fatalf("SetCardDueDate: %v", err)
+	}
+	got, _ := k.Card(ctx, c.ID)
+	if day := time.Date(2026, 12, 24, 0, 0, 0, 0, time.UTC); !got.DueDate.Equal(day) {
+		t.Errorf("due date = %v, want %v", got.DueDate, day)
+	}
+	// One field, and nothing else: the picker on the card face knows the date
+	// and would have to send the title back to keep it if it went through
+	// UpdateCard.
+	if got.Title != "T" || got.Description != "why" {
+		t.Errorf("the picker disturbed the rest of the card: %+v", got)
+	}
+
+	if _, err := k.SetCardDueDate(ctx, c.ID, ""); err != nil {
+		t.Fatalf("clearing the date: %v", err)
+	}
+	if got, _ = k.Card(ctx, c.ID); !got.DueDate.IsZero() {
+		t.Errorf("due date = %v after clearing it, want none", got.DueDate)
+	}
+
+	// Only what an <input type="date"> sends is a date. A browser that has no
+	// picker leaves a text field, so the format has to be refused rather than
+	// guessed at.
+	for _, in := range []string{"24.12.2026", "2026-12-24T00:00:00Z", "2026-13-01", "tomorrow"} {
+		if _, err := k.SetCardDueDate(ctx, c.ID, in); !isValidation(err, "due_date") {
+			t.Errorf("SetCardDueDate(%q) = %v, want a validation error on due_date", in, err)
+		}
+	}
+	if _, err := k.SetCardDueDate(ctx, "nope", "2026-12-24"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("dating an unknown card = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSetCardDueDateToTheSameDayChangesNothing(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "T", DueDate: "2026-12-24"})
+
+	// A clock that moves, so a needless write would show up as a new UpdatedAt.
+	later := fixed.Add(time.Hour)
+	k.now = func() time.Time { return later }
+	if _, err := k.SetCardDueDate(ctx, c.ID, "2026-12-24"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := k.Card(ctx, c.ID)
+	if !got.UpdatedAt.Equal(c.UpdatedAt) {
+		t.Errorf("UpdatedAt moved to %v for a date that was already there", got.UpdatedAt)
+	}
+}
+
 func TestToggleCardLabel(t *testing.T) {
 	k := newSvc(t)
 	ctx := context.Background()

@@ -443,6 +443,37 @@ func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee stri
 	return c, nil
 }
 
+// SetCardDueDate changes only the due date. The date is YYYY-MM-DD, as an
+// <input type="date"> sends it, and an empty string takes the date off.
+//
+// Separate from UpdateCard for the same reason as SetCardAssignee: the picker
+// on the card face knows one field, and going through UpdateCard would mean
+// posting the title and the description back to keep them.
+func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*model.Card, error) {
+	date := time.Time{}
+	if due = strings.TrimSpace(due); due != "" {
+		d, err := time.Parse("2006-01-02", due)
+		if err != nil {
+			return nil, invalid("due_date", "must be YYYY-MM-DD")
+		}
+		date = d
+	}
+	c, err := k.store.GetCard(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if c.DueDate.Equal(date) {
+		// Same as SetCardAssignee: picking the date that is already there is
+		// not an edit, so UpdatedAt stays where it is.
+		return c, nil
+	}
+	c.DueDate, c.UpdatedAt = date, k.now()
+	if err := k.store.UpdateCard(ctx, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 // ToggleCardLabel puts a label on a card or takes it off, whichever the card
 // is not already. Same reason as SetCardAssignee for not going through
 // UpdateCard.
