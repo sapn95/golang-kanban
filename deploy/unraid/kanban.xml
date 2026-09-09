@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<!--
+  Unraid container template. Copy it to
+  /boot/config/plugins/dockerMan/templates-user/my-kanban.xml, or point Add
+  Container at its raw URL; see the README beside this file.
+
+  The image is distroless and has no shell, so the Console button in the Unraid
+  UI does nothing. ExtraParams runs it as nobody:users, which is what owns
+  /mnt/user/appdata, because the image's own user (65532) cannot write there.
+-->
+<Container version="2">
+  <Name>kanban</Name>
+  <Repository>ghcr.io/sapn95/golang-kanban:2.0.0</Repository>
+  <Registry>https://github.com/sapn95/golang-kanban/pkgs/container/golang-kanban</Registry>
+  <Project>https://github.com/sapn95/golang-kanban</Project>
+  <Support>https://github.com/sapn95/golang-kanban/issues</Support>
+  <Icon>https://raw.githubusercontent.com/sapn95/golang-kanban/homelab/assets/logo.svg</Icon>
+  <Overview>
+    A small Kanban board: boards with columns and WIP limits, cards with
+    labels, due dates, assignees, checklists and comments, drag and drop,
+    search, dark mode. One static Go binary, HTML rendered by the server,
+    and no Node runtime anywhere near it.&#13;
+    &#13;
+    With STORAGE=sqlite the whole board is one file under /data and there is
+    nothing else to install. STORAGE=postgres points it at a PostgreSQL
+    container instead, with DB_HOST and the DB_* variables below.&#13;
+    &#13;
+    Snapshots: with BACKUP_DIR set the server writes one JSON file with every
+    board on a timer and keeps the last BACKUP_KEEP of them. `kanban import`
+    reads one back, on either backend.&#13;
+    &#13;
+    The board has no sign-in of its own: whoever reaches the port can change
+    every card. Keep it on the LAN, or put something that authenticates in
+    front of it and set AUTH_MODE=proxy.&#13;
+    &#13;
+    There is no shell in the image. To see what the container thinks its
+    configuration is, run: docker exec kanban /kanban doctor
+  </Overview>
+  <Category>Productivity: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:17808]/</WebUI>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Privileged>false</Privileged>
+  <ExtraParams>--user 99:100</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="17808" Default="17808" Mode="tcp"
+          Description="The port the board listens on."
+          Type="Port" Display="always" Required="true" Mask="false">17808</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/kanban" Mode="rw"
+          Description="Holds the SQLite file and the snapshots. Back this up."
+          Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/kanban</Config>
+  <Config Name="Storage backend" Target="STORAGE" Default="sqlite"
+          Description="sqlite, postgres or memory. memory keeps nothing."
+          Type="Variable" Display="always" Required="true" Mask="false">sqlite</Config>
+  <Config Name="Snapshot directory" Target="BACKUP_DIR" Default="/data/snapshots"
+          Description="Where the timed snapshots go. Empty turns them off."
+          Type="Variable" Display="always" Required="false" Mask="false">/data/snapshots</Config>
+  <Config Name="Snapshot interval" Target="BACKUP_INTERVAL" Default="24h"
+          Description="Gap between snapshots, as 24h or 30m. 0 turns the schedule off."
+          Type="Variable" Display="advanced" Required="false" Mask="false">24h</Config>
+  <Config Name="Snapshots to keep" Target="BACKUP_KEEP" Default="7"
+          Description="Older ones are deleted after a successful write. 0 keeps every one."
+          Type="Variable" Display="advanced" Required="false" Mask="false">7</Config>
+  <Config Name="Database host" Target="DB_HOST" Default=""
+          Description="STORAGE=postgres only. The container or host name of PostgreSQL."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Database user" Target="DB_USER" Default=""
+          Description="STORAGE=postgres only."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Database password" Target="DB_PASS" Default=""
+          Description="STORAGE=postgres only."
+          Type="Variable" Display="advanced" Required="false" Mask="true"/>
+  <Config Name="Database name" Target="DB_NAME" Default=""
+          Description="STORAGE=postgres only."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Identity mode" Target="AUTH_MODE" Default="none"
+          Description="none, or proxy when something in front of the board authenticates and sets the header named in AUTH_HEADER."
+          Type="Variable" Display="advanced" Required="false" Mask="false">none</Config>
+  <Config Name="Identity header" Target="AUTH_HEADER" Default="X-Forwarded-Email"
+          Description="AUTH_MODE=proxy only. The header the proxy sets, which the board reads as the caller."
+          Type="Variable" Display="advanced" Required="false" Mask="false">X-Forwarded-Email</Config>
+  <Config Name="Avatars" Target="AVATARS" Default=""
+          Description="address=github-login pairs, comma separated. Unset draws initials and makes no outbound request."
+          Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Log level" Target="LOG_LEVEL" Default="info"
+          Description="debug, info, warn or error."
+          Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+</Container>

@@ -34,7 +34,7 @@ Numbers in brackets below point at them.
 ├── cmd/kanban/            main(): parses the subcommand, wires config → store → service → http
 ├── assets/                vendored htmx, SortableJS, icons; compiled tailwind.css [0011]; embed.go
 ├── internal/
-│   ├── config/            Config struct, FromEnv(), Redacted() for `kanban doctor` later
+│   ├── config/            Config struct, FromEnv(), Settings()/Redacted() for `kanban doctor`
 │   ├── model/             Board, Column, Card, Label, Subtask, ID — plain structs, no deps  [0002]
 │   ├── store/             Store interface, sentinel errors, migration runner                 [0003]
 │   │   ├── storetest/     contract test suite every backend must pass
@@ -47,7 +47,7 @@ Numbers in brackets below point at them.
 │   ├── identity/          identity middleware: none | proxy | access          [0005]
 │   └── backup/            snapshot Export/Import, directory and S3 targets, schedule [0012]
 ├── docs/                  plain markdown, ADRs under docs/adr/
-└── deploy/                helm/ today; compose profiles and unraid in Phase 6
+└── deploy/                helm/ chart, compose/ profiles, unraid/ container template
 ```
 
 Everything above exists today; empty directories are not committed.
@@ -86,7 +86,7 @@ cmd/kanban ──► web ──► service ──► store (interface) ◄──
 
 ```text
 browser ──► web.Router (net/http mux, Go 1.22 patterns)
-                │  parses path/form, resolves identity (Phase 3)
+                │  parses path/form, resolves identity [0005]
                 ▼
             service.Kanban.MoveCard(ctx, cardID, columnID, index)
                 │  validates, checks WIP limit, stamps updated_at
@@ -130,8 +130,8 @@ not by contiguity.
 
 ## Command line
 
-`kanban` with no arguments behaves like today (`serve`), so the existing
-Dockerfile `CMD` and Unraid template keep working.
+`kanban` with no arguments behaves like today (`serve`), so the Dockerfile `CMD`
+and the deployment templates need no command of their own.
 
 ```text
 kanban                 same as `kanban serve`
@@ -140,10 +140,24 @@ kanban migrate         apply pending migrations and exit
 kanban version         print version, commit, Go version
 kanban export          write a snapshot of every board to stdout or to -o file
 kanban import          read one back: -replace overwrites, -dry-run only checks
-kanban doctor          (Phase 6)
+kanban doctor          print the configuration and check what it points at
 ```
 
 Subcommands use `flag` and a `switch`; no CLI library.
+
+`doctor` is the one subcommand that runs before `config.FromEnv` can be trusted:
+a configuration that does not validate is the thing it is there to print, so
+`main` routes it ahead of the store as well, and `AUTO_MIGRATE` never turns a
+diagnostic into a write. Every check runs whatever the ones before it found, so
+one report shows all of it, and the exit code is 1 only on a failure. `none` as
+an identity mode and `memory` as a store are choices somebody made, not faults,
+and a diagnostic that exits non-zero on a working homelab is a diagnostic people
+stop reading. The report walks the `env` and `secret` tags on `Config` by
+reflection: tagging a new field is what puts it in the report, and a test asserts
+that every tag names a variable `FromEnv` actually reads. Each probe says what it
+did: a directory is checked by creating a file and removing it again, while a
+bucket is only listed, and the line says a write was not attempted, because the
+credentials that can list are often not the credentials that can put.
 
 `export` and `import` speak one format across all three backends, which is what
 makes them the way to move a board between them; the document and what it leaves
@@ -205,7 +219,12 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
 
 - `log/slog`, one logger created in `cmd/kanban`, passed down. Request log
   line per request: method, path, status, duration, remote IP.
-- `/healthz` and `/readyz` as above; HAProxy (Phase 3) checks `/readyz`.
+- `/healthz` and `/readyz` as above. The chart's liveness probe takes `/healthz`
+  and the readiness probe `/readyz`, so a pod whose database has gone away leaves
+  the service instead of being restarted in a loop.
+- `kanban doctor` for the questions a probe cannot answer: which variables
+  arrived, whether the identity provider is reachable, whether snapshots are
+  being written.
 - Metrics are out of scope until someone asks.
 
 ## Testing
@@ -226,6 +245,36 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   `get-vanilla` vector AWS publishes. A test that only agreed with the code
   beside it would say nothing about whether a real bucket accepts the header.
 
+## Deployment
+
+Three shapes, one image, and no special build for any of them:
+
+- [`deploy/helm/kanban`](../deploy/helm/kanban) for Kubernetes: a read-only root
+  filesystem, an optional bundled PostgreSQL, a network policy, and an
+  oauth2-proxy sidecar that gives `AUTH_MODE=proxy` a header it is allowed to
+  trust ([0005](adr/0005-request-identity.md)).
+- [`deploy/compose`](../deploy/compose) for one machine: `sqlite`, `postgres` and
+  `demo` profiles over a released tag. The `docker-compose.yml` in the root stays
+  what it was, the developer's build from the working tree.
+- [`deploy/unraid`](../deploy/unraid) for the Docker tab, as a Community
+  Applications template. It carries `--user 99:100` because the image runs as uid
+  65532 and `/mnt/user/appdata` belongs to `nobody:users`.
+
+The image has no shell, so `kanban doctor` is a subcommand rather than a recipe
+in the readme: `docker exec kanban /kanban doctor` is the only way to ask a
+running container what it read.
+
+None of this can be unit-tested, so CI checks what it can. The chart renders
+every values combination it claims to support and refuses the rest; all three
+compose profiles interpolate with an empty environment and with `.env.example`,
+because compose interpolates the whole file whichever profile is asked for; the
+Unraid XML parses with the attributes the form needs; and one release version
+appears in the chart, the compose file, `.env.example`, the template and the
+readme, since a release that bumps four of the five is the mistake to expect.
+Every environment variable those files name is compared against the `env` tags on
+`Config` by a Go test, because a variable spelled wrong in a template is a
+setting that does nothing at all.
+
 ## Build and CI
 
 - The Dockerfile is multi-stage: an alpine `golang` builder runs
@@ -233,12 +282,13 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   `gcr.io/distroless/static-debian13:nonroot` with `VOLUME /data` for the
   SQLite file. Every backend is pure Go, so the build stays CGO-free
   ([0004](adr/0004-sqlite-backend.md)).
-- `ci.yml` has five jobs. `lint` runs gofmt, `go vet` and golangci-lint;
+- `ci.yml` has six jobs. `lint` runs gofmt, `go vet` and golangci-lint;
   `workflows` runs actionlint; `css` recompiles `assets/tailwind.css` and fails
   if it differs from what is committed; `test` runs `go test ./... -race
   -coverpkg=./...` against a Postgres service container and fails below 80%
   total coverage; `chart` lints the Helm chart and renders every values
-  combination it claims to support, including the ones it has to refuse.
+  combination it claims to support, including the ones it has to refuse; and
+  `deploy` validates the compose profiles and the Unraid template as above.
 - Nothing pins a Go version twice. `go.mod` holds it and the workflows read it
   with `go-version-file`, so the only place that can drift is the builder image
   in the Dockerfile.

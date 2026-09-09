@@ -273,3 +273,81 @@ jobs:
           nope --set auth.enabled=true
           nope --set auth.tls.enabled=true
           echo "all combinations behave"
+
+  deploy:
+    name: compose and unraid
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: every compose profile is valid, with nothing set and as .env.example ships
+        run: |
+          set -euo pipefail
+          for profile in sqlite postgres demo; do
+            # Compose interpolates the whole file whichever profile is asked
+            # for, so a variable one service needs must not break the others.
+            if ! docker compose -f deploy/compose/compose.yaml --profile "$profile" config -q; then
+              echo "::error::the $profile profile does not validate with an empty environment"
+              exit 1
+            fi
+            if ! docker compose --env-file deploy/compose/.env.example \
+                 -f deploy/compose/compose.yaml --profile "$profile" config -q; then
+              echo "::error::the $profile profile does not validate with .env.example"
+              exit 1
+            fi
+          done
+          echo "sqlite, postgres and demo all validate"
+      - name: the unraid template is one unraid would accept
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+
+          root = ET.parse("deploy/unraid/kanban.xml").getroot()
+          bad = []
+          if root.tag != "Container":
+              bad.append(f"the root element is {root.tag}, not Container")
+          # Unraid reads these to build the form and the WebUI link. A template
+          # missing one of them installs and then behaves oddly, which is worse
+          # than not installing.
+          for tag in ("Name", "Repository", "Registry", "Support", "Overview",
+                      "Category", "WebUI", "Network", "ExtraParams"):
+              if root.findtext(tag, "").strip() == "":
+                  bad.append(f"<{tag}> is missing or empty")
+          if "[PORT:17808]" not in root.findtext("WebUI", ""):
+              bad.append("the WebUI link does not follow the port the form sets")
+          # The image runs as uid 65532 and /mnt/user/appdata belongs to
+          # nobody:users, so without this the container cannot write its database.
+          if "--user 99:100" not in root.findtext("ExtraParams", ""):
+              bad.append("ExtraParams no longer runs the container as nobody:users")
+          for i, config in enumerate(root.findall("Config")):
+              name = config.get("Name") or f"#{i + 1}"
+              for attr in ("Name", "Target", "Type", "Display", "Required", "Mask"):
+                  if not config.get(attr):
+                      bad.append(f"Config {name} has no {attr}")
+              if config.get("Type") not in ("Variable", "Path", "Port", "Device", "Label"):
+                  bad.append(f"Config {name} has Type {config.get('Type')}")
+          if bad:
+              for line in bad:
+                  print(f"::error::deploy/unraid/kanban.xml: {line}")
+              sys.exit(1)
+          print(f"the template parses, with {len(root.findall('Config'))} settings on the form")
+          PY
+      - name: one release version in every file that names one
+        run: |
+          set -euo pipefail
+          want="$(awk -F'"' '/^appVersion:/ {print $2}' deploy/helm/kanban/Chart.yaml)"
+          if [ -z "$want" ]; then
+            echo "::error::no appVersion in deploy/helm/kanban/Chart.yaml"
+            exit 1
+          fi
+          pattern='(golang-kanban:|KANBAN_TAG[=:-]+)[0-9]+\.[0-9]+\.[0-9]+'
+          found="$( { grep -rhoE "$pattern" deploy; grep -hoE "$pattern" readme.md; } \
+            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -u)"
+          if [ "$found" != "$want" ]; then
+            echo "::error::Chart.yaml says $want; deploy/ and the readme name $(echo "$found" | tr '\n' ' ')"
+            echo "::error::a release bumps the chart, the compose file, .env.example, the unraid template and the readme together"
+            exit 1
+          fi
+          echo "everything ships $want"

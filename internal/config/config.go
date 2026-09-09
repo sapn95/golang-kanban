@@ -14,51 +14,57 @@ import (
 )
 
 // Config is the effective configuration of one kanban process.
+//
+// The `env` tag names the variable a field is read from. It is what Settings
+// walks for `kanban doctor`, so a field without one is a field the doctor does
+// not report; a test asserts that every tag names a variable FromEnv actually
+// reads. `secret` marks a value that must not be printed: true masks it, url
+// keeps the address and takes out the password.
 type Config struct {
-	ListenAddr string // LISTEN_ADDR; wins over SERVER_PORT when set
-	ServerPort string // SERVER_PORT, default 17808
+	ListenAddr string `env:"LISTEN_ADDR"` // wins over SERVER_PORT when set
+	ServerPort string `env:"SERVER_PORT"` // default 17808
 
-	Storage     string // STORAGE: postgres | sqlite | memory
-	DatabaseURL string // DATABASE_URL; wins over the DB_* variables when set
-	DBUser      string
-	DBPass      string
-	DBHost      string
-	DBPort      string
-	DBName      string
-	DBSSLMode   string // DB_SSLMODE, default disable
-	SQLitePath  string // SQLITE_PATH, default /data/kanban.db
+	Storage     string `env:"STORAGE"`                   // postgres | sqlite | memory
+	DatabaseURL string `env:"DATABASE_URL" secret:"url"` // wins over the DB_* variables when set
+	DBUser      string `env:"DB_USER"`
+	DBPass      string `env:"DB_PASS" secret:"true"`
+	DBHost      string `env:"DB_HOST"`
+	DBPort      string `env:"DB_PORT"`
+	DBName      string `env:"DB_NAME"`
+	DBSSLMode   string `env:"DB_SSLMODE"`  // default disable
+	SQLitePath  string `env:"SQLITE_PATH"` // default /data/kanban.db
 
 	// AUTH_MODE: none | proxy | access. See internal/identity for why proxy
 	// and access are not interchangeable.
-	AuthMode         string
-	AuthHeader       string // AUTH_HEADER, the header read in proxy mode
-	AccessTeamDomain string // ACCESS_TEAM_DOMAIN, e.g. team.cloudflareaccess.com
-	AccessAudience   string // ACCESS_AUD, the Access application's AUD tag
+	AuthMode         string `env:"AUTH_MODE"`
+	AuthHeader       string `env:"AUTH_HEADER"`        // the header read in proxy mode
+	AccessTeamDomain string `env:"ACCESS_TEAM_DOMAIN"` // e.g. team.cloudflareaccess.com
+	AccessAudience   string `env:"ACCESS_AUD"`         // the Access application's AUD tag
 
 	// AVATARS: who has a picture, as address=github-login pairs. Empty means
 	// the board draws initials and makes no outbound request.
-	Avatars map[string]string
+	Avatars map[string]string `env:"AVATARS"`
 
 	// BACKUP_*: where the scheduler puts snapshots and how often. Neither a
 	// directory nor a bucket means no schedule, and `kanban export` is then the
 	// only way a snapshot gets taken.
-	BackupInterval   time.Duration // BACKUP_INTERVAL, default 24h; 0 disables the schedule
-	BackupKeep       int           // BACKUP_KEEP, default 7; 0 keeps every snapshot
-	BackupDir        string        // BACKUP_DIR, a directory on a volume
-	BackupS3Bucket   string        // BACKUP_S3_BUCKET
-	BackupS3Prefix   string        // BACKUP_S3_PREFIX, normalised to end in /
-	BackupS3Region   string        // BACKUP_S3_REGION, or AWS_REGION
-	BackupS3Endpoint string        // BACKUP_S3_ENDPOINT, empty for AWS; anything else is addressed path-style
+	BackupInterval   time.Duration `env:"BACKUP_INTERVAL"` // default 24h; 0 disables the schedule
+	BackupKeep       int           `env:"BACKUP_KEEP"`     // default 7; 0 keeps every snapshot
+	BackupDir        string        `env:"BACKUP_DIR"`      // a directory on a volume
+	BackupS3Bucket   string        `env:"BACKUP_S3_BUCKET"`
+	BackupS3Prefix   string        `env:"BACKUP_S3_PREFIX"`   // normalised to end in /
+	BackupS3Region   string        `env:"BACKUP_S3_REGION"`   // or AWS_REGION
+	BackupS3Endpoint string        `env:"BACKUP_S3_ENDPOINT"` // empty for AWS; anything else is addressed path-style
 
 	// The usual AWS names, so a deployment that already injects credentials for
 	// something else does not need a second set under our own names.
-	AWSAccessKeyID     string // AWS_ACCESS_KEY_ID
-	AWSSecretAccessKey string // AWS_SECRET_ACCESS_KEY
-	AWSSessionToken    string // AWS_SESSION_TOKEN, for temporary credentials
+	AWSAccessKeyID     string `env:"AWS_ACCESS_KEY_ID"`
+	AWSSecretAccessKey string `env:"AWS_SECRET_ACCESS_KEY" secret:"true"`
+	AWSSessionToken    string `env:"AWS_SESSION_TOKEN" secret:"true"` // for temporary credentials
 
-	AutoMigrate bool   // AUTO_MIGRATE, default true
-	LogLevel    string // LOG_LEVEL: debug | info | warn | error
-	LogFormat   string // LOG_FORMAT: text | json
+	AutoMigrate bool   `env:"AUTO_MIGRATE"` // default true
+	LogLevel    string `env:"LOG_LEVEL"`    // debug | info | warn | error
+	LogFormat   string `env:"LOG_FORMAT"`   // text | json
 }
 
 // Storage backends accepted by STORAGE.
