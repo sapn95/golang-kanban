@@ -26,7 +26,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   the server and served from your own origin so that GitHub never sees who is
   looking at the board; see [docs/adr/0008](docs/adr/0008-avatars-are-proxied.md).
 - Archive a card instead of deleting it: it leaves the board, keeps its column
-  and labels, and restoring puts back the same card.
+  and labels, and restoring puts back the same card. The archive has a search
+  box of its own, on the same syntax as the board's, so finding the one card
+  somebody archived in March does not mean scrolling to March.
 - Comments on a card, with who wrote them and when. They cannot be edited and
   the author can remove their own; the reasoning is in
   [docs/adr/0007](docs/adr/0007-comments-are-append-only.md).
@@ -35,7 +37,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.
   A label on a card is a link to that search, so the syntax is discoverable
   rather than something you have to know about, and the chip carries an `x`
-  that takes the label off the card.
+  that takes the label off the card. A word that is nowhere to be found as it
+  was typed is tried again as a typo, so `logni` finds the login card. Under
+  four letters a word is matched exactly, and a quoted phrase always is.
 - Select several cards (shift-click for a range) and move, assign, archive or
   delete them at once. Dragging one card of a selection takes the whole
   selection with it.

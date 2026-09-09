@@ -52,6 +52,13 @@ policy, which the two routes that serve bytes rather than a page do.
 names, and understands `label:`, `assignee:`, `due:` and `is:archived`, with
 `"quoted phrases"`. It lives in the URL so a result can be linked to.
 
+A word that matches none of the three literally is tried once more as a typo,
+against the words of those same fields: one edit for a word of four letters or
+more, two from eight, and a swapped pair of letters counts as one. Under four
+letters there is no tolerance, and a `"quoted phrase"` is always literal. The
+same `q` works on `GET /b/{board}/archive`, where it is scoped to the archive
+whether or not it says `is:archived`.
+
 ## Cards
 
 | Route | Sends | Answers |
@@ -66,7 +73,7 @@ names, and understands `label:`, `assignee:`, `due:` and `is:archived`, with
 | `POST /cards/{id}/archive` | | `200` and an empty body. The caller removes the row |
 | `POST /cards/{id}/delete` | | `200` and an empty body |
 | `POST /cards/{id}/restore` | `?board=` the slug to return to | `204` with `HX-Redirect: /b/{slug}` |
-| `GET /b/{board}/archive` | | The archived cards, each with a restore button |
+| `GET /b/{board}/archive` | `?q=` to search, optional | The archived cards, each with a restore button |
 | `POST /b/{board}/cards/bulk` | `action=move\|assign\|archive\|delete`, `ids` (once per card), `target` (a column id for `move`, an address or `@me` for `assign`) | `204` with `HX-Refresh: true`. `403` on `target=@me` when nobody is signed in |
 | `POST /b/{board}/columns/{column}/order` | JSON `{"order":["card-id", …]}` | `OK` as text. `409` when a WIP limit refuses the move |
 

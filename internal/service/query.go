@@ -16,7 +16,8 @@ import (
 // cards, not millions; loading them and filtering in one place is cheap and
 // gives every backend identical behaviour for free.
 type Query struct {
-	// Text matches title, description or a label name, case-insensitively.
+	// Text matches title, description or a label name, case-insensitively, and
+	// a word that matches none of them literally is tried once more as a typo.
 	// Every term has to match, so adding a word narrows.
 	//
 	// Label names are in there because that is what people expect: a label is
@@ -117,13 +118,26 @@ func (q Query) Match(c model.Card, labelNames map[model.ID]string, today time.Ti
 
 // matchesText requires every bare word, so adding one narrows. A word matches
 // the title, the description or the name of a label the card carries.
+//
+// A term that is nowhere to be found as it was typed is tried again as a typo,
+// against the words of the same three fields. That is the last thing attempted
+// rather than the first, so an exact match is never diluted by a near one, and
+// the words are only split when a term actually needs them: a search that finds
+// what it asked for costs no more than it did before.
 func (q Query) matchesText(c model.Card, labelNames map[model.ID]string) bool {
 	title, description := strings.ToLower(c.Title), strings.ToLower(c.Description)
+	var words []string
 	for _, term := range q.Text {
 		if strings.Contains(title, term) || strings.Contains(description, term) {
 			continue
 		}
-		if !q.labelContains(c, labelNames, term) {
+		if q.labelContains(c, labelNames, term) {
+			continue
+		}
+		if words == nil {
+			words = cardWords(title, description, c, labelNames)
+		}
+		if !closeToAny(term, words) {
 			return false
 		}
 	}

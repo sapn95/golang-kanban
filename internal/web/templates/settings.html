@@ -1,8 +1,13 @@
 {{define "swatches"}}
 <!-- basis-full on the narrow layout so the Save beside it always lands on its
      own line: whether the row has nine swatches or ten decided it otherwise,
-     and two rows of the same list looked different for no reason. -->
-<div class="flex basis-full items-center gap-1.5 flex-wrap sm:basis-auto" role="group" aria-label="Colour">
+     and two rows of the same list looked different for no reason.
+
+     From sm up the list keeps its full width, so a row with no room to spare
+     takes it off the name field beside it rather than dropping the last swatch
+     onto a line of its own. Mind the prose: a bare utility word in here
+     compiles a rule nothing uses. -->
+<div class="flex basis-full items-center gap-1.5 flex-wrap sm:basis-auto sm:shrink-0" role="group" aria-label="Colour">
   {{$current := .Label.Color}}
   <label class="cursor-pointer" title="No colour">
     <input type="radio" name="color" value="" class="sr-only peer"{{if not $current}} checked{{end}}>
@@ -24,6 +29,10 @@
 {{end}}
 
 {{define "content"}}
+<!-- Capped and centred rather than as wide as the window. These are forms, and
+     a text field a thousand pixels wide for a word like "Doing" reads as a
+     mistake; the board is the page that wants the whole screen. -->
+<div class="mx-auto max-w-4xl">
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <a href="/b/{{.BoardSlug}}"
      class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm">
@@ -52,14 +61,25 @@
        longest option, because a row that can do neither runs off the side of
        the screen and takes the delete button with it.
 
+       The name field is 18rem in every row rather than whatever that row had
+       left over. What follows it is a select in one row and two arrows in the
+       next, so taking the rest gave every field a different width, and three
+       widths for three fields of the same kind read as a mistake. It still
+       shrinks when the row runs out of room.
+
        Mind the prose in here: the stylesheet is compiled by scanning these
        files for anything that looks like a class name, so writing a bare
        utility name in a comment compiles a rule nothing uses. -->
   <div class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}"
-      class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center">
+      class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
       <input type="text" name="name" value="{{.Column.Name}}" required maxlength="100" aria-label="Column name"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:flex-1 sm:min-w-[8rem]">
+        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+      <!-- row-save: one Save per row is six of them on a page with three
+           columns and three labels, all shouting at once. The class lets
+           app.js keep a row's Save out of sight until that row has been
+           changed. It is rendered visible, so a browser running no script has
+           the button it needs. -->
       <div class="w-full flex items-center gap-3 sm:w-auto">
         <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0">
           WIP limit
@@ -67,7 +87,7 @@
             value="{{if .Column.WIPLimit}}{{.Column.WIPLimit}}{{end}}"
             class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
         </label>
-        <button type="submit" class="ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
+        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
       </div>
     </form>
     <div class="w-full flex flex-wrap items-center gap-2 min-w-0 sm:w-auto sm:gap-3">
@@ -116,7 +136,7 @@
 
   <form method="post" action="/b/{{$slug}}/columns" class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <input type="text" name="name" required maxlength="100" placeholder="New column" aria-label="New column name"
-      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:flex-1 sm:min-w-[8rem]">
+      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
     <div class="w-full flex items-center gap-3 sm:w-auto sm:contents">
       <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0">
         WIP limit
@@ -143,12 +163,12 @@
        with the Save that writes them, then how many cards carry the label. -->
   <div class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}"
-      class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center">
+      class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
       <input type="text" name="name" value="{{.Label.Name}}" required maxlength="100" aria-label="Label name"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:flex-1 sm:min-w-[8rem]">
-      <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto">
+        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+      <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto sm:flex-nowrap">
         {{template "swatches" .}}
-        <button type="submit" class="ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
+        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
       </div>
     </form>
     <div class="w-full flex items-center gap-3 min-w-0 sm:w-auto">
@@ -170,8 +190,8 @@
 
   <form method="post" action="/b/{{$slug}}/labels" class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <input type="text" name="name" required maxlength="100" placeholder="New label" aria-label="New label name"
-      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:flex-1 sm:min-w-[8rem]">
-    <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto">
+      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+    <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto sm:flex-nowrap">
       {{template "swatches" .NewLabel}}
       <button type="submit" class="ml-auto px-3 py-2 text-sm rounded-lg bg-gray-800 dark:bg-gray-600 hover:bg-gray-900 dark:hover:bg-gray-500 text-white sm:ml-0">
         <i class="bi bi-plus mr-1"></i>Add
@@ -183,4 +203,5 @@
 <p class="mt-4 text-sm text-gray-400 dark:text-gray-500">
   Labels belong to this board. Renaming one changes it on every card at once.
 </p>
+</div>
 {{end}}
