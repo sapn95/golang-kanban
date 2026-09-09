@@ -20,49 +20,64 @@ import (
 // not report; a test asserts that every tag names a variable FromEnv actually
 // reads. `secret` marks a value that must not be printed: true masks it, url
 // keeps the address and takes out the password.
+//
+// docs/configuration.md is generated from this struct: the tags give the
+// variable names, the trailing comments give the Notes column, the comments above
+// a group give the paragraph in front of its table, and the blank lines decide
+// where one table ends. Adding a field here is therefore all it takes to
+// document one, and a test fails when the page and the struct disagree.
+//
+//go:generate go test . -run TestConfigurationReferenceIsCurrent -update
 type Config struct {
-	ListenAddr string `env:"LISTEN_ADDR"` // wins over SERVER_PORT when set
-	ServerPort string `env:"SERVER_PORT"` // default 17808
+	// Where the server listens. `LISTEN_ADDR` is a whole address, so it is also
+	// how you bind one interface instead of every one of them.
+	ListenAddr string `env:"LISTEN_ADDR"` // wins over `SERVER_PORT` when set
+	ServerPort string `env:"SERVER_PORT"` // the port, unless `LISTEN_ADDR` names one
 
+	// Which store holds the boards and how to reach it. The `DB_*` variables build
+	// a Postgres connection string and are read for that backend only;
+	// `STORAGE=memory` keeps the boards in the process and loses them on exit.
 	Storage     string `env:"STORAGE"`                   // postgres | sqlite | memory
-	DatabaseURL string `env:"DATABASE_URL" secret:"url"` // wins over the DB_* variables when set
+	DatabaseURL string `env:"DATABASE_URL" secret:"url"` // a full DSN; wins over the five below
 	DBUser      string `env:"DB_USER"`
 	DBPass      string `env:"DB_PASS" secret:"true"`
 	DBHost      string `env:"DB_HOST"`
 	DBPort      string `env:"DB_PORT"`
 	DBName      string `env:"DB_NAME"`
-	DBSSLMode   string `env:"DB_SSLMODE"`  // default disable
-	SQLitePath  string `env:"SQLITE_PATH"` // default /data/kanban.db
+	DBSSLMode   string `env:"DB_SSLMODE"`  // disable, require, verify-full, as libpq spells them
+	SQLitePath  string `env:"SQLITE_PATH"` // `STORAGE=sqlite` only; the image has a volume at /data
 
-	// AUTH_MODE: none | proxy | access. See internal/identity for why proxy
-	// and access are not interchangeable.
-	AuthMode         string `env:"AUTH_MODE"`
+	// Who is making the request. See docs/adr/0005 for why proxy and access are
+	// not interchangeable, and why none is a defensible default.
+	AuthMode         string `env:"AUTH_MODE"`          // none takes every request as anonymous
 	AuthHeader       string `env:"AUTH_HEADER"`        // the header read in proxy mode
 	AccessTeamDomain string `env:"ACCESS_TEAM_DOMAIN"` // e.g. team.cloudflareaccess.com
 	AccessAudience   string `env:"ACCESS_AUD"`         // the Access application's AUD tag
 
-	// AVATARS: who has a picture, as address=github-login pairs. Empty means
-	// the board draws initials and makes no outbound request.
-	Avatars map[string]string `env:"AVATARS"`
+	// Who has a picture instead of initials, as address=github-login pairs. Unset
+	// means initials and no outbound request; docs/adr/0008 has why the server
+	// fetches the picture rather than the browser.
+	Avatars map[string]string `env:"AVATARS"` // a pair that is not a pair is refused on start, not skipped
 
-	// BACKUP_*: where the scheduler puts snapshots and how often. Neither a
-	// directory nor a bucket means no schedule, and `kanban export` is then the
-	// only way a snapshot gets taken.
-	BackupInterval   time.Duration `env:"BACKUP_INTERVAL"` // default 24h; 0 disables the schedule
-	BackupKeep       int           `env:"BACKUP_KEEP"`     // default 7; 0 keeps every snapshot
-	BackupDir        string        `env:"BACKUP_DIR"`      // a directory on a volume
-	BackupS3Bucket   string        `env:"BACKUP_S3_BUCKET"`
-	BackupS3Prefix   string        `env:"BACKUP_S3_PREFIX"`   // normalised to end in /
-	BackupS3Region   string        `env:"BACKUP_S3_REGION"`   // or AWS_REGION
+	// Where the scheduler puts snapshots and how often. Neither a directory nor a
+	// bucket means no schedule, and `kanban export` is then the only way a
+	// snapshot gets taken.
+	BackupInterval   time.Duration `env:"BACKUP_INTERVAL"`    // 0 turns the schedule off; under a minute is refused
+	BackupKeep       int           `env:"BACKUP_KEEP"`        // 0 keeps every snapshot; the rest go after a successful write
+	BackupDir        string        `env:"BACKUP_DIR"`         // a directory on a volume that outlives the container
+	BackupS3Bucket   string        `env:"BACKUP_S3_BUCKET"`   // the other target; set one of the two, not both
+	BackupS3Prefix   string        `env:"BACKUP_S3_PREFIX"`   // normalised to end in /, so one bucket can hold several boards
+	BackupS3Region   string        `env:"BACKUP_S3_REGION"`   // or `AWS_REGION`; required with a bucket, it is part of the signature
 	BackupS3Endpoint string        `env:"BACKUP_S3_ENDPOINT"` // empty for AWS; anything else is addressed path-style
 
 	// The usual AWS names, so a deployment that already injects credentials for
 	// something else does not need a second set under our own names.
-	AWSAccessKeyID     string `env:"AWS_ACCESS_KEY_ID"`
-	AWSSecretAccessKey string `env:"AWS_SECRET_ACCESS_KEY" secret:"true"`
-	AWSSessionToken    string `env:"AWS_SESSION_TOKEN" secret:"true"` // for temporary credentials
+	AWSAccessKeyID     string `env:"AWS_ACCESS_KEY_ID"`                   // required with a bucket: there is no credential chain
+	AWSSecretAccessKey string `env:"AWS_SECRET_ACCESS_KEY" secret:"true"` // required with a bucket
+	AWSSessionToken    string `env:"AWS_SESSION_TOKEN" secret:"true"`     // only for temporary credentials
 
-	AutoMigrate bool   `env:"AUTO_MIGRATE"` // default true
+	// What the process does on start, and how much it says while it runs.
+	AutoMigrate bool   `env:"AUTO_MIGRATE"` // false: run `kanban migrate` yourself
 	LogLevel    string `env:"LOG_LEVEL"`    // debug | info | warn | error
 	LogFormat   string `env:"LOG_FORMAT"`   // text | json
 }
