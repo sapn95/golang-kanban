@@ -181,15 +181,26 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
 
 ## Build and CI
 
-- Dockerfile becomes multi-stage: `golang:1.24` builder with
-  `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, final image
-  `gcr.io/distroless/static`, non-root, `VOLUME /data` (the SQLite file).
-  Every backend is pure Go, so the build stays CGO-free
+- The Dockerfile is multi-stage: an alpine `golang` builder runs
+  `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, and the binary ships in
+  `gcr.io/distroless/static-debian13:nonroot` with `VOLUME /data` for the
+  SQLite file. Every backend is pure Go, so the build stays CGO-free
   ([0004](adr/0004-sqlite-backend.md)).
-- `lint.yml` reads the Go version from `go.mod` (`go-version-file`) instead of
-  pinning 1.21 while `go.mod` says 1.24; a `test` job runs `go test ./...`.
-- `test.yml` runs `go test ./... -race -coverpkg=./...` against a Postgres
-  service container and fails below 80% total coverage.
+- `ci.yml` has four jobs. `lint` runs gofmt, `go vet` and golangci-lint;
+  `workflows` runs actionlint; `test` runs `go test ./... -race
+  -coverpkg=./...` against a Postgres service container and fails below 80%
+  total coverage; `chart` lints the Helm chart and renders every values
+  combination it claims to support, including the ones it has to refuse.
+- Nothing pins a Go version twice. `go.mod` holds it and the workflows read it
+  with `go-version-file`, so the only place that can drift is the builder image
+  in the Dockerfile.
+- `codeql.yml` analyses Go on every pull request and weekly, because a new
+  query pack finds things in code that has not changed. `release.yml` builds
+  and pushes the multi-arch image with a provenance attestation.
+- Dependabot groups one pull request per ecosystem per week, and
+  `dependabot-auto-merge.yml` merges it once every check on that commit is
+  green. It reads its configuration from the default branch, which is why
+  `homelab` is the default branch and `main`, which tracks upstream, is not.
 - `godotenv` is gone from `go.mod`; it was required but never imported.
 
 ## What the restructure does not change
@@ -202,4 +213,6 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   the vendored Play build for now (`assets/VERSIONS`); whether to keep that,
   compile once with the standalone CLI, or move to Bootstrap is an open
   decision for the UX phase.
-- The port, the Docker image name, the `docker run` one-liner.
+- The port and the shape of the `docker run` one-liner. The image name in it
+  does change: this fork builds its own package, `ghcr.io/sapn95/golang-kanban`,
+  because upstream's stops at 1.0.1.
