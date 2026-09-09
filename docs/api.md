@@ -1,14 +1,20 @@
 # Endpoints
 
-Every route the server answers, all 33 of them, registered in one block in
+Every route the server answers, all 34 of them, registered in one block in
 `internal/web/server.go`. A test compares this file against that block and
 fails when either side has something the other does not, so a route cannot be
 added or removed without the table changing with it.
 
-There is no OpenAPI document and no swagger-ui. Almost every response here is
-an HTML fragment, a redirect or a `204` with an htmx header, so a spec would
-say `type: string` for nearly all of them, and swagger-ui is about a megabyte
-of vendored JavaScript in a project whose selling point is that it has none.
+The last of those 34 is the JSON API, which brings its own thirty routes under
+`/api/v1/` and its own document; the [table below](#the-json-api) gives it one
+row. This file is about the page routes.
+
+Those have no OpenAPI document, and neither half has swagger-ui. Almost every
+response here is an HTML fragment, a redirect or a `204` with an htmx header,
+so a spec would say `type: string` for nearly all of them, and swagger-ui is
+about a megabyte of vendored JavaScript in a project whose selling point is
+that it has none. `/api/v1/openapi.json` is a file in the repository,
+[readable as it is](../internal/api/openapi.json).
 
 ## What is true of every request
 
@@ -95,6 +101,22 @@ message and the appropriate status rather than redirecting.
 | `POST /b/{board}/columns/{id}/delete` | `move_to`: the column the cards go to, empty to delete them with it | `303` to settings |
 | `POST /b/{board}/columns/{id}/move` | `direction=up\|down` | `303` to settings. A move off either end changes nothing |
 
+## The JSON API
+
+| Route | Sends | Answers |
+|-------|-------|---------|
+| `ANY /api/v1/{path}` | JSON | JSON. `GET /api/v1/` lists the entry points and `GET /api/v1/openapi.json` is the whole contract; see [0009](adr/0009-json-api.md) |
+
+It calls the same service methods these pages call, so the two cannot disagree
+about what a WIP limit means or who may delete a comment. What it adds is a
+caller that is a program: `PUT` and `DELETE` are real methods there, a response
+is an object rather than a fragment, and an unknown field in a body is a `400`
+that names it instead of a card with no title.
+
+It grants what the board grants, which is everything to whoever can reach the
+port. There are no tokens, so whatever protects the pages, a proxy or
+Cloudflare Access, protects this too.
+
 ## Files, pictures and operations
 
 | Route | Sends | Answers |
@@ -110,7 +132,9 @@ message and the appropriate status rather than redirecting.
 
 An error is `text/plain` and one line, because every write is either swapped
 into the page by htmx or followed by a redirect, and a stack of HTML in place
-of a card is worse than a sentence.
+of a card is worse than a sentence. Under `/api/v1/` the same failure is
+`{"error": "…"}`, including the two the middleware answers before the API
+handler sees the request: a cross-site write and a panic.
 
 | Status | When |
 |--------|------|

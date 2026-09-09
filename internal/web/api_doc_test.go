@@ -45,6 +45,10 @@ var (
 	// /assets/. Anchored at the start of a statement, so a registration that
 	// is commented out is not a route.
 	sourceRoute = regexp.MustCompile(`(?m)^\t*mux\.Handle(?:Func)?\("([A-Z]+ /[^"]*)"`)
+	// mux.Handle(apiPrefix, s.api): the JSON API, which answers every method
+	// under one prefix and so is registered on the constant rather than on a
+	// pattern the regexp above could read.
+	apiMount = regexp.MustCompile(`(?m)^\t*mux\.Handle\(apiPrefix,`)
 	// The same call without its pattern, which is how a registration whose
 	// pattern is not a plain string literal is still counted.
 	registerCall = regexp.MustCompile(`(?m)^\t*mux\.Handle(?:Func)?\(`)
@@ -61,6 +65,12 @@ func routesInSource(t *testing.T, path string) []string {
 	t.Helper()
 	src := read(t, path)
 	found := patterns(src, sourceRoute)
+	for range apiMount.FindAllString(src, -1) {
+		// The routes under it are in internal/api/openapi.json, which
+		// internal/api/spec_test.go holds to the code the same way. Here it is
+		// one row, because that is all this document knows about it.
+		found = append(found, "ANY "+apiPrefix+"{path}")
+	}
 	if calls := len(registerCall.FindAllString(src, -1)); len(found) != calls {
 		t.Fatalf("%s registers %d routes and the pattern found %d of them: %v",
 			path, calls, len(found), found)
