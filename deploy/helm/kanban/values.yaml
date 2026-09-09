@@ -147,6 +147,34 @@ auth:
   # public GitHub app is everyone with a GitHub account — narrow it.
   emailDomains: ["*"]
 
+  # What the sign-in asks the provider for. This is the list of permissions the
+  # consent screen shows the person signing in, so it is worth setting on
+  # purpose rather than inheriting.
+  #
+  # Empty asks for the smallest set that works with the provider below:
+  #
+  #   entra, oidc   openid email
+  #   github        user:email read:org
+  #
+  # The address is the only thing the proxy passes on (identityHeader above), so
+  # for entra and oidc the address is all the chart asks for. oauth2-proxy would
+  # have asked for "profile" as well, which is a display name and a picture.
+  # Add it back here if you would rather have the name the provider holds than
+  # the one the app reads out of the address.
+  #
+  # GitHub is the exception, and it is why this is documented at all. Its
+  # consent screen offers "read your organization, team membership, and private
+  # project boards", which is read:org, and oauth2-proxy needs it even with no
+  # organisation configured: it calls /user/orgs and /user/teams on every
+  # sign-in and GitHub answers 403 to a token that lacks the scope, which fails
+  # the sign-in rather than the membership check. So the chart cannot narrow
+  # GitHub, and it refuses a scope list for github that leaves read:org out
+  # instead of rendering a sign-in that cannot complete. Where granting that is
+  # not acceptable, entra or a generic oidc provider asks for the address only,
+  # and Cloudflare Access in front of the board does the same job without this
+  # sidecar.
+  scopes: []
+
   entra:
     # A directory (tenant) id, or "common" for any Microsoft account,
     # "organizations" for any work or school account.

@@ -149,6 +149,9 @@ spec:
             - --github-user={{ . }}
             {{- end }}
             {{- end }}
+            {{- /* One argument, spaces and all: --scope takes the whole list as
+                   a single space-separated string. */}}
+            - {{ printf "--scope=%s" (include "kanban.authScopes" .) | quote }}
             {{- range .Values.auth.emailDomains }}
             - --email-domain={{ . }}
             {{- end }}

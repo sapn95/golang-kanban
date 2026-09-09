@@ -172,6 +172,28 @@ Secret when there is one, generate only when there is not. oauth2-proxy demands
 {{- end -}}
 {{- end -}}
 
+{{/*
+The OAuth scopes to ask the provider for, as the one space-separated string
+oauth2-proxy's --scope takes.
+
+Written down rather than left to the proxy's own default, because the default is
+what the consent screen shows the person signing in: "openid email profile" for
+an OIDC provider, and "user:email read:org" for GitHub whether or not an
+organisation is configured. The chart forwards nothing but the address, so
+that is what it asks for. See the comment on auth.scopes in values.yaml for why
+GitHub is the exception.
+*/}}
+{{- define "kanban.authScopes" -}}
+{{- $auth := .Values.auth | default dict -}}
+{{- if $auth.scopes -}}
+{{- join " " $auth.scopes -}}
+{{- else if eq $auth.provider "github" -}}
+{{- "user:email read:org" -}}
+{{- else -}}
+{{- "openid email" -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "kanban.validateAuth" -}}
 {{- $auth := .Values.auth | default dict -}}
 {{- $tls := $auth.tls | default dict -}}
@@ -187,6 +209,9 @@ Secret when there is one, generate only when there is not. oauth2-proxy demands
 {{- end -}}
 {{- if and (eq $auth.provider "oidc") (not ($auth.oidc | default dict).issuerURL) -}}
 {{- fail "auth.provider=oidc needs auth.oidc.issuerURL" -}}
+{{- end -}}
+{{- if and (eq $auth.provider "github") $auth.scopes (not (has "read:org" $auth.scopes)) -}}
+{{- fail "auth.provider=github needs read:org in auth.scopes: oauth2-proxy reads /user/orgs and /user/teams on every sign-in, with or without auth.github.org, and GitHub answers 403 to a token without that scope, so the sign-in fails instead of the membership check. Use auth.provider=entra or oidc for a sign-in that only asks for the address." -}}
 {{- end -}}
 {{- if and ($auth.cookie | default dict).secret (not (has (len ($auth.cookie | default dict).secret) (list 16 24 32))) -}}
 {{- fail (printf "auth.cookie.secret must be 16, 24 or 32 bytes, got %d" (len ($auth.cookie | default dict).secret)) -}}

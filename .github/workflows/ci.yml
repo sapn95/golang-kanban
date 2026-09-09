@@ -165,7 +165,7 @@ jobs:
           # The sidecar establishes who the caller is; the app has to be told to
           # read it, or the board is anonymous behind a sign-in.
           rendered="$(helm template t deploy/helm/kanban "${auth[@]}")"
-          for expected in "name: AUTH_MODE" "value: proxy" "X-Forwarded-Email" "--pass-user-headers=true"; do
+          for expected in "name: AUTH_MODE" "value: proxy" "X-Forwarded-Email" "--pass-user-headers=true" '"--scope=openid email"'; do
             if ! grep -qF -- "$expected" <<<"$rendered"; then
               echo "::error::auth.enabled renders without $expected"
               exit 1
@@ -175,6 +175,18 @@ jobs:
             echo "::error::AUTH_MODE=proxy is set without the sidecar that supplies the header"
             exit 1
           fi
+          # The consent screen the operator has to sign off on is these scopes,
+          # so what the chart asks for is asserted rather than inherited from
+          # whatever oauth2-proxy defaults to this release.
+          github="$(helm template t deploy/helm/kanban "${auth[@]}" --set auth.provider=github)"
+          if ! grep -qF -- '"--scope=user:email read:org"' <<<"$github"; then
+            echo "::error::the github sign-in no longer asks for the scopes it needs to complete"
+            exit 1
+          fi
+          ok "${auth[@]}" --set 'auth.scopes={openid,email}'
+          # Narrowing GitHub renders a sign-in that cannot finish, so the chart
+          # refuses it; see the comment on auth.scopes in values.yaml.
+          nope "${auth[@]}" --set auth.provider=github --set 'auth.scopes={user:email}'
           nope --set storage=sqlite
           nope --set storage=memory
           nope --set storage=postgres --set postgres.enabled=false
