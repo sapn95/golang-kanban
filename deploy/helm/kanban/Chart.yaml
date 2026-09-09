@@ -1,13 +1,18 @@
 apiVersion: v2
 name: kanban
-description: A self-hosted kanban board — single static binary, Postgres, SQLite or in-memory storage
+description: A self-hosted kanban board. One static binary, with Postgres, SQLite or in-memory storage
 type: application
-version: 0.1.0
-# The image tag this chart pulls by default. 0.1.0 was never published;
-# ghcr.io/nicolashaas/golang-kanban has 1.0.0 and 1.0.1.
-appVersion: "1.0.1"
-home: https://github.com/NicolasHaas/golang-kanban
+# The chart is installed from this path in git, not from a registry, so this
+# version is a marker in the history rather than something anyone can pull.
+version: 0.2.0
+# The image tag this chart pulls by default, published by .github/workflows/release.yml
+# on a v* tag. Upstream's own packages stop at 1.0.1, which is where this fork
+# started; the boards, identity, search, comments and archive came after it.
+appVersion: "2.0.0"
+icon: https://raw.githubusercontent.com/sapn95/golang-kanban/homelab/docs/logo-512.png
+home: https://github.com/sapn95/golang-kanban
 sources:
+  - https://github.com/sapn95/golang-kanban
   - https://github.com/NicolasHaas/golang-kanban
 maintainers:
   - name: sapn95
