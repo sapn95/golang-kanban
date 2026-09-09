@@ -34,6 +34,11 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   delete them at once. Dragging one card of a selection takes the whole
   selection with it.
 - Drag-and-drop between columns with SortableJS; partial updates with HTMX.
+- A JSON API under `/api/v1/` for the things a page is bad at: a card from a
+  cron job, a count over a shell pipeline, a fresh install seeded with its
+  columns. It calls the same code the pages call, and the contract is
+  [`openapi.json`](internal/api/openapi.json), served at
+  `/api/v1/openapi.json`; see [docs/adr/0009](docs/adr/0009-json-api.md).
 - Dark mode.
 - Cross-site writes are refused, security headers are set, and request bodies
   are capped; see [docs/adr/0006](docs/adr/0006-cross-site-writes.md).
@@ -102,6 +107,24 @@ AVATARS=me@example.com=octocat,1+other@users.noreply.github.com=other
 ```
 
 `kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban version` prints the version. `/healthz` says the process is up, `/readyz` says the database answers, and `/version` says which build is answering — which is how you find out whether a deploy actually landed, without fetching a page and looking for markup only the new version renders.
+
+### The JSON API
+
+``` bash
+api=localhost:17808/api/v1
+b=$(curl -s $api/boards | jq -r '.[0].slug')       # "board" on a fresh install
+col=$(curl -s $api/boards/$b | jq -r '.columns[0].id')
+curl -s -X POST $api/boards/$b/cards -H 'Content-Type: application/json' \
+  -d "{\"title\":\"Backup ran\",\"column_id\":\"$col\",\"due_date\":\"2026-10-01\"}"
+curl -s "$api/boards/$b/cards?q=label:bug" | jq length
+curl -s $api/openapi.json                          # the whole contract
+```
+
+There are no tokens: the API grants what the board grants, so whatever protects
+the pages protects it too. `@me` as an assignee resolves to whoever the request
+is signed in as and is a `403` when nobody is. An unknown field in a body is a
+`400` that names the field, because a script that says `titel` should hear
+about it before the card exists.
 
 ### Building from source
 ``` bash

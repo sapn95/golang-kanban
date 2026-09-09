@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"kanban/internal/api"
 	"kanban/internal/config"
 	"kanban/internal/identity"
 	"kanban/internal/service"
@@ -122,9 +123,13 @@ func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Log
 	}
 	log.Info("boards ready", "count", len(boards))
 
+	// One handler tree: the pages, with the JSON API mounted under /api/v1/ and
+	// wrapped in the same middleware, so both read identity from the same place.
+	// This is the only package that imports both.
 	srv := &http.Server{
 		Handler: identityMiddleware(cfg, log)(web.New(svc, st.Ping, log,
-			web.WithBuild(version, commit), web.WithAvatars(cfg.Avatars))),
+			web.WithBuild(version, commit), web.WithAvatars(cfg.Avatars),
+			web.WithAPI(api.New(svc, log)))),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

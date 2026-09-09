@@ -41,17 +41,15 @@ Numbers in brackets below point at them.
 │   │   └── sqlite/        modernc.org/sqlite backend, embedded migrations/*.sql [0004]
 │   ├── service/           use cases: one method per user action, validation, WIP limits, IDs
 │   ├── web/               HTMX handlers, embedded templates/, view models
-│   ├── api/               (Phase 4) JSON handlers over the same service
-│   ├── auth/              (Phase 3) identity middleware: none | proxy | oidc
+│   ├── api/               JSON handlers over the same service, under /api/v1  [0009]
+│   ├── identity/          identity middleware: none | proxy | access          [0005]
 │   └── backup/            (Phase 5) Export/Import snapshot, S3 scheduler
 ├── docs/                  plain markdown, ADRs under docs/adr/
-└── deploy/                (Phase 6) compose profiles, haproxy, helm, terraform, unraid
+└── deploy/                helm/ today; compose profiles and unraid in Phase 6
 ```
 
-The packages Phase 0 needs exist today, plus the SQLite backend (`cmd/kanban`,
-`assets`, `config`, `model`, `store` + `memory` + `postgres` + `sqlite` +
-`storetest`, `service`, `web`). The others are listed so their place is agreed
-now; empty directories are not committed.
+Everything above exists today except `backup/`, which is listed so its place is
+agreed now; empty directories are not committed.
 
 ## Dependency direction
 
@@ -69,9 +67,10 @@ cmd/kanban ──► web ──► service ──► store (interface) ◄──
 - Only `cmd/kanban` knows which backend is in use. It is the only place that
   imports `store/postgres`, `store/sqlite`, and so on.
 - Handlers do not run SQL and do not contain business rules. They parse the
-  request, call one service method, and render the result. The JSON API in
-  Phase 4 calls the same methods; that is what stops the two front-ends from
-  drifting apart.
+  request, call one service method, and render the result. The JSON API calls
+  the same methods; that is what stops the two front-ends from drifting apart.
+- `web` mounts the JSON API as an `http.Handler` (`web.WithAPI`) and does not
+  import `api`. Only `cmd/kanban` builds both.
 
 ## Request flow (HTMX)
 
@@ -90,11 +89,15 @@ browser ──► web.Router (net/http mux, Go 1.22 patterns)
 
 ## URL scheme
 
-The paths are not versioned. They are the pages' own vocabulary rather than a
-published API, so a rename is cheap inside a release and breaks anything that
-calls a path directly, a script or a bookmark. `/b/{board}/labels` is the one
-that has already happened, and it kept a `301`. Boards are first-class and the
-hand-rolled `cardRouter` is gone in favour of method patterns.
+The page paths are not versioned. They are the pages' own vocabulary rather
+than a published API, so a rename is cheap inside a release and breaks anything
+that calls a path directly, a script or a bookmark. `/b/{board}/labels` is the
+one that has already happened, and it kept a `301`. Boards are first-class and
+the hand-rolled `cardRouter` is gone in favour of method patterns.
+
+The JSON API is versioned, at `/api/v1/`, because its callers are programs
+nobody is going to fix by hand. What that prefix promises and what the two
+surfaces share is [0009](adr/0009-json-api.md).
 
 Every route, what it takes and what it answers is in
 [`docs/api.md`](api.md), and a test compares that file against the

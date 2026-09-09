@@ -38,9 +38,15 @@ type Server struct {
 	version string
 	commit  string
 	avatars *avatars                      // nil unless pictures are configured
+	api     http.Handler                  // nil unless the JSON API is mounted
 	pages   map[string]*template.Template // full pages, keyed by name
 	parts   *template.Template            // fragments: card, card_edit
 }
+
+// apiPrefix is where WithAPI mounts its handler. It is api.Prefix written out:
+// the package that serves pages does not import the one that serves JSON, and
+// server_test.go holds the two spellings together.
+const apiPrefix = "/api/v1/"
 
 // Option configures New.
 type Option func(*Server)
@@ -61,6 +67,14 @@ func WithBuild(version, commit string) Option {
 func WithAvatars(logins map[string]string) Option {
 	return func(s *Server) { s.avatars = newAvatars(logins) }
 }
+
+// WithAPI mounts the JSON API under apiPrefix. Pass api.New(svc, log); it is
+// taken as an http.Handler so that this package does not depend on that one.
+//
+// Leave it out and the process answers nothing but pages, which is the
+// deployment that has a board on the open internet behind a proxy and no
+// scripts against it.
+func WithAPI(h http.Handler) Option { return func(s *Server) { s.api = h } }
 
 // New builds the handler. ready is called by /readyz; pass the store's Ping.
 func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logger, opts ...Option) http.Handler {
@@ -107,6 +121,13 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /b/{board}/columns/{id}/move", s.moveColumn)
 	mux.HandleFunc("POST /b/{board}/layout", s.setLayout)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
+	// The JSON API, on this mux and so inside the same middleware: one body cap,
+	// one cross-site check, one log line per request, and identity read once for
+	// both kinds of caller. It brings its own routes, which is why this
+	// registration names no method.
+	if s.api != nil {
+		mux.Handle(apiPrefix, s.api)
+	}
 	// Registered only when there are pictures to serve, so a board without them
 	// has no route that reaches out of the process at all.
 	if s.avatars != nil {
@@ -448,6 +469,20 @@ func plain(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, msg)
+}
+
+// deny answers in the shape the caller of that path is owed. The middleware is
+// the one place a request under the API prefix is refused without the api
+// package ever seeing it, and openapi.json promises an object with an "error"
+// field for every failure, including these two.
+func deny(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	if !strings.HasPrefix(r.URL.Path, apiPrefix) {
+		plain(w, status, msg)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // fragment is one template and the data to run it with.
@@ -1404,14 +1439,14 @@ func (s *Server) crossSite(next http.Handler) http.Handler {
 				u, err := url.Parse(o)
 				if err != nil || u.Host != r.Host {
 					s.log.Warn("refused a cross-site write", "origin", o, "path", r.URL.Path)
-					plain(w, http.StatusForbidden, "cross-site request")
+					deny(w, r, http.StatusForbidden, "cross-site request")
 					return
 				}
 			}
 		default:
 			s.log.Warn("refused a cross-site write",
 				"sec_fetch_site", r.Header.Get("Sec-Fetch-Site"), "path", r.URL.Path)
-			plain(w, http.StatusForbidden, "cross-site request")
+			deny(w, r, http.StatusForbidden, "cross-site request")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -1485,7 +1520,7 @@ func (s *Server) recover(next http.Handler) http.Handler {
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.log.Error("panic", "path", r.URL.Path, "err", fmt.Sprint(rec))
-				plain(w, http.StatusInternalServerError, "internal error")
+				deny(w, r, http.StatusInternalServerError, "internal error")
 			}
 		}()
 		next.ServeHTTP(w, r)
