@@ -55,7 +55,14 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Schema migrations run on start; an existing single-table database is imported automatically.
 
 ### How it looks
-![Screenshot](docs/img/screenshot-v1.0.0.png "Screenshot")
+![A board with three columns: a WIP limit at its limit, label chips, graded due dates, checklist progress and a markdown description](docs/img/screenshot.png)
+
+<details>
+<summary>The same board in dark mode</summary>
+
+![The same board with the dark palette](docs/img/screenshot-dark.png)
+
+</details>
 
 ### Using Docker Compose
 The [`docker-compose.yml`](docker-compose.yml) in the repository root builds the
