@@ -432,11 +432,11 @@
             "name": "q",
             "in": "query",
             "required": false,
-            "description": "The same search the board page runs, syntax included: bare words match the title and the description, and the filters are label:, assignee:, due:, is:.",
+            "description": "The same search the board page runs, syntax included. A bare word matches the title, the description or the name of a label the card carries, and every word has to match, so adding one narrows. The filters are label:<name>, which wants the name exactly; assignee:<part of the address> or assignee:none for unassigned; due: with one of none, overdue, today, week; and is:archived, which searches the archive instead of the board. An unrecognised prefix is searched for as text, because a colon in a title is ordinary: is:overdue finds cards that say that, not cards that are late. Use due:overdue for those.",
             "schema": { "type": "string" },
             "examples": {
               "text": { "value": "invoice" },
-              "filters": { "value": "assignee:me due:week is:overdue" }
+              "filters": { "value": "label:bug assignee:her@example.com due:overdue" }
             }
           }
         ],
