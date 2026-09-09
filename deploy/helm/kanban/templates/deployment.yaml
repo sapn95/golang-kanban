@@ -90,6 +90,16 @@ spec:
             - name: SQLITE_PATH
               value: {{ .Values.sqlite.path | quote }}
             {{- end }}
+            {{- $auth := .Values.auth | default dict }}
+            {{- if and $auth.enabled $auth.identityHeader }}
+            # The sidecar has already established who the caller is, so the app
+            # reads it off the request instead of serving an anonymous board
+            # behind a sign-in.
+            - name: AUTH_MODE
+              value: proxy
+            - name: AUTH_HEADER
+              value: {{ $auth.identityHeader | quote }}
+            {{- end }}
             {{- with .Values.app.extraEnv }}{{- toYaml . | nindent 12 }}{{- end }}
           # /healthz answers as soon as the process is up; /readyz additionally
           # checks the store, so it is the one that gates traffic.
@@ -155,6 +165,12 @@ spec:
             - --http-address=0.0.0.0:4180
             {{- end }}
             - --cookie-secure={{ .Values.auth.cookie.secure }}
+            {{- if .Values.auth.identityHeader }}
+            {{- /* Puts X-Forwarded-User and X-Forwarded-Email on the upstream
+                   request. It is the default, and the app now depends on it,
+                   so it is written down. */}}
+            - --pass-user-headers=true
+            {{- end }}
             - --reverse-proxy=true
             - --skip-provider-button=true
             - --silence-ping-logging=true

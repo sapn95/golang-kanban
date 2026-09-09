@@ -9,7 +9,10 @@
 storage: postgres
 
 image:
-  repository: ghcr.io/nicolashaas/golang-kanban
+  # The package this repository publishes. Upstream's own package,
+  # ghcr.io/nicolashaas/golang-kanban, stops at 1.0.1 and predates everything
+  # this chart configures.
+  repository: ghcr.io/sapn95/golang-kanban
   tag: ""          # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
@@ -109,15 +112,25 @@ externalDatabase:
 # the app and points at the proxy instead, so the board is only reachable through
 # a session the proxy issued; the app itself is then bound to the pod only.
 #
-# The app has no notion of users. This gates who gets in — every visitor who does
-# get in shares the same boards.
+# Everyone who gets in shares the same boards. What the sign-in decides is who
+# gets in, and who the board then says did the work.
 auth:
   enabled: false
 
   # entra | github | oidc
   provider: entra
 
-  image: quay.io/oauth2-proxy/oauth2-proxy:v7.13.0
+  image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.4
+
+  # The header oauth2-proxy puts the signed-in address in, which the app reads
+  # so that an assignee and a comment have a name on them (AUTH_MODE=proxy,
+  # AUTH_HEADER=this). Empty leaves the app anonymous behind the sign-in.
+  #
+  # A header is a claim by whatever wrote it, so this is only sound while the
+  # app's own port cannot be reached except through the proxy. With
+  # auth.enabled no Service points at the app, and networkPolicy.enabled shuts
+  # the pod's port to everything but the ingress; see docs/adr/0005.
+  identityHeader: X-Forwarded-Email
 
   # Where the provider sends the browser back. oauth2-proxy serves the callback
   # at <proxyPrefix>/callback, so this is your external URL plus /oauth2/callback.

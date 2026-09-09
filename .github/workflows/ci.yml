@@ -156,6 +156,25 @@ jobs:
           ok --set auth=null
           ok --set networkPolicy.enabled=true
           ok --set postgres.existingSecret=kanban-db
+          # Sign-in, configured the way the failures below say it has to be.
+          auth=(--set auth.enabled=true
+                --set auth.redirectURL=https://board.example.com/oauth2/callback
+                --set auth.clientID=id --set auth.clientSecret=secret
+                --set auth.cookie.secure=false)
+          ok "${auth[@]}"
+          # The sidecar establishes who the caller is; the app has to be told to
+          # read it, or the board is anonymous behind a sign-in.
+          rendered="$(helm template t deploy/helm/kanban "${auth[@]}")"
+          for expected in "name: AUTH_MODE" "value: proxy" "X-Forwarded-Email" "--pass-user-headers=true"; do
+            if ! grep -qF -- "$expected" <<<"$rendered"; then
+              echo "::error::auth.enabled renders without $expected"
+              exit 1
+            fi
+          done
+          if grep -qF -- "value: proxy" <<<"$(helm template t deploy/helm/kanban)"; then
+            echo "::error::AUTH_MODE=proxy is set without the sidecar that supplies the header"
+            exit 1
+          fi
           nope --set storage=sqlite
           nope --set storage=memory
           nope --set storage=postgres --set postgres.enabled=false
