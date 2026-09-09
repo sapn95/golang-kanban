@@ -12,7 +12,15 @@ import (
 	"sync"
 )
 
-//go:embed vendor app.js app.css logo.svg
+// tailwind.css is compiled from the classes the templates and app.js use; it is
+// committed, so building the binary needs nothing but Go.
+//
+//go:generate sh tailwind.sh
+
+// Only what is served: tailwind.sh, tailwind.config.js and tailwind.input.css
+// are the compile's inputs and have no business in the binary.
+//
+//go:embed vendor app.js app.css tailwind.css logo.svg
 var files embed.FS
 
 // FS is the embedded file tree, rooted at the assets directory.

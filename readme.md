@@ -4,7 +4,7 @@ A no-nonsense, lightweight Kanban board built with Golang and HTMX. I couldn’t
 ### Overview
 Backend: Go, standard library `net/http`, one static binary with everything embedded.
 
-Frontend: HTMX, Tailwind, SortableJS — vendored, nothing is loaded from a CDN, so it works air-gapped.
+Frontend: HTMX, Tailwind, SortableJS, vendored, so nothing is loaded from a CDN and it works air-gapped. Tailwind is compiled from the templates into a 38 kB stylesheet instead of working the classes out in the browser, which took 407 kB of JavaScript off every page load; see [docs/adr/0011](docs/adr/0011-tailwind-is-compiled.md).
 
 Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and is meant for one board on one machine; PostgreSQL is there when you want more than that. The SQLite driver is pure Go, so the binary stays static and cgo-free — the reasoning is in [docs/adr/0004](docs/adr/0004-sqlite-backend.md).
 
@@ -135,6 +135,13 @@ about it before the card exists.
 go build ./cmd/kanban
 go test ./...                       # memory and sqlite backends, no database needed
 KANBAN_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/kanban_test?sslmode=disable go test ./...
+```
+
+Adding a Tailwind class to a template or to `app.js` needs the stylesheet
+rebuilt, which fetches one pinned binary and no package manager:
+
+``` bash
+go generate ./assets/               # writes assets/tailwind.css; commit it
 ```
 
 #### Todo's
