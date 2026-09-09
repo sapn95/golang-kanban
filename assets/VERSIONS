@@ -1,12 +1,12 @@
 # Vendored front-end files. Update by replacing the file and this line.
 # name              version   licence   source
-htmx                2.0.4     0BSD      https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.4/htmx.min.js
-sortablejs          1.15.6    MIT       https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.6/Sortable.min.js
-tailwindcss (play)  3.4.17    MIT       https://cdn.tailwindcss.com/3.4.17   (runtime JIT build; interim until the Phase 2 decision)
-bootstrap-icons     1.10.5    MIT       https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.5/font/
-062719b100219061c8a11fff201d9a98f3794ab45bddf1c1f2d16c9ea440c279  bootstrap-icons/bootstrap-icons.min.css
-e209dda5c8235479f3166defc7750e1dbcd5a5c1808b7792fc2e6733768fb447  htmx/htmx.min.js
-6d0a831fc19b4bae851797ad3393157e861afb7862459c11226359b27e2c4337  sortablejs/Sortable.min.js
+htmx                2.0.10    0BSD      https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.10/htmx.min.js
+sortablejs          1.15.7    MIT       https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.7/Sortable.min.js
+tailwindcss (play)  3.4.17    MIT       https://cdn.tailwindcss.com/3.4.17   (runtime JIT build; last 3.x, and 4.x is a rewrite of the config, so it waits for the Phase 2 decision)
+bootstrap-icons     1.13.1    MIT       https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.13.1/font/
+a5d6387a32ca3baec4d02336b5b3edab50c9dd518355576a011ea3dd9c1d884e  bootstrap-icons/bootstrap-icons.min.css
+71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de  htmx/htmx.min.js
+bf4241bc73fef7f11c59a283a69fe8051cdd31c6d8ff5a2b9ba219e7831fcf76  sortablejs/Sortable.min.js
 176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15  tailwindcss/tailwind.js
-999550fafbfbc0e0474b3b5c945df287b079d2a23dc07dcc6240a7d2f18e081d  bootstrap-icons/fonts/bootstrap-icons.woff
-cfe45b981d1b91b173361a34cfce5f60893dbd1ac4af2c3ac11fc17552c5401f  bootstrap-icons/fonts/bootstrap-icons.woff2
+f55513b7b591cb84a3b87ff0e34ea24d4831d6fedc22e54b911ca64b5b544a15  bootstrap-icons/fonts/bootstrap-icons.woff
+6c75710364a1ca5604267716f6d28997b26319fdb078cf11e0b42ab66ff2ea61  bootstrap-icons/fonts/bootstrap-icons.woff2
