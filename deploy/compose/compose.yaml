@@ -1,0 +1,102 @@
+# Three ways to run the published image, one per profile. Nothing starts
+# without one, so `docker compose up` on its own does nothing here:
+#
+#   docker compose --profile sqlite up -d      one file on a volume, no database
+#   docker compose --profile postgres up -d    a database container as well
+#   docker compose --profile demo up           in memory, gone when it stops
+#
+# The compose.yml in the repository root is the developer's setup: it builds the
+# image from the working tree. This one runs a released tag.
+name: kanban
+
+# What the three have in common. The image is distroless and runs as uid 65532,
+# so /data has to be a named volume or a host directory that uid can write to;
+# Docker gives a fresh named volume the ownership the image has, a bind mount
+# keeps whatever the host says.
+x-kanban: &kanban
+  image: ghcr.io/sapn95/golang-kanban:${KANBAN_TAG:-2.0.0}
+  restart: unless-stopped
+  ports:
+    - "${KANBAN_PORT:-17808}:17808"
+  # The binary needs nothing outside /data, which is the same reason the Helm
+  # chart sets readOnlyRootFilesystem.
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # A file on a volume and nothing to install. One process, one machine.
+  kanban-sqlite:
+    <<: *kanban
+    profiles:
+      - sqlite
+    environment:
+      STORAGE: sqlite
+      SQLITE_PATH: /data/kanban.db
+      # Snapshots next to the database. They protect against a bad import or a
+      # column deleted by mistake, not against losing the volume: for that, copy
+      # them off the host or point BACKUP_S3_BUCKET at a bucket.
+      BACKUP_DIR: /data/snapshots
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-24h}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    volumes:
+      - kanban_data:/data
+
+  # PostgreSQL, for more than one process or a board you expect to grow.
+  kanban-postgres:
+    <<: *kanban
+    profiles:
+      - postgres
+    environment:
+      STORAGE: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: kanban
+      DB_PASS: ${POSTGRES_PASSWORD}
+      DB_NAME: kanban
+      BACKUP_DIR: /data/snapshots
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-24h}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+    volumes:
+      - kanban_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    profiles:
+      - postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kanban
+      # Set it in .env. Left empty, this container refuses to initialise and
+      # says so, which is the failure to have; compose cannot demand the
+      # variable only for this profile, since it interpolates the whole file
+      # whichever profile you asked for.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: kanban
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # kanban-postgres waits for this, so a first start does not spend its
+      # retries on a database that is still initialising.
+      test: ["CMD-SHELL", "pg_isready -U kanban -d kanban"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # A board to click through. Nothing is written anywhere.
+  kanban-demo:
+    <<: *kanban
+    profiles:
+      - demo
+    restart: "no"
+    environment:
+      STORAGE: memory
+
+volumes:
+  kanban_data:
+  postgres_data:

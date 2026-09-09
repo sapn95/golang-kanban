@@ -58,8 +58,21 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 ![Screenshot](docs/img/screenshot-v1.0.0.png "Screenshot")
 
 ### Using Docker Compose
-A sample docker-compose.yml is provided, just use `docker compose up --build`.
-This starts PostgreSQL and the board on http://localhost:17808.
+The [`docker-compose.yml`](docker-compose.yml) in the repository root builds the
+image from the working tree, which is what you want while changing the code:
+`docker compose up --build` starts PostgreSQL and the board on
+http://localhost:17808.
+
+To run a released image instead, [`deploy/compose`](deploy/compose) has three
+profiles: `sqlite` is a file on a volume with nothing to install, `postgres`
+brings a database container as well, and `demo` keeps the board in memory and
+throws it away on exit.
+
+``` bash
+cd deploy/compose
+cp .env.example .env
+docker compose --profile sqlite up -d
+```
 
 ### Using the Pre-built Docker Image
 The image is built for linux/amd64 and linux/arm64 with a provenance
@@ -74,6 +87,17 @@ docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golan
 # PostgreSQL
 docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.0.0
 ```
+
+### On Unraid
+[`deploy/unraid/kanban.xml`](deploy/unraid) is a template for the Docker tab.
+Paste its raw URL into the Template field, or copy the file to
+`/boot/config/plugins/dockerMan/templates-user/`. The form then comes up with the
+port, `/data` on appdata, SQLite and a daily snapshot already filled in.
+
+### In Kubernetes
+[`deploy/helm/kanban`](deploy/helm/kanban) is a chart with a read-only root
+filesystem, an optional PostgreSQL, a network policy, and an oauth2-proxy sidecar
+that puts Entra, GitHub or any OIDC provider in front of the board.
 
 ### Prerequisites
 With `STORAGE=sqlite` there are none: point `SQLITE_PATH` at a file in a writable directory (`/data` in the image) and the tables are created on first start. One process on one machine, and writes are serialised, which is plenty for a small team; see [docs/adr/0004](docs/adr/0004-sqlite-backend.md) for what that rules out.
@@ -129,7 +153,44 @@ AWS_SECRET_ACCESS_KEY=
 AWS_SESSION_TOKEN=         # only for temporary credentials
 ```
 
-`kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban version` prints the version; `kanban export` and `kanban import` are below. `/healthz` says the process is up, `/readyz` says the database answers, and `/version` says which build is answering — which is how you find out whether a deploy actually landed, without fetching a page and looking for markup only the new version renders.
+`kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban doctor` reports the configuration, below; `kanban version` prints the version; `kanban export` and `kanban import` are further down. `/healthz` says the process is up, `/readyz` says the database answers, and `/version` says which build is answering — which is how you find out whether a deploy actually landed, without fetching a page and looking for markup only the new version renders.
+
+### When it does not come up
+
+`kanban doctor` prints the configuration the process actually read, with the
+passwords masked, and then tries the things a deployment gets wrong: the store,
+the schema, the identity mode, the avatar pairs and the backup target. It writes
+nothing, so it is safe against a running deployment.
+
+``` bash
+docker exec kanban /kanban doctor      # there is no shell in the image
+```
+
+``` text
+settings
+  SERVER_PORT            17808
+  STORAGE                sqlite
+  DB_PASS                [set]
+  ...
+
+derived
+  listen address         :17808
+  store                  sqlite /data/kanban.db
+
+checks
+  ok    configuration  29 variables, all valid
+  ok    storage        sqlite /data/kanban.db answered in 4ms
+  ok    schema         readable, 1 board: board
+  ok    identity       proxy mode, reading X-Forwarded-Email; the port must not be reachable except through the proxy that sets it
+  --    avatars        AVATARS is unset: the board draws initials and makes no outbound request
+  ok    backup         dir /data/snapshots, every 24h0m0s, keeping 7, 1 snapshot there, newest kanban-20260909T161209Z.json (2h ago)
+```
+
+Every check runs whatever the ones before it found, so one report shows
+everything that is wrong. `AUTH_MODE=none` and `STORAGE=memory` are choices, not
+faults, so the exit code is 1 only when something failed: a store that will not
+open, a schema that is not there, an identity provider that cannot be reached, a
+backup target that refuses.
 
 ### The JSON API
 

@@ -5,6 +5,7 @@
 //	kanban migrate    apply pending schema migrations and exit
 //	kanban export     write a snapshot of every board as JSON
 //	kanban import     read a snapshot back in
+//	kanban doctor     print the configuration and check what it points at
 //	kanban version    print the version
 package main
 
@@ -50,12 +51,14 @@ func main() {
 }
 
 func usage(w io.Writer) {
-	_, _ = io.WriteString(w, `usage: kanban [serve|migrate|export|import|version|help]
+	_, _ = io.WriteString(w, `usage: kanban [serve|migrate|export|import|doctor|version|help]
   serve                     run the HTTP server (default)
   migrate                   apply pending schema migrations and exit
   export [-o file]          write a snapshot of every board to stdout or a file
   import [-replace] [file]  read a snapshot back in, from stdin or a file
                             -dry-run checks the file and writes nothing
+  doctor [-timeout 10s]     print the configuration and check the store, the
+                            identity provider and the backup target
   version                   print the version
 Configuration is read from the environment; see docs/architecture.md.
 `)
@@ -73,6 +76,11 @@ func run(ctx context.Context, args []string, getenv config.Lookup, stdout, stder
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0
+	case "doctor":
+		// Ahead of the configuration and the store on purpose: a configuration
+		// that does not validate is the thing doctor is there to print, and
+		// AUTO_MIGRATE must not turn a diagnostic into a write.
+		return doctorCmd(ctx, args[1:], getenv, stdout, stderr)
 	case "serve", "migrate", "export", "import":
 	default:
 		_, _ = fmt.Fprintf(stderr, "kanban: unknown command %q\n", cmd)
