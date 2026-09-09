@@ -38,7 +38,7 @@ type Config struct {
 	// a Postgres connection string and are read for that backend only;
 	// `STORAGE=memory` keeps the boards in the process and loses them on exit.
 	Storage     string `env:"STORAGE"`                   // postgres | sqlite | memory
-	DatabaseURL string `env:"DATABASE_URL" secret:"url"` // a full DSN; wins over the five below
+	DatabaseURL string `env:"DATABASE_URL" secret:"url"` // a full DSN; wins over every `DB_*` variable
 	DBUser      string `env:"DB_USER"`
 	DBPass      string `env:"DB_PASS" secret:"true"`
 	DBHost      string `env:"DB_HOST"`
