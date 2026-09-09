@@ -1,0 +1,13 @@
+/*! tailwindcss v3.4.17 | MIT | https://tailwindcss.com
+ *
+ * Generated file: assets/tailwind.css holds only the utilities the templates
+ * and app.js actually use. Do not edit it; add the class where it belongs and
+ * run `go generate ./assets/`. The compile is assets/tailwind.sh and the
+ * reasoning is in docs/adr/0011.
+ *
+ * The app's own rules stay in app.css, which the page loads after this file so
+ * that a rule of ours wins a tie against Tailwind's reset.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

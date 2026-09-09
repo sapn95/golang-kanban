@@ -1477,9 +1477,11 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 // secureHeaders sets the response headers that do not depend on the request.
 //
 // The CSP allows inline script and style because the page needs both today:
-// layout.html configures Tailwind in a <script> tag, six handlers are inline
-// onclick/onsubmit attributes, and Tailwind's browser build injects a <style>
-// element at runtime. Everything else is locked to this origin.
+// layout.html sets the theme in a <script> before the first paint and ten
+// handlers are inline onclick/onsubmit attributes, and a label's colour is a
+// style attribute, which no nonce covers. Compiling Tailwind (docs/adr/0011)
+// took away the third reason, its runtime <style> injection, and left these
+// two. Everything else is locked to this origin.
 func (s *Server) secureHeaders(next http.Handler) http.Handler {
 	const csp = "default-src 'self'; " +
 		"script-src 'self' 'unsafe-inline'; " +

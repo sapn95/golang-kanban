@@ -60,6 +60,26 @@ jobs:
           # worse blocks.
           SHELLCHECK_OPTS: --severity=warning
 
+  css:
+    name: css
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: compile tailwind
+        # The script pins the compiler's version and checks the digest of the
+        # binary it downloads; see docs/adr/0011.
+        run: sh assets/tailwind.sh
+      - name: the committed stylesheet is what the sources compile to
+        run: |
+          if ! git diff --exit-code -- assets/tailwind.css; then
+            echo "::error::assets/tailwind.css is stale. Run 'go generate ./assets/' and commit the result."
+            exit 1
+          fi
+          echo "assets/tailwind.css matches the classes the templates use"
+
   test:
     name: test
     runs-on: ubuntu-latest

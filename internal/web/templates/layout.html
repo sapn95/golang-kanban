@@ -17,9 +17,10 @@
       } catch (e) { /* private mode */ }
     })();
   </script>
+  <!-- Tailwind first, app.css second: both are ordinary stylesheets now, so a
+       rule of ours wins a tie against Tailwind's reset. -->
+  <link rel="stylesheet" href="{{asset "tailwind.css"}}">
   <link rel="stylesheet" href="{{asset "app.css"}}">
-  <script src="{{asset "vendor/tailwindcss/tailwind.js"}}"></script>
-  <script>tailwind.config = { darkMode: 'class' }</script>
   <link rel="stylesheet" href="{{asset "vendor/bootstrap-icons/bootstrap-icons.min.css"}}">
   <script src="{{asset "vendor/htmx/htmx.min.js"}}"></script>
   <script src="{{asset "vendor/sortablejs/Sortable.min.js"}}"></script>

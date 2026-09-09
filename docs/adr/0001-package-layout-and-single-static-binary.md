@@ -42,11 +42,15 @@ layer the two front-ends share, and a binary that runs the same everywhere.
 - The binary is relocatable and about 10 MB; `docker run` no longer needs
   the source tree or the templates directory in the image.
 - Contributors need Go 1.24 only. No Node, no build step for the front-end.
+  Changing a class now needs `go generate ./assets/`, which downloads one
+  pinned binary and no package manager; see
+  [0011](0011-tailwind-is-compiled.md).
 - The Tailwind question is forced into the open: it can be vendored as the
   Play CDN script (works offline, ~400 kB, runtime JIT, officially dev-only),
   compiled once with the standalone `tailwindcss` binary under `go generate`
   with the CSS committed, or replaced with Bootstrap as the roadmap assumed.
-  That decision is deferred to Phase 2 and listed in the roadmap's open
-  decisions; Phase 0 carries the current markup over unchanged.
+  That decision was deferred to Phase 2 and listed in the roadmap's open
+  decisions; Phase 0 carries the current markup over unchanged. Phase 2 took the
+  second option; see [0011](0011-tailwind-is-compiled.md).
 - The `/card/...` paths change. They are internal to the pages, so nothing
   outside the app depends on them.

@@ -8,6 +8,13 @@
 /kanban
 coverage.out
 
+# The CSS is compiled and committed, so the image needs neither the compiler
+# nor its inputs. See docs/adr/0011.
+/.tools/
+assets/tailwind.sh
+assets/tailwind.config.js
+assets/tailwind.input.css
+
 docs
 readme.md
 assets/Screenshot_v1.0.0.png

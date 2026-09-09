@@ -12,7 +12,9 @@ Numbers in brackets below point at them.
 
 - **Standard library only for the web layer.** `net/http` with Go 1.22 method
   patterns for routing, `html/template` for rendering, `log/slog` for logs. No
-  web framework, no ORM, no code generator that needs Node.
+  web framework, no ORM, no code generator that needs Node. The one build step
+  the front-end has is the Tailwind compile, and it is a single pinned binary
+  whose output is committed ([0011](adr/0011-tailwind-is-compiled.md)).
 - **One static binary.** Templates and vendored JS/CSS are embedded with
   `embed`; the binary runs from any working directory. `CGO_ENABLED=0` so the
   image can be `scratch`/distroless and the same binary works on any distro.
@@ -30,7 +32,7 @@ Numbers in brackets below point at them.
 ```text
 .
 ├── cmd/kanban/            main(): parses the subcommand, wires config → store → service → http
-├── assets/                vendored htmx, SortableJS, icons, CSS; package `assets` with embed.go
+├── assets/                vendored htmx, SortableJS, icons; compiled tailwind.css [0011]; embed.go
 ├── internal/
 │   ├── config/            Config struct, FromEnv(), Redacted() for `kanban doctor` later
 │   ├── model/             Board, Column, Card, Label, Subtask, ID — plain structs, no deps  [0002]
@@ -189,8 +191,9 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   `gcr.io/distroless/static-debian13:nonroot` with `VOLUME /data` for the
   SQLite file. Every backend is pure Go, so the build stays CGO-free
   ([0004](adr/0004-sqlite-backend.md)).
-- `ci.yml` has four jobs. `lint` runs gofmt, `go vet` and golangci-lint;
-  `workflows` runs actionlint; `test` runs `go test ./... -race
+- `ci.yml` has five jobs. `lint` runs gofmt, `go vet` and golangci-lint;
+  `workflows` runs actionlint; `css` recompiles `assets/tailwind.css` and fails
+  if it differs from what is committed; `test` runs `go test ./... -race
   -coverpkg=./...` against a Postgres service container and fails below 80%
   total coverage; `chart` lints the Helm chart and renders every values
   combination it claims to support, including the ones it has to refuse.
@@ -212,10 +215,10 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   migrated, not abandoned; see [0002](adr/0002-board-column-card-model.md) for
   exactly what happens to it.
 - The look of the board. Templates moved and got a layout file, but the markup
-  and the dark-mode toggle are carried over as they were. Tailwind is served as
-  the vendored Play build for now (`assets/VERSIONS`); whether to keep that,
-  compile once with the standalone CLI, or move to Bootstrap is an open
-  decision for the UX phase.
+  and the dark-mode toggle are carried over as they were. What did change is how
+  Tailwind gets there: it is compiled from those templates into
+  `assets/tailwind.css` instead of working the classes out in the browser
+  ([0011](adr/0011-tailwind-is-compiled.md)).
 - The port and the shape of the `docker run` one-liner. The image name in it
   does change: this fork builds its own package, `ghcr.io/sapn95/golang-kanban`,
   because upstream's stops at 1.0.1.

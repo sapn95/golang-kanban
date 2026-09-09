@@ -1,5 +1,9 @@
 # Build output
 /kanban
 
+# Downloaded build tools, verified by digest and re-fetched on demand:
+# the tailwindcss CLI that compiles assets/tailwind.css.
+/.tools/
+
 # Test output
 coverage.out

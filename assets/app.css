@@ -1,7 +1,9 @@
-/* The page's own ground, set on the root element in a real stylesheet rather
-   than by a Tailwind class on the body. Tailwind's browser build injects its
-   styles from JavaScript, so between the first paint and that injection the
-   window was white — which every navigation showed as a flash. */
+/* The page's own ground, set on the root element rather than by a Tailwind class
+   on the body, so the window is the right colour before any element is laid out.
+   It was written for the browser build, which injected its styles from
+   JavaScript and flashed white on every navigation until it had; with the
+   compiled stylesheet the flash is gone, and setting color-scheme here is still
+   what makes a form control and a scrollbar dark. */
 html { color-scheme: light; background-color: #f3f4f6; }
 html.dark { color-scheme: dark; background-color: #111827; }
 
@@ -63,9 +65,10 @@ html.dark { color-scheme: dark; background-color: #111827; }
 .sortable-ghost { opacity: 0.4; }
 
 /* Board layout.
-   Written as plain CSS rather than Tailwind arbitrary values because these
-   two rules decide whether the board is usable on a phone, and they should
-   not depend on what the Play CDN happens to generate at runtime. */
+   Written as plain CSS rather than Tailwind arbitrary values because these two
+   rules decide whether the board is usable on a phone, and a rule that matters
+   this much should be readable here rather than assembled from a dozen
+   classes. */
 .kanban-scroller {
   display: flex;
   gap: 1rem;
