@@ -184,11 +184,29 @@
       // A click inside an open panel is somebody using it.
       if (!e.target.closest('.quick-panel')) { closePanels(null); }
     });
-    // The due date opens on a double click, and the panel it opens holds an
-    // <input type="date">, so the calendar is the browser's own.
+    // A double click opens what it landed on: the due date opens a picker, and
+    // the card itself opens its edit form, because the pencil is a small target
+    // on a phone and the card is what the finger is already on.
+    //
+    // A button, a link, a field or an open panel is somebody using the card
+    // face, so those are left alone. The archive draws its own rows without a
+    // data-id and has no edit modal to swap into, which is why this asks for
+    // one rather than for any card.
     document.addEventListener('dblclick', function (e) {
       var trigger = e.target.closest('.dbl-toggle');
-      if (trigger) { openPanel(trigger); }
+      if (trigger) {
+        openPanel(trigger);
+        return;
+      }
+      var card = e.target.closest('[data-id]');
+      if (!card || typeof htmx === 'undefined') { return; }
+      if (e.target.closest('button, a, input, select, textarea, label, .quick-panel')) { return; }
+      // A double click selects the word under it, and that selection would sit
+      // behind the modal until the next click somewhere else.
+      var selection = window.getSelection();
+      if (selection) { selection.removeAllRanges(); }
+      htmx.ajax('GET', '/cards/' + card.dataset.id + '/edit',
+        { target: '#editCardModalContent', swap: 'innerHTML' });
     });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { closePanels(null); }

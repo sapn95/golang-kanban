@@ -14,8 +14,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   rename, reorder, set a limit, and choose where a deleted column's cards go.
 - Cards with description, due date, labels and a subtask checklist. The card
   face shows checklist progress, and grades a due date rather than only
-  marking it late. Double-clicking that date opens the browser's own calendar,
-  so a date moves without opening the card.
+  marking it late. A double click opens the card for editing, and a double
+  click on the date itself opens the browser's own calendar instead, so a date
+  moves without opening anything.
 - The description is markdown, rendered by the server: bold, italic, lists,
   quotes, headings, `code`, fenced blocks and links. It is a documented subset
   and no dependency, and a link is only a link if its scheme is one of four;
