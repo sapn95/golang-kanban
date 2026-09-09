@@ -36,6 +36,33 @@ reserves nine.
 {{- dir .Values.sqlite.path -}}
 {{- end -}}
 
+{{/*
+"-backups" needs eight characters, for the same reason kanban.postgresFullname
+reserves nine.
+*/}}
+{{- define "kanban.backupFullname" -}}
+{{- printf "%s-backups" (include "kanban.fullname" . | trunc 55 | trimSuffix "-") | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+The Secret the pod reads the bucket credentials from: the caller's when they
+brought one, otherwise the one this chart creates.
+*/}}
+{{- define "kanban.backupSecretName" -}}
+{{- ((.Values.backup | default dict).s3 | default dict).existingSecret | default (include "kanban.backupFullname" .) -}}
+{{- end -}}
+
+{{/*
+Whether the directory target needs a volume mounted for it. False means the
+operator has told the chart the path is already inside one, which is the
+storage=sqlite case.
+*/}}
+{{- define "kanban.backupMountsAVolume" -}}
+{{- $dir := ((.Values.backup | default dict).dir | default dict) -}}
+{{- $p := $dir.persistence | default dict -}}
+{{- if and $dir.enabled (or $p.enabled $p.existingClaim) -}}true{{- end -}}
+{{- end -}}
+
 {{- define "kanban.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{ include "kanban.selectorLabels" . }}
@@ -111,6 +138,82 @@ Fail early on a values combination that would deploy something broken.
 {{- include "kanban.validateSQLite" . -}}
 {{- include "kanban.validateDSNParts" . -}}
 {{- include "kanban.validateAuth" . -}}
+{{- include "kanban.validateBackup" . -}}
+{{- end -}}
+
+{{/*
+The backup schedule. Everything here is refused at template time because the
+alternative is a pod that serves the board perfectly and quietly takes no
+backups, which is the failure nobody notices until they need one.
+*/}}
+{{- define "kanban.validateBackup" -}}
+{{- $backup := .Values.backup | default dict -}}
+{{- $dir := $backup.dir | default dict -}}
+{{- $s3 := $backup.s3 | default dict -}}
+{{- $p := $dir.persistence | default dict -}}
+{{- if and $dir.enabled $s3.bucket -}}
+{{- fail "backup.dir.enabled and backup.s3.bucket: set one, not both. Two targets would need two retention policies and there is one backup.keep." -}}
+{{- end -}}
+{{- if or $dir.enabled $s3.bucket -}}
+{{- /* toString, and not `default ""`: `interval: 0` is an int, and `default`
+       reads any zero as absent. */ -}}
+{{- $iv := "" -}}
+{{- if not (kindIs "invalid" $backup.interval) -}}
+{{- $iv = toString $backup.interval -}}
+{{- end -}}
+{{- if not (regexMatch "^(0|([0-9]+(\\.[0-9]+)?(ms|s|m|h))+)$" $iv) -}}
+{{- fail (printf "backup.interval must be a Go duration such as 24h, 90m or 30s, got %q. Quote it: YAML reads 24h as a string but 30 as a number, and the app wants a unit." $iv) -}}
+{{- end -}}
+{{- if lt (int ($backup.keep | default 0)) 0 -}}
+{{- fail (printf "backup.keep must not be negative, got %v: 0 keeps every snapshot" $backup.keep) -}}
+{{- end -}}
+{{- end -}}
+{{- if $dir.enabled -}}
+{{- if not (isAbs ($dir.path | default "")) -}}
+{{- fail (printf "backup.dir.path must be an absolute path, got %q" ($dir.path | default "")) -}}
+{{- end -}}
+{{- if or (eq ($dir.path | default "") "/") (eq (clean ($dir.path | default "")) "/tmp") (hasPrefix "/tmp/" (clean ($dir.path | default ""))) -}}
+{{- fail (printf "backup.dir.path must not be / or under /tmp, got %q: /tmp is the emptyDir this pod loses on every restart" $dir.path) -}}
+{{- end -}}
+{{- if include "kanban.backupMountsAVolume" . -}}
+{{- if and (gt (int .Values.replicaCount) 1) (not $p.existingClaim) (eq ($p.accessMode | default "ReadWriteOnce") "ReadWriteOnce") -}}
+{{- fail "backup.dir with a ReadWriteOnce claim takes one pod: set replicaCount=1, or backup.dir.persistence.accessMode=ReadWriteMany, or use backup.s3" -}}
+{{- end -}}
+{{- else -}}
+{{- /* Nothing is mounted, so the path has to be inside a volume the pod already
+       has. readOnlyRootFilesystem is on, so anywhere else is a snapshot that
+       fails at write time, every time, in a log line nobody is reading.
+       The one such volume is the SQLite one, and `and` evaluates both sides, so
+       the directory is worked out without going through kanban.sqliteDir. */ -}}
+{{- $sqliteDir := "" -}}
+{{- if eq .Values.storage "sqlite" -}}
+{{- with (.Values.sqlite | default dict).path -}}{{- $sqliteDir = dir . -}}{{- end -}}
+{{- end -}}
+{{- if not (and $sqliteDir (hasPrefix (printf "%s/" $sqliteDir) (printf "%s/" (clean $dir.path)))) -}}
+{{- fail (printf "backup.dir.path %q has no volume: enable backup.dir.persistence, or name backup.dir.persistence.existingClaim.%s The root filesystem is read-only, so a path in neither is a snapshot that fails at write time." $dir.path (ternary (printf " Or put it under %s, which storage=sqlite already mounts." $sqliteDir) "" (ne $sqliteDir ""))) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $s3.bucket -}}
+{{- if not $s3.region -}}
+{{- fail "backup.s3.region is required with backup.s3.bucket: it goes into the request signature, and the S3-compatible servers that ignore it still want one" -}}
+{{- end -}}
+{{- if and (not $s3.existingSecret) (or (not $s3.accessKeyID) (not $s3.secretAccessKey)) -}}
+{{- fail "backup.s3.bucket needs backup.s3.accessKeyID and backup.s3.secretAccessKey, or backup.s3.existingSecret holding access-key-id and secret-access-key. The app signs its own requests and has no credential chain to fall back on." -}}
+{{- end -}}
+{{- if not (regexMatch "^([A-Za-z0-9._-]+/)*$" ($s3.prefix | default "")) -}}
+{{- fail (printf "backup.s3.prefix %q: use letters, digits, dots, dashes, underscores and slashes, do not start with a slash, and end with one" $s3.prefix) -}}
+{{- end -}}
+{{- if and $s3.endpoint (not (or (hasPrefix "http://" $s3.endpoint) (hasPrefix "https://" $s3.endpoint))) -}}
+{{- fail (printf "backup.s3.endpoint %q must be an http or https URL, host name alone is not enough" $s3.endpoint) -}}
+{{- end -}}
+{{- /* The policy allows DNS and the bundled Postgres. A bucket is neither, and
+       the chart cannot know its addresses, so the peer has to be named in
+       values rather than guessed here or quietly left out. */ -}}
+{{- if and (.Values.networkPolicy | default dict).enabled (not (.Values.networkPolicy | default dict).allowTo) -}}
+{{- fail "backup.s3.bucket with networkPolicy.enabled needs the bucket in networkPolicy.allowTo, or every snapshot fails on egress. For a bucket outside the cluster that is:\n  allowTo:\n    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]\n      ports: [{protocol: TCP, port: 443}]" -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

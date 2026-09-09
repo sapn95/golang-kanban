@@ -1,0 +1,42 @@
+{{- include "kanban.validate" . -}}
+{{- $backup := .Values.backup | default dict }}
+{{- $dir := $backup.dir | default dict }}
+{{- $s3 := $backup.s3 | default dict }}
+{{- $p := $dir.persistence | default dict }}
+{{- if and $dir.enabled $p.enabled (not $p.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kanban.backupFullname" . }}
+  labels: {{- include "kanban.labels" . | nindent 4 }}
+  annotations:
+    {{- /* Kept on uninstall, like the SQLite claim. A backup volume that is
+           deleted along with the release is a backup that is gone exactly when
+           the release it was protecting is. */}}
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [{{ $p.accessMode | default "ReadWriteOnce" | quote }}]
+  resources:
+    requests:
+      storage: {{ $p.size | default "1Gi" }}
+  {{- with $p.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- if and $s3.bucket (not $s3.existingSecret) }}
+{{- if and $dir.enabled $p.enabled (not $p.existingClaim) }}
+---
+{{- end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "kanban.backupFullname" . }}
+  labels: {{- include "kanban.labels" . | nindent 4 }}
+  {{- /* No resource-policy: keep here. Both keys came from values, so the copy
+         in the release is not the only one, and a key left behind after an
+         uninstall is a credential nobody is watching. */}}
+type: Opaque
+stringData:
+  access-key-id: {{ $s3.accessKeyID | quote }}
+  secret-access-key: {{ $s3.secretAccessKey | quote }}
+{{- end }}

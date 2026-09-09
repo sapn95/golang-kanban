@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the effective configuration of one kanban process.
@@ -37,6 +38,23 @@ type Config struct {
 	// AVATARS: who has a picture, as address=github-login pairs. Empty means
 	// the board draws initials and makes no outbound request.
 	Avatars map[string]string
+
+	// BACKUP_*: where the scheduler puts snapshots and how often. Neither a
+	// directory nor a bucket means no schedule, and `kanban export` is then the
+	// only way a snapshot gets taken.
+	BackupInterval   time.Duration // BACKUP_INTERVAL, default 24h; 0 disables the schedule
+	BackupKeep       int           // BACKUP_KEEP, default 7; 0 keeps every snapshot
+	BackupDir        string        // BACKUP_DIR, a directory on a volume
+	BackupS3Bucket   string        // BACKUP_S3_BUCKET
+	BackupS3Prefix   string        // BACKUP_S3_PREFIX, normalised to end in /
+	BackupS3Region   string        // BACKUP_S3_REGION, or AWS_REGION
+	BackupS3Endpoint string        // BACKUP_S3_ENDPOINT, empty for AWS; anything else is addressed path-style
+
+	// The usual AWS names, so a deployment that already injects credentials for
+	// something else does not need a second set under our own names.
+	AWSAccessKeyID     string // AWS_ACCESS_KEY_ID
+	AWSSecretAccessKey string // AWS_SECRET_ACCESS_KEY
+	AWSSessionToken    string // AWS_SESSION_TOKEN, for temporary credentials
 
 	AutoMigrate bool   // AUTO_MIGRATE, default true
 	LogLevel    string // LOG_LEVEL: debug | info | warn | error
@@ -96,12 +114,35 @@ func FromEnv(get Lookup) (Config, error) {
 		AccessAudience:   env("ACCESS_AUD", ""),
 		LogLevel:         strings.ToLower(env("LOG_LEVEL", "info")),
 		LogFormat:        strings.ToLower(env("LOG_FORMAT", "text")),
+
+		BackupDir:          env("BACKUP_DIR", ""),
+		BackupS3Bucket:     env("BACKUP_S3_BUCKET", ""),
+		BackupS3Prefix:     env("BACKUP_S3_PREFIX", ""),
+		BackupS3Region:     env("BACKUP_S3_REGION", env("AWS_REGION", "")),
+		BackupS3Endpoint:   strings.TrimSuffix(env("BACKUP_S3_ENDPOINT", ""), "/"),
+		AWSAccessKeyID:     env("AWS_ACCESS_KEY_ID", ""),
+		AWSSecretAccessKey: env("AWS_SECRET_ACCESS_KEY", ""),
+		AWSSessionToken:    env("AWS_SESSION_TOKEN", ""),
 	}
 	auto, err := strconv.ParseBool(env("AUTO_MIGRATE", "true"))
 	if err != nil {
 		return c, fmt.Errorf("AUTO_MIGRATE: %w", err)
 	}
 	c.AutoMigrate = auto
+	interval, err := time.ParseDuration(env("BACKUP_INTERVAL", "24h"))
+	if err != nil {
+		return c, fmt.Errorf("BACKUP_INTERVAL: %w (a number needs a unit, as in 24h or 30m)", err)
+	}
+	c.BackupInterval = interval
+	keep, err := strconv.Atoi(env("BACKUP_KEEP", "7"))
+	if err != nil {
+		return c, fmt.Errorf("BACKUP_KEEP: %w", err)
+	}
+	c.BackupKeep = keep
+	// A prefix names a folder, and every caller of it joins with no separator.
+	if c.BackupS3Prefix != "" && !strings.HasSuffix(c.BackupS3Prefix, "/") {
+		c.BackupS3Prefix += "/"
+	}
 	avatars, err := parseAvatars(env("AVATARS", ""))
 	if err != nil {
 		return c, err
@@ -200,7 +241,76 @@ func (c Config) Validate() error {
 	} else if _, _, err := net.SplitHostPort(c.ListenAddr); err != nil {
 		return fmt.Errorf("LISTEN_ADDR: %w", err)
 	}
+	return c.validateBackup()
+}
+
+// minBackupInterval is the shortest schedule that is not a mistake. Every
+// snapshot reads every board, so a minute is already generous.
+const minBackupInterval = time.Minute
+
+// BackupScheduled reports whether serve should run the snapshot schedule: a
+// target and an interval. A target with BACKUP_INTERVAL=0 is a schedule that
+// has been turned off without taking the configuration apart.
+func (c Config) BackupScheduled() bool {
+	return c.BackupInterval > 0 && (c.BackupDir != "" || c.BackupS3Bucket != "")
+}
+
+func (c Config) validateBackup() error {
+	if c.BackupDir != "" && c.BackupS3Bucket != "" {
+		return fmt.Errorf("BACKUP_DIR and BACKUP_S3_BUCKET: set one, not both; two targets would need two retention policies and there is one BACKUP_KEEP")
+	}
+	if c.BackupKeep < 0 {
+		return fmt.Errorf("BACKUP_KEEP: %d is negative; 0 keeps every snapshot", c.BackupKeep)
+	}
+	if c.BackupInterval < 0 {
+		return fmt.Errorf("BACKUP_INTERVAL: %s is negative; 0 disables the schedule", c.BackupInterval)
+	}
+	if c.BackupInterval > 0 && c.BackupInterval < minBackupInterval {
+		return fmt.Errorf("BACKUP_INTERVAL: %s is shorter than %s", c.BackupInterval, minBackupInterval)
+	}
+	if c.BackupS3Bucket == "" {
+		return nil
+	}
+	// Checked whether or not the schedule is on: a bucket named with no way to
+	// reach it is a mistake either way, and it is cheaper to find here than at
+	// midnight.
+	if c.BackupS3Region == "" {
+		return fmt.Errorf("BACKUP_S3_REGION: required with BACKUP_S3_BUCKET; it is part of the request signature, and S3-compatible servers that ignore it still want one")
+	}
+	if c.AWSAccessKeyID == "" || c.AWSSecretAccessKey == "" {
+		return fmt.Errorf("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY: required with BACKUP_S3_BUCKET")
+	}
+	if !isSafeKeyPrefix(c.BackupS3Prefix) {
+		return fmt.Errorf("BACKUP_S3_PREFIX: %q; use letters, digits, dots, dashes, underscores and slashes, and do not start with one", c.BackupS3Prefix)
+	}
+	if c.BackupS3Endpoint != "" {
+		u, err := url.Parse(c.BackupS3Endpoint)
+		if err != nil {
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: %w", err)
+		}
+		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q is not an http or https URL", c.BackupS3Endpoint)
+		}
+	}
 	return nil
+}
+
+// isSafeKeyPrefix keeps the prefix to characters that need no escaping in a
+// signed request, so the canonical form of a URL and the URL that is sent are
+// the same string.
+func isSafeKeyPrefix(prefix string) bool {
+	if strings.HasPrefix(prefix, "/") || strings.Contains(prefix, "//") || strings.Contains(prefix, "..") {
+		return false
+	}
+	for _, r := range prefix {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.', r == '/':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Addr is the address the HTTP server listens on.

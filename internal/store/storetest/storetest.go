@@ -739,6 +739,25 @@ func testArchive(t *testing.T, s store.Store) {
 	if err := s.SetCardArchived(ctx, model.ID("nope"), now()); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("archiving an unknown card = %v, want ErrNotFound", err)
 	}
+
+	// CreateCard puts a card on the board whatever ArchivedAt says, because
+	// SetCardArchived is the one way off it. Restoring a backup leans on that:
+	// it creates the card and then archives it, and it has to mean the same
+	// thing on every backend.
+	born := &model.Card{
+		ID: newID("k"), BoardID: b.ID, ColumnID: b.Columns[0].ID, Title: "born archived",
+		ArchivedAt: now(), CreatedAt: now(), UpdatedAt: now(),
+	}
+	if err := s.CreateCard(ctx, born); err != nil {
+		t.Fatalf("CreateCard with ArchivedAt set: %v", err)
+	}
+	got, err = s.GetCard(ctx, born.ID)
+	if err != nil {
+		t.Fatalf("GetCard: %v", err)
+	}
+	if got.Archived() {
+		t.Error("CreateCard honoured ArchivedAt; it should leave archiving to SetCardArchived")
+	}
 }
 
 func testLayout(t *testing.T, s store.Store) {

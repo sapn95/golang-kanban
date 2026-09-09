@@ -54,8 +54,9 @@ helm install kanban ./deploy/helm/kanban \
 
 Set `ingress.enabled=true` and fill in `ingress.hosts` for anything permanent.
 
-**There is no authentication in this release.** Anyone who can reach the
-service can read and change every board. Keep it on a network you trust.
+**With `auth.enabled=false` there is no authentication at all.** Anyone who can
+reach the service can read and change every board, so keep it on a network you
+trust or turn on the sign-in below.
 
 ## Sign-in, and TLS with it
 
@@ -153,9 +154,10 @@ is the board. Removing it is a separate, deliberate step:
 kubectl delete pvc -l app.kubernetes.io/instance=<release>
 ```
 
-Nothing in this chart takes a backup, and there is no `pg_dump` to run. A backup
-is a copy of the directory (the database file and its `-wal` sibling) taken
-while nothing writes to it, which with one replica means scaling to zero first.
+There is no `pg_dump` to run against a file. Copying the directory (the database
+and its `-wal` sibling) works only while nothing writes to it, which with one
+replica means scaling to zero first. The snapshots below need none of that and
+are the answer here.
 
 ## The bundled Postgres
 
@@ -190,6 +192,98 @@ Two limits worth knowing before you rely on the generated password:
   `postgres.password` on a release whose volume already exists rolls the app
   onto a credential the database will reject. Change it with `ALTER USER` in the
   database first, or start from an empty volume.
+
+## Backups
+
+The app writes its own snapshots, so there is no sidecar and no CronJob, and the
+same file comes out of every backend: one JSON document holding every board,
+which `kanban import` reads back into a different deployment or a different
+storage backend. The format and what it leaves out is
+[`docs/adr/0012`](../../../docs/adr/0012-snapshots-are-the-portable-format.md).
+
+Configuring a target is what starts the schedule. There are two, and the chart
+refuses both at once because retention is one number, `backup.keep`:
+
+```sh
+# A volume of its own, mounted at backup.dir.path
+helm upgrade kanban ./deploy/helm/kanban --set backup.dir.enabled=true
+
+# A bucket, or anything speaking enough of the protocol: MinIO, Garage, Ceph, B2
+helm upgrade kanban ./deploy/helm/kanban \
+  --set backup.s3.bucket=kanban-snapshots \
+  --set backup.s3.region=eu-central-2 \
+  --set backup.s3.existingSecret=kanban-backup
+```
+
+Snapshots are named `kanban-<timestamp>.json`, the newest `backup.keep` are kept,
+and the pruning happens after a successful write. `backup.interval` is a Go
+duration, so quote it in a values file: YAML reads `24h` as a string but `30` as
+a number, and the app wants the unit. `backup.interval: 0` leaves the target
+configured and takes no snapshot until something else asks for one.
+
+### The directory target
+
+`backup.dir.persistence.enabled` claims a volume of its own, which is the default
+because a snapshot on the volume it is a copy of survives a bad import and
+nothing else. `backup.dir.persistence.existingClaim` puts them on an NFS or
+`ReadWriteMany` claim instead, on hardware the database is not on.
+
+`readOnlyRootFilesystem` is on, so a path with no volume under it is a snapshot
+that fails at write time, every time, in a log line nobody reads. The chart
+refuses that combination: with `backup.dir.persistence.enabled=false` and no
+existing claim, the path has to sit inside a volume the pod already has, which
+means a directory under `sqlite.path`'s and `storage: sqlite`:
+
+```sh
+helm upgrade kanban ./deploy/helm/kanban \
+  --set storage=sqlite --set postgres.enabled=false \
+  --set backup.dir.enabled=true \
+  --set backup.dir.persistence.enabled=false \
+  --set backup.dir.path=/data/snapshots
+```
+
+The claim the chart creates carries `helm.sh/resource-policy: keep`, like the
+other two. A backup volume deleted with the release is gone exactly when the
+release it was protecting is.
+
+### The bucket target
+
+The app signs its own requests, in about a hundred lines rather than through the
+AWS SDK, and the cost of that is the credential chain: no `~/.aws`, no instance
+metadata, no IRSA, no `AssumeRole`. So a bucket needs a key and a secret, and it
+needs `backup.s3.region`, which goes into the signature even where the server
+ignores it.
+
+`backup.s3.existingSecret` names a Secret holding `access-key-id` and
+`secret-access-key`. Without one the chart creates a Secret from
+`backup.s3.accessKeyID` and `backup.s3.secretAccessKey`, which is the shorter
+path for a `helm install` typed by hand and the wrong one for a GitOps flow that
+commits rendered output. That Secret is not kept on uninstall: both values came
+from somewhere else, so the copy in the release is not the only one, and a key
+left behind is a credential nobody is watching.
+
+`backup.s3.endpoint` points the same code at a self-hosted server, addressed
+path-style. `backup.s3.prefix` ends in a slash and lets one bucket hold several
+deployments. Temporary credentials work, but nothing in this chart refreshes
+one, so `AWS_SESSION_TOKEN` goes in `app.extraEnv` beside whatever does.
+
+With `networkPolicy.enabled` the pod may reach DNS and the bundled Postgres and
+nothing else, so a bucket outside the cluster has to be named in
+`networkPolicy.allowTo` or every snapshot fails on egress. The chart refuses the
+combination rather than punching that hole itself, because how wide it is worth
+opening is not the chart's call:
+
+```yaml
+networkPolicy:
+  enabled: true
+  allowTo:
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{protocol: TCP, port: 443}]
+```
+
+A snapshot is every card, every comment and every assignee's address in plain
+text. The directory target writes mode `0600`; a bucket is as private as its
+policy.
 
 ## Values
 

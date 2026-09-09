@@ -3,6 +3,8 @@
 //
 //	kanban [serve]    run the HTTP server
 //	kanban migrate    apply pending schema migrations and exit
+//	kanban export     write a snapshot of every board as JSON
+//	kanban import     read a snapshot back in
 //	kanban version    print the version
 package main
 
@@ -48,10 +50,13 @@ func main() {
 }
 
 func usage(w io.Writer) {
-	_, _ = io.WriteString(w, `usage: kanban [serve|migrate|version|help]
-  serve     run the HTTP server (default)
-  migrate   apply pending schema migrations and exit
-  version   print the version
+	_, _ = io.WriteString(w, `usage: kanban [serve|migrate|export|import|version|help]
+  serve                     run the HTTP server (default)
+  migrate                   apply pending schema migrations and exit
+  export [-o file]          write a snapshot of every board to stdout or a file
+  import [-replace] [file]  read a snapshot back in, from stdin or a file
+                            -dry-run checks the file and writes nothing
+  version                   print the version
 Configuration is read from the environment; see docs/architecture.md.
 `)
 }
@@ -68,7 +73,7 @@ func run(ctx context.Context, args []string, getenv config.Lookup, stdout, stder
 	case "help", "-h", "--help":
 		usage(stdout)
 		return 0
-	case "serve", "migrate":
+	case "serve", "migrate", "export", "import":
 	default:
 		_, _ = fmt.Fprintf(stderr, "kanban: unknown command %q\n", cmd)
 		usage(stderr)
@@ -96,8 +101,13 @@ func run(ctx context.Context, args []string, getenv config.Lookup, stdout, stder
 		}
 		log.Info("schema up to date", "storage", cfg.Storage)
 	}
-	if cmd == "migrate" {
+	switch cmd {
+	case "migrate":
 		return 0
+	case "export":
+		return exportCmd(ctx, st, args[1:], stdout, stderr)
+	case "import":
+		return importCmd(ctx, st, args[1:], stdout, stderr)
 	}
 	return serve(ctx, cfg, st, log)
 }
@@ -122,6 +132,13 @@ func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Log
 		return 1
 	}
 	log.Info("boards ready", "count", len(boards))
+
+	waitForBackups, err := startBackups(ctx, cfg, st, log)
+	if err != nil {
+		log.Error("backup target", "err", err)
+		return 1
+	}
+	defer waitForBackups()
 
 	// One handler tree: the pages, with the JSON API mounted under /api/v1/ and
 	// wrapped in the same middleware, so both read identity from the same place.

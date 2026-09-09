@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 func lookup(m map[string]string) Lookup {
@@ -228,6 +229,174 @@ func TestAuthMode(t *testing.T) {
 			}
 			if tt.check != nil {
 				tt.check(t, c)
+			}
+		})
+	}
+}
+
+func TestBackupDefaults(t *testing.T) {
+	c, err := FromEnv(lookup(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.BackupInterval != 24*time.Hour || c.BackupKeep != 7 {
+		t.Errorf("interval = %s, keep = %d", c.BackupInterval, c.BackupKeep)
+	}
+	// A default interval with nowhere to put a snapshot is not a schedule.
+	if c.BackupScheduled() {
+		t.Error("BackupScheduled with no target")
+	}
+}
+
+func TestBackupTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		env   map[string]string
+		check func(t *testing.T, c Config)
+	}{
+		{
+			name: "a directory is a schedule",
+			env:  map[string]string{"BACKUP_DIR": "/data/snapshots", "BACKUP_INTERVAL": "6h", "BACKUP_KEEP": "3"},
+			check: func(t *testing.T, c Config) {
+				if !c.BackupScheduled() || c.BackupInterval != 6*time.Hour || c.BackupKeep != 3 {
+					t.Errorf("config = %+v", c)
+				}
+			},
+		},
+		{
+			// The way to turn the schedule off without taking the target out of
+			// the deployment, so `kanban export` still knows where to write.
+			name: "interval 0 is no schedule",
+			env:  map[string]string{"BACKUP_DIR": "/data/snapshots", "BACKUP_INTERVAL": "0"},
+			check: func(t *testing.T, c Config) {
+				if c.BackupScheduled() {
+					t.Error("BackupScheduled with BACKUP_INTERVAL=0")
+				}
+			},
+		},
+		{
+			name: "keep 0 keeps every snapshot",
+			env:  map[string]string{"BACKUP_DIR": "/data/snapshots", "BACKUP_KEEP": "0"},
+			check: func(t *testing.T, c Config) {
+				if c.BackupKeep != 0 || !c.BackupScheduled() {
+					t.Errorf("config = %+v", c)
+				}
+			},
+		},
+		{
+			name: "a bucket takes the usual AWS names",
+			env: map[string]string{
+				"BACKUP_S3_BUCKET": "kanban-backups", "AWS_REGION": "eu-central-2",
+				"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "secret",
+				"AWS_SESSION_TOKEN": "token",
+			},
+			check: func(t *testing.T, c Config) {
+				if c.BackupS3Region != "eu-central-2" || c.AWSSessionToken != "token" || !c.BackupScheduled() {
+					t.Errorf("config = %+v", c)
+				}
+			},
+		},
+		{
+			name: "BACKUP_S3_REGION wins over AWS_REGION",
+			env: map[string]string{
+				"BACKUP_S3_BUCKET": "b", "AWS_REGION": "us-east-1", "BACKUP_S3_REGION": "eu-central-2",
+				"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "secret",
+			},
+			check: func(t *testing.T, c Config) {
+				if c.BackupS3Region != "eu-central-2" {
+					t.Errorf("region = %q", c.BackupS3Region)
+				}
+			},
+		},
+		{
+			// A prefix names a folder and every caller joins it with no
+			// separator, so the slash is added once here rather than guessed at
+			// four call sites.
+			name: "a prefix ends in a slash",
+			env: map[string]string{
+				"BACKUP_S3_BUCKET": "b", "BACKUP_S3_PREFIX": "pi", "BACKUP_S3_REGION": "eu-central-2",
+				"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "secret",
+			},
+			check: func(t *testing.T, c Config) {
+				if c.BackupS3Prefix != "pi/" {
+					t.Errorf("prefix = %q", c.BackupS3Prefix)
+				}
+			},
+		},
+		{
+			name: "an endpoint keeps no trailing slash",
+			env: map[string]string{
+				"BACKUP_S3_BUCKET": "b", "BACKUP_S3_ENDPOINT": "https://minio.example.com:9000/",
+				"BACKUP_S3_REGION":  "eu-central-2",
+				"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "secret",
+			},
+			check: func(t *testing.T, c Config) {
+				if c.BackupS3Endpoint != "https://minio.example.com:9000" {
+					t.Errorf("endpoint = %q", c.BackupS3Endpoint)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := FromEnv(lookup(tc.env))
+			if err != nil {
+				t.Fatalf("FromEnv: %v", err)
+			}
+			tc.check(t, c)
+		})
+	}
+}
+
+func TestBackupRefusesWhatCannotWork(t *testing.T) {
+	s3 := func(kv map[string]string) map[string]string {
+		m := map[string]string{
+			"BACKUP_S3_BUCKET": "kanban-backups", "BACKUP_S3_REGION": "eu-central-2",
+			"AWS_ACCESS_KEY_ID": "AKID", "AWS_SECRET_ACCESS_KEY": "secret",
+		}
+		for k, v := range kv {
+			if v == "" {
+				delete(m, k)
+				continue
+			}
+			m[k] = v
+		}
+		return m
+	}
+	for _, tc := range []struct {
+		name, want string
+		env        map[string]string
+	}{
+		{"an interval with no unit", "BACKUP_INTERVAL", map[string]string{"BACKUP_INTERVAL": "24"}},
+		{"an interval that is not a duration", "BACKUP_INTERVAL", map[string]string{"BACKUP_INTERVAL": "daily"}},
+		{"a negative interval", "is negative", map[string]string{"BACKUP_INTERVAL": "-1h"}},
+		{"an interval under a minute", "shorter than", map[string]string{"BACKUP_INTERVAL": "30s"}},
+		{"a keep that is not a number", "BACKUP_KEEP", map[string]string{"BACKUP_KEEP": "a few"}},
+		{"a negative keep", "is negative", map[string]string{"BACKUP_KEEP": "-1"}},
+		{
+			// Two targets would need two retention policies, and there is one
+			// BACKUP_KEEP.
+			"two targets", "set one, not both",
+			s3(map[string]string{"BACKUP_DIR": "/data/snapshots"}),
+		},
+		{"a bucket with no region", "BACKUP_S3_REGION", s3(map[string]string{"BACKUP_S3_REGION": ""})},
+		{"a bucket with no key", "AWS_ACCESS_KEY_ID", s3(map[string]string{"AWS_ACCESS_KEY_ID": ""})},
+		{"a bucket with no secret", "AWS_SECRET_ACCESS_KEY", s3(map[string]string{"AWS_SECRET_ACCESS_KEY": ""})},
+		// A prefix goes into a signed URL, so it stays to characters that need
+		// no escaping and cannot climb out of the folder.
+		{"a prefix that starts at the root", "BACKUP_S3_PREFIX", s3(map[string]string{"BACKUP_S3_PREFIX": "/pi"})},
+		{"a prefix with an empty segment", "BACKUP_S3_PREFIX", s3(map[string]string{"BACKUP_S3_PREFIX": "pi//x"})},
+		{"a prefix that climbs", "BACKUP_S3_PREFIX", s3(map[string]string{"BACKUP_S3_PREFIX": "pi/../x"})},
+		{"a prefix with a space", "BACKUP_S3_PREFIX", s3(map[string]string{"BACKUP_S3_PREFIX": "my snapshots"})},
+		{"an endpoint that is a host name", "not an http or https URL", s3(map[string]string{"BACKUP_S3_ENDPOINT": "minio.example.com"})},
+		{"an endpoint with no host", "not an http or https URL", s3(map[string]string{"BACKUP_S3_ENDPOINT": "https://"})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := FromEnv(lookup(tc.env))
+			if err == nil {
+				t.Fatalf("accepted %v", tc.env)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want it to mention %q", err, tc.want)
 			}
 		})
 	}

@@ -45,29 +45,37 @@ Numbers in brackets below point at them.
 │   ├── web/               HTMX handlers, embedded templates/, view models, markdown  [0010]
 │   ├── api/               JSON handlers over the same service, under /api/v1  [0009]
 │   ├── identity/          identity middleware: none | proxy | access          [0005]
-│   └── backup/            (Phase 5) Export/Import snapshot, S3 scheduler
+│   └── backup/            snapshot Export/Import, directory and S3 targets, schedule [0012]
 ├── docs/                  plain markdown, ADRs under docs/adr/
 └── deploy/                helm/ today; compose profiles and unraid in Phase 6
 ```
 
-Everything above exists today except `backup/`, which is listed so its place is
-agreed now; empty directories are not committed.
+Everything above exists today; empty directories are not committed.
 
 ## Dependency direction
 
 ```text
 cmd/kanban ──► web ──► service ──► store (interface) ◄── store/postgres
-            └► api ─┘      │                          ◄── store/memory
-                           ▼                          ◄── store/sqlite
-                         model  ◄──────────────────────── store/mongo    (Phase 1)
-                                                      ◄── store/s3       (Phase 1)
+            ├► api ─┘      │         ▲                ◄── store/memory
+            └► backup ───────────────┘                ◄── store/sqlite
+                           ▼
+                         model
 ```
 
 - `model` imports nothing from this module. `store` imports `model`. Backends
   import `store` and `model`. `service` imports `store` and `model`. `web` and
   `api` import `service` and `model`, never a backend.
+- `backup` is the one package that goes to `store` instead of to `service`: a
+  snapshot is the rows as they are, and a restore has to write a card that
+  today's validation rules would refuse. It is written once for every backend
+  for the same reason ([0012](adr/0012-snapshots-are-the-portable-format.md)).
 - Only `cmd/kanban` knows which backend is in use. It is the only place that
-  imports `store/postgres`, `store/sqlite`, and so on.
+  imports `store/postgres`, `store/sqlite`, and so on. The same holds for the
+  backup target: `cmd/kanban` builds the directory or the bucket, and `backup`
+  only knows the `Target` interface.
+- There is no `store/mongo` and no `store/s3`. A bucket cannot give the
+  interface a transaction or a unique slug, so S3 is where snapshots go rather
+  than where boards live; 0012 has the whole argument.
 - Handlers do not run SQL and do not contain business rules. They parse the
   request, call one service method, and render the result. The JSON API calls
   the same methods; that is what stops the two front-ends from drifting apart.
@@ -130,13 +138,23 @@ kanban                 same as `kanban serve`
 kanban serve           run the HTTP server
 kanban migrate         apply pending migrations and exit
 kanban version         print version, commit, Go version
-kanban export|import   (Phase 5)
+kanban export          write a snapshot of every board to stdout or to -o file
+kanban import          read one back: -replace overwrites, -dry-run only checks
 kanban doctor          (Phase 6)
 ```
 
 Subcommands use `flag` and a `switch`; no CLI library.
 
-## Configuration (Phase 0)
+`export` and `import` speak one format across all three backends, which is what
+makes them the way to move a board between them; the document and what it leaves
+out is [0012](adr/0012-snapshots-are-the-portable-format.md). `serve` runs the
+same export on a timer when a target is configured, writes it to a directory or
+an S3 bucket, and deletes the ones past `BACKUP_KEEP`. The schedule lives in the
+serving process because these deployments are one container, and an operator who
+would rather drive it from outside sets `BACKUP_INTERVAL=0` and runs `kanban
+export` on their own schedule.
+
+## Configuration
 
 | Variable        | Default     | Notes                                                      |
 |-----------------|-------------|------------------------------------------------------------|
@@ -150,10 +168,26 @@ Subcommands use `flag` and a `switch`; no CLI library.
 | `AUTO_MIGRATE`  | `true`      | run migrations on `serve` start; `false` to require `kanban migrate` |
 | `LOG_LEVEL`     | `info`      | `debug` `info` `warn` `error`                              |
 | `LOG_FORMAT`    | `text`      | `text` or `json`                                           |
+| `AUTH_MODE`     | `none`      | `none`, `proxy` or `access`; the three are not interchangeable ([0005](adr/0005-request-identity.md)) |
+| `AUTH_HEADER`   | `X-Forwarded-Email` | `AUTH_MODE=proxy` only                             |
+| `ACCESS_TEAM_DOMAIN` `ACCESS_AUD` | *(unset)* | `AUTH_MODE=access` only; both required, the issuer and the certs URL are derived |
+| `AVATARS`       | *(unset)*   | `address=github-login` pairs; unset draws initials and makes no outbound request ([0008](adr/0008-avatars-are-proxied.md)) |
+| `BACKUP_INTERVAL` | `24h`     | gap between snapshots; `0` turns the schedule off, under a minute is refused |
+| `BACKUP_KEEP`   | `7`         | snapshots the target holds; `0` keeps every one            |
+| `BACKUP_DIR`    | *(unset)*   | a directory to write snapshots to; a target is what turns the schedule on |
+| `BACKUP_S3_BUCKET` | *(unset)* | the other target; set one of the two, not both             |
+| `BACKUP_S3_PREFIX` | *(unset)* | key prefix, so one bucket can hold several deployments     |
+| `BACKUP_S3_REGION` | `$AWS_REGION` | required with a bucket; it is part of the signature     |
+| `BACKUP_S3_ENDPOINT` | *(unset)* | empty for AWS; anything else is an S3-compatible server addressed path-style |
+| `AWS_ACCESS_KEY_ID` `AWS_SECRET_ACCESS_KEY` | *(unset)* | required with a bucket; there is no credential chain ([0012](adr/0012-snapshots-are-the-portable-format.md)) |
+| `AWS_SESSION_TOKEN` | *(unset)* | for temporary credentials somebody else refreshes         |
 
-`config.FromEnv()` is the only place that reads the environment. The reference
-table in `docs/configuration.md` is generated from the struct tags by
-`go generate` (Phase 7), so the table above is the hand-written stopgap.
+`config.FromEnv()` is the only place that reads the environment, and
+`Validate()` refuses what cannot work before the server binds: two backup
+targets, a bucket with no region or no credentials, a prefix that would need
+escaping in a signed URL. The reference table in `docs/configuration.md` is
+generated from the struct tags by `go generate` (Phase 7), so the table above is
+the hand-written stopgap.
 
 ## Migrations
 
@@ -183,6 +217,14 @@ control run `kanban migrate` in a job and set `AUTO_MIGRATE=false`.
   it; Postgres runs it in CI against a service container and is skipped when
   `KANBAN_TEST_POSTGRES_URL` is unset.
 - Handler tests use `httptest` against the real mux with the memory store.
+- `internal/backup` proves the round trip across every pair of backends: export,
+  import into another store, export again, and the two documents are compared
+  byte for byte. A golden snapshot in `testdata/` catches the case a round trip
+  cannot, which is Export and Import agreeing on something new.
+- The S3 target signs its own requests, so its tests pin signatures botocore
+  produced for the same requests, and the key derivation is checked against the
+  `get-vanilla` vector AWS publishes. A test that only agreed with the code
+  beside it would say nothing about whether a real bucket accepts the header.
 
 ## Build and CI
 
