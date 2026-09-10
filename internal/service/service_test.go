@@ -124,23 +124,23 @@ func TestColumns(t *testing.T) {
 	k := newSvc(t)
 	ctx := context.Background()
 	b, _ := k.CreateBoard(ctx, "B", "", nil)
-	if _, err := k.AddColumn(ctx, b.ID, " ", 0); !isValidation(err, "name") {
+	if _, err := k.AddColumn(ctx, b.ID, " ", 0, false); !isValidation(err, "name") {
 		t.Errorf("empty: %v", err)
 	}
-	if _, err := k.AddColumn(ctx, b.ID, "X", -1); !isValidation(err, "wip_limit") {
+	if _, err := k.AddColumn(ctx, b.ID, "X", -1, false); !isValidation(err, "wip_limit") {
 		t.Errorf("negative: %v", err)
 	}
-	c, err := k.AddColumn(ctx, b.ID, " Review ", 2)
+	c, err := k.AddColumn(ctx, b.ID, " Review ", 2, false)
 	if err != nil || c.Name != "Review" || c.Position != 4 {
 		t.Fatalf("column = %+v, %v", c, err)
 	}
-	if err := k.UpdateColumn(ctx, c.ID, "", 0); !isValidation(err, "name") {
+	if err := k.UpdateColumn(ctx, c.ID, "", 0, false); !isValidation(err, "name") {
 		t.Errorf("update empty: %v", err)
 	}
-	if err := k.UpdateColumn(ctx, c.ID, "QA", -2); !isValidation(err, "wip_limit") {
+	if err := k.UpdateColumn(ctx, c.ID, "QA", -2, false); !isValidation(err, "wip_limit") {
 		t.Errorf("update negative: %v", err)
 	}
-	if err := k.UpdateColumn(ctx, c.ID, "QA", 3); err != nil {
+	if err := k.UpdateColumn(ctx, c.ID, "QA", 3, false); err != nil {
 		t.Fatal(err)
 	}
 	order := []model.ID{c.ID, b.Columns[0].ID, b.Columns[1].ID, b.Columns[2].ID}
@@ -297,7 +297,7 @@ func TestWIPLimit(t *testing.T) {
 	ctx := context.Background()
 	b, _ := k.CreateBoard(ctx, "B", "", nil)
 	todo, doing := b.Columns[0].ID, b.Columns[1].ID
-	if err := k.UpdateColumn(ctx, doing, "Doing", 1); err != nil {
+	if err := k.UpdateColumn(ctx, doing, "Doing", 1, false); err != nil {
 		t.Fatal(err)
 	}
 	c1, _ := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "1"})
@@ -346,7 +346,7 @@ func TestStoreErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := k.UpdateColumn(ctx, b.Columns[0].ID, "A", 1); err != nil {
+	if err := k.UpdateColumn(ctx, b.Columns[0].ID, "A", 1, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "t"}); !errors.Is(err, errBoom) {
@@ -594,7 +594,7 @@ func TestRestoreIsNotRefusedByAWIPLimit(t *testing.T) {
 	if _, err := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "took the slot"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := k.UpdateColumn(ctx, todo, b.Columns[0].Name, 1); err != nil {
+	if err := k.UpdateColumn(ctx, todo, b.Columns[0].Name, 1, false); err != nil {
 		t.Fatalf("setting the WIP limit: %v", err)
 	}
 
@@ -951,5 +951,88 @@ func TestPeople(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSetBoardSLA covers what the promise is checked for before it is written.
+// The zone matters most: a name nobody can load leaves the board measuring in
+// UTC while the settings page claims Zurich, and nothing on the board says so.
+func TestSetBoardSLA(t *testing.T) {
+	full := model.SLA{ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60, Zone: "Europe/Zurich"}
+	tests := []struct {
+		name  string
+		sla   model.SLA
+		field string // "" when the promise is accepted
+	}{
+		{"a desk with a promise", full, ""},
+		{"switched off keeps its hours", model.SLA{Days: model.MonToFri, Start: 8 * 60, End: 17 * 60}, ""},
+		{"open around the clock", model.SLA{
+			ResponseHours: 1, Days: model.AllDays, Start: 0, End: model.MinutesPerDay}, ""},
+		{"no zone means UTC", model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60}, ""},
+		{"negative hours", model.SLA{ResponseHours: -1, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60}, "response_hours"},
+		{"more hours than a working year", model.SLA{
+			ResponseHours: model.MaxResponseHours + 1, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60}, "response_hours"},
+		{"a day that is not a weekday", model.SLA{
+			ResponseHours: 4, Days: 1 << 7, Start: 8 * 60, End: 17 * 60}, "days"},
+		{"a start before the day", model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: -30, End: 17 * 60}, "hours"},
+		{"an end past midnight", model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: model.MinutesPerDay + 30}, "hours"},
+		{"an end before the start", model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: 17 * 60, End: 8 * 60}, "hours"},
+		{"a day of no length", model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: 9 * 60, End: 9 * 60}, "hours"},
+		{"a promise on no day at all", model.SLA{
+			ResponseHours: 4, Days: 0, Start: 8 * 60, End: 17 * 60}, "days"},
+		{"a zone the binary cannot load", model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60, Zone: "Mars/Olympus"}, "zone"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := newSvc(t)
+			ctx := context.Background()
+			b, err := k.CreateBoard(ctx, "B", "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := b.SLA
+			err = k.SetBoardSLA(ctx, b.ID, tt.sla)
+			if tt.field != "" {
+				if !isValidation(err, tt.field) {
+					t.Fatalf("SetBoardSLA = %v, want a validation error on %s", err, tt.field)
+				}
+				// A refused promise leaves the board on the one it had, which
+				// on a new board is the default office week with no hours.
+				after, err := k.Board(ctx, b.Slug)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if after.SLA != before {
+					t.Errorf("board carries %+v after a refused write, want %+v", after.SLA, before)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("SetBoardSLA: %v", err)
+			}
+			after, err := k.Board(ctx, b.Slug)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.SLA != tt.sla {
+				t.Errorf("board carries %+v, want %+v", after.SLA, tt.sla)
+			}
+		})
+	}
+}
+
+// TestSetBoardSLAOnABoardThatIsNotThere is the path a stale settings page takes.
+func TestSetBoardSLAOnABoardThatIsNotThere(t *testing.T) {
+	k := newSvc(t)
+	err := k.SetBoardSLA(context.Background(), "nope", model.SLA{
+		ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("SetBoardSLA = %v, want ErrNotFound", err)
 	}
 }

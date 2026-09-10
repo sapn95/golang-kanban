@@ -121,6 +121,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /b/{board}/columns/{id}/delete", s.deleteColumn)
 	mux.HandleFunc("POST /b/{board}/columns/{id}/move", s.moveColumn)
 	mux.HandleFunc("POST /b/{board}/layout", s.setLayout)
+	mux.HandleFunc("POST /b/{board}/sla", s.setSLA)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
 	// The JSON API, on this mux and so inside the same middleware: one body cap,
 	// one cross-site check, one log line per request, and identity read once for
@@ -239,6 +240,17 @@ type cardView struct {
 	// only distinguished late from not late, which said nothing about a card
 	// due in an hour and a card due in a month.
 	DueState string
+	// SLAState is "", "ok", "soon" or "breached": how long the card has sat
+	// without anybody touching it, against the board's response-time promise.
+	// Empty is nobody waiting, which the card face draws as no badge at all.
+	//
+	// A due date is a promise to whoever the card is for; this is a promise
+	// about answering, so a card can be a week from its date and already late.
+	SLAState string
+	// SLALeft is "3h left" or "2h over", counted in office hours. SLADue is the
+	// deadline itself in the board's own zone, for the title attribute.
+	SLALeft string
+	SLADue  string
 	// SubtasksDone and SubtasksTotal draw the checklist's progress on the card
 	// face. Percent is separate because a template cannot divide.
 	SubtasksDone    int
@@ -383,6 +395,75 @@ type columnSetting struct {
 	Only bool
 }
 
+// slaDay is one weekday checkbox in the response-time form.
+type slaDay struct {
+	// Value is what the checkbox posts: the day's name, the same three letters
+	// the JSON API takes, so one parser reads both and a day cannot mean
+	// Tuesday in a form and Wednesday in a script.
+	Value   string // "mon"
+	Short   string // "Mon"
+	Checked bool
+}
+
+type slaView struct {
+	// On is the promise being in force, which is what decides whether the page
+	// shows a summary line or says the clock is off.
+	On    bool
+	Hours int
+	Days  []slaDay
+	// Start and End are "08:00", as <input type="time"> wants them. An end of
+	// "00:00" is midnight at the end of the day, so a desk staffed around the
+	// clock is 00:00 to 00:00; a time input cannot say 24:00.
+	Start string
+	End   string
+	Zone  string
+	// Summary is the promise in one line, under the form.
+	Summary string
+}
+
+// slaSettings builds the response-time form.
+//
+// A board whose promise is off may hold hours nobody chose, from a migration
+// default or from an API client that sent none. The form falls back to the
+// office week for those, so it always opens on something somebody would want
+// rather than on Monday 00:00 to 00:00.
+func slaSettings(sla model.SLA) slaView {
+	d := model.DefaultSLA()
+	if sla.Start >= sla.End {
+		sla.Start, sla.End = d.Start, d.End
+	}
+	if !sla.Days.Any() {
+		sla.Days = d.Days
+	}
+	v := slaView{
+		On:    sla.Enabled(),
+		Hours: sla.ResponseHours,
+		Start: clockValue(sla.Start),
+		End:   clockValue(sla.End),
+		Zone:  sla.Zone,
+	}
+	for _, w := range []time.Weekday{time.Monday, time.Tuesday, time.Wednesday,
+		time.Thursday, time.Friday, time.Saturday, time.Sunday} {
+		v.Days = append(v.Days, slaDay{
+			Value: strings.ToLower(w.String()[:3]), Short: w.String()[:3], Checked: sla.Days.Has(w),
+		})
+	}
+	if v.On {
+		zone := sla.Zone
+		if zone == "" {
+			zone = "UTC"
+		}
+		v.Summary = fmt.Sprintf("%s, %s, %s to %s %s",
+			plural(sla.ResponseHours, "office hour"), sla.Days, v.Start, v.End, zone)
+	}
+	return v
+}
+
+// clockValue renders minutes since midnight for an <input type="time">. The end
+// of the day is 1440 minutes in, which the input cannot hold, so it goes back as
+// the midnight it is.
+func clockValue(m int) string { return model.ClockString(m) }
+
 type settingsPage struct {
 	Title     string
 	User      identity.User
@@ -391,11 +472,21 @@ type settingsPage struct {
 	Columns   []columnSetting
 	Labels    []labelView
 	NewLabel  labelView
+	SLA       slaView
 	Error     string
 }
 
-func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comments int, people []string) cardView {
+// cardView builds one card face. clock is the board's SLA clock, passed in
+// rather than resolved here: resolving one reads the zone database, and a board
+// page grades every card it draws against the same promise.
+func (s *Server) cardView(u identity.User, b *model.Board, clock model.Clock, c model.Card, comments int, people []string) cardView {
 	v := cardView{Viewer: u, Card: c, BoardSlug: b.Slug, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments, People: people}
+	now := s.now().UTC()
+	if state, left := clock.CardState(c, b.Column(c.ColumnID), now); state != model.SLAOff {
+		v.SLAState = state
+		v.SLALeft = slaLeft(left)
+		v.SLADue = clock.Deadline(c.UpdatedAt).In(clock.Location()).Format("2 Jan 2006, 15:04 MST")
+	}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
 			v.Labels = append(v.Labels, *l)
@@ -416,6 +507,33 @@ func (s *Server) cardView(u identity.User, b *model.Board, c model.Card, comment
 		v.SubtasksPercent = v.SubtasksDone * 100 / v.SubtasksTotal
 	}
 	return v
+}
+
+// slaLeft renders the office time either side of the deadline: "3h 20m left"
+// while there is time, "2h over" once there is not.
+//
+// Office time, which is why it does not say "in 3 hours": three office hours on
+// a Friday afternoon are Monday lunchtime, and a badge that said "in 3 hours"
+// there would be read as wrong rather than as precise.
+func slaLeft(d time.Duration) string {
+	over := d <= 0
+	if over {
+		d = -d
+	}
+	d = d.Round(time.Minute)
+	var s string
+	switch h, m := int(d.Hours()), int(d.Minutes())%60; {
+	case h > 0 && m > 0:
+		s = fmt.Sprintf("%dh %dm", h, m)
+	case h > 0:
+		s = fmt.Sprintf("%dh", h)
+	default:
+		s = fmt.Sprintf("%dm", m)
+	}
+	if over {
+		return s + " over"
+	}
+	return s + " left"
 }
 
 // dueSoon is how far ahead a due date still counts as pressing. Three days is
@@ -483,9 +601,10 @@ func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, 
 	// Read off the cards already in hand, so the board's own render — the one
 	// page that is drawn constantly — costs no extra query for its menus.
 	people := service.People(cards, u.Email)
+	clock := b.SLA.Clock()
 	byColumn := map[model.ID][]cardView{}
 	for _, c := range cards {
-		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, c, comments[c.ID], people))
+		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, clock, c, comments[c.ID], people))
 	}
 	for _, col := range b.Columns {
 		cv := columnView{Column: col, Cards: byColumn[col.ID], Count: len(byColumn[col.ID])}
@@ -639,8 +758,9 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		// The hits are a subset, and a quick edit on a result should offer the
 		// same people as one on the board, so the list comes from the board.
 		people := s.people(r, u, b.ID)
+		clock := b.SLA.Clock()
 		for _, c := range hits {
-			page.Results = append(page.Results, s.cardView(u, b, c, counts[c.ID], people))
+			page.Results = append(page.Results, s.cardView(u, b, clock, c, counts[c.ID], people))
 		}
 		s.render(w, s.pages["board"], "layout", http.StatusOK, page)
 		return
@@ -697,7 +817,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	// A card that was created a microsecond ago has no comments; counting them
 	// would be a query that can only ever answer zero.
 	u := identity.FromContext(r.Context())
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(u, b, *c, 0, s.people(r, u, b.ID)))
+	s.render(w, s.parts, "card", http.StatusOK, s.cardView(u, b, b.SLA.Clock(), *c, 0, s.people(r, u, b.ID)))
 }
 
 type orderPayload struct {
@@ -791,7 +911,7 @@ func (s *Server) cardFragment(r *http.Request, b *model.Board, c model.Card) (ca
 		return cardView{}, err
 	}
 	u := identity.FromContext(r.Context())
-	return s.cardView(u, b, c, len(comments), s.people(r, u, b.ID)), nil
+	return s.cardView(u, b, b.SLA.Clock(), c, len(comments), s.people(r, u, b.ID)), nil
 }
 
 // people is the list a quick-edit menu offers, for the handlers that do not
@@ -837,7 +957,7 @@ func (s *Server) editCard(w http.ResponseWriter, r *http.Request) {
 	u := identity.FromContext(r.Context())
 	// No people list: the modal renders the full form, which has an assignee
 	// field of its own, and never the card face.
-	v := s.cardView(u, b, *c, len(comments), nil)
+	v := s.cardView(u, b, b.SLA.Clock(), *c, len(comments), nil)
 	for _, cm := range comments {
 		v.Comments = append(v.Comments, s.commentView(u, cm))
 	}
@@ -1095,10 +1215,13 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 	u := identity.FromContext(r.Context())
 	page := archivePage{Title: b.Name + " · archive", User: u, BoardSlug: b.Slug, Board: b,
 		Query: raw, Searching: raw != ""}
+	// Resolved once for the page, though an archived card is never graded: the
+	// clock stops when a card leaves the board.
+	clock := b.SLA.Clock()
 	for _, c := range cards {
 		// No people list: the archive draws its own rows, and the action there
 		// is to restore a card rather than to reassign it.
-		page.Cards = append(page.Cards, s.cardView(u, b, c, counts[c.ID], nil))
+		page.Cards = append(page.Cards, s.cardView(u, b, clock, c, counts[c.ID], nil))
 	}
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }
@@ -1137,6 +1260,7 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 		BoardSlug: b.Slug,
 		Board:     b,
 		NewLabel:  labelView{Palette: palette},
+		SLA:       slaSettings(b.SLA),
 		Error:     message,
 	}
 	for i, col := range b.Columns {
@@ -1237,6 +1361,13 @@ func wipLimit(v string) (int, error) {
 	return n, nil
 }
 
+// checked reads a checkbox. An unchecked box sends no field at all, so the
+// question is whether the field arrived, not what it says; the value a browser
+// puts in a ticked one is "on", and nothing should depend on that.
+func checked(r *http.Request, name string) bool {
+	return r.FormValue(name) != ""
+}
+
 // boardColumn resolves the column id in the path against the board in the
 // path, so a crafted id cannot reach a column on another board.
 func (s *Server) boardColumn(r *http.Request) (*model.Board, *model.Column, error) {
@@ -1262,7 +1393,7 @@ func (s *Server) createColumn(w http.ResponseWriter, r *http.Request) {
 		s.settingsFailure(w, r, err)
 		return
 	}
-	if _, err := s.svc.AddColumn(r.Context(), b.ID, r.FormValue("name"), limit); err != nil {
+	if _, err := s.svc.AddColumn(r.Context(), b.ID, r.FormValue("name"), limit, checked(r, "stops_clock")); err != nil {
 		s.settingsFailure(w, r, err)
 		return
 	}
@@ -1280,7 +1411,7 @@ func (s *Server) updateColumn(w http.ResponseWriter, r *http.Request) {
 		s.settingsFailure(w, r, err)
 		return
 	}
-	if err := s.svc.UpdateColumn(r.Context(), col.ID, r.FormValue("name"), limit); err != nil {
+	if err := s.svc.UpdateColumn(r.Context(), col.ID, r.FormValue("name"), limit, checked(r, "stops_clock")); err != nil {
 		s.settingsFailure(w, r, err)
 		return
 	}
@@ -1318,6 +1449,81 @@ func (s *Server) setLayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
+}
+
+// setSLA writes the board's response-time promise. Zero hours switches it off
+// and leaves the rest of the form as it was, so turning the clock back on does
+// not mean typing the office hours again.
+func (s *Server) setSLA(w http.ResponseWriter, r *http.Request) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	sla, err := readSLA(r)
+	if err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	if err := s.svc.SetBoardSLA(r.Context(), b.ID, sla); err != nil {
+		s.settingsFailure(w, r, err)
+		return
+	}
+	s.settingsRedirect(w, r, b)
+}
+
+// readSLA reads the response-time form.
+func readSLA(r *http.Request) (model.SLA, error) {
+	if err := r.ParseForm(); err != nil {
+		return model.SLA{}, &service.ValidationError{Field: "form", Message: "could not be read"}
+	}
+	hours, err := strconv.Atoi(orZero(r.PostFormValue("response_hours")))
+	if err != nil || hours < 0 {
+		return model.SLA{}, &service.ValidationError{
+			Field: "response_hours", Message: "must be a whole number of hours, or 0 to switch the clock off"}
+	}
+	start, err := clockMinutes(r.PostFormValue("start"), false)
+	if err != nil {
+		return model.SLA{}, err
+	}
+	end, err := clockMinutes(r.PostFormValue("end"), true)
+	if err != nil {
+		return model.SLA{}, err
+	}
+	days, err := model.ParseDays(r.PostForm["days"])
+	if err != nil {
+		return model.SLA{}, &service.ValidationError{Field: "days", Message: "must be weekdays"}
+	}
+	return model.SLA{
+		ResponseHours: hours,
+		Days:          days,
+		Start:         start,
+		End:           end,
+		Zone:          strings.TrimSpace(r.PostFormValue("zone")),
+	}, nil
+}
+
+// orZero turns an empty number field into a zero, so a cleared box switches the
+// clock off rather than failing to parse.
+func orZero(v string) string {
+	if v = strings.TrimSpace(v); v == "" {
+		return "0"
+	}
+	return v
+}
+
+// clockMinutes reads an <input type="time"> as minutes since midnight.
+//
+// The end of a day arrives as "00:00", because a time input has no 24:00 and
+// "open until midnight" has to be sayable. So the same string means 0 at the
+// start of the range and 1440 at the end of it, and a desk staffed around the
+// clock is 00:00 to 00:00.
+func clockMinutes(v string, endOfDay bool) (int, error) {
+	m, err := model.ParseClock(v, endOfDay)
+	if err != nil {
+		return 0, &service.ValidationError{Field: "hours", Message: model.ErrBadClock.Error()}
+	}
+	return m, nil
 }
 
 // moveColumn swaps a column with its neighbour. A move off either end is a

@@ -29,6 +29,7 @@ func Run(t *testing.T, newStore New) {
 		"Archive":       testArchive,
 		"Comments":      testComments,
 		"Layout":        testLayout,
+		"SLA":           testSLA,
 		"ReorderCards":  testReorderCards,
 		"Labels":        testLabels,
 		"Timestamps":    testTimestamps,
@@ -757,6 +758,118 @@ func testArchive(t *testing.T, s store.Store) {
 	}
 	if got.Archived() {
 		t.Error("CreateCard honoured ArchivedAt; it should leave archiving to SetCardArchived")
+	}
+}
+
+// testSLA is the response-time promise through every query that returns a
+// board, plus the column flag that goes with it.
+//
+// The backends do not agree by accident here: the SQL ones have column defaults
+// and CHECK constraints, the memory one has neither, and what makes them agree
+// is that all three write model.SLA.Clean(). So a board written with no promise
+// has to read back as no promise everywhere, and a promise out of range has to
+// be brought into range rather than refused.
+func testSLA(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "sla", "To Do", "Done")
+
+	fresh, err := s.GetBoard(ctx, "sla")
+	if err != nil {
+		t.Fatalf("GetBoard: %v", err)
+	}
+	if fresh.SLA != (model.SLA{}) {
+		t.Errorf("a board written with no promise came back with %+v", fresh.SLA)
+	}
+	if fresh.SLA.Enabled() {
+		t.Error("a board nobody configured says it makes a promise")
+	}
+
+	desk := model.SLA{
+		ResponseHours: 4, Days: model.MonToFri,
+		Start: 8 * 60, End: 17 * 60, Zone: "Europe/Zurich",
+	}
+	fresh.SLA = desk
+	fresh.UpdatedAt = now()
+	if err := s.UpdateBoard(ctx, fresh); err != nil {
+		t.Fatalf("UpdateBoard: %v", err)
+	}
+
+	// The three queries that return a board are three different statements.
+	byID, err := s.GetBoardByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("GetBoardByID: %v", err)
+	}
+	if byID.SLA != desk {
+		t.Errorf("GetBoardByID returned %+v, want %+v", byID.SLA, desk)
+	}
+	bySlug, err := s.GetBoard(ctx, "sla")
+	if err != nil {
+		t.Fatalf("GetBoard: %v", err)
+	}
+	if bySlug.SLA != desk {
+		t.Errorf("GetBoard returned %+v, want %+v", bySlug.SLA, desk)
+	}
+	boards, err := s.ListBoards(ctx)
+	if err != nil {
+		t.Fatalf("ListBoards: %v", err)
+	}
+	for _, l := range boards {
+		if l.ID == b.ID && l.SLA != desk {
+			t.Errorf("ListBoards returned %+v, want %+v", l.SLA, desk)
+		}
+	}
+
+	// Out of range on the way in, in range on the way out. A backend that wrote
+	// this straight through would fail a CHECK constraint instead.
+	bySlug.SLA = model.SLA{ResponseHours: -1, Days: 255, Start: -30, End: model.MinutesPerDay + 30}
+	bySlug.UpdatedAt = now()
+	if err := s.UpdateBoard(ctx, bySlug); err != nil {
+		t.Fatalf("UpdateBoard out of range: %v", err)
+	}
+	cleaned, err := s.GetBoardByID(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("GetBoardByID: %v", err)
+	}
+	want := model.SLA{ResponseHours: 0, Days: model.AllDays, Start: 0, End: model.MinutesPerDay}
+	if cleaned.SLA != want {
+		t.Errorf("an out-of-range promise came back as %+v, want %+v", cleaned.SLA, want)
+	}
+
+	// The column flag: written by UpdateColumn, read by every board query.
+	done := cleaned.Columns[1]
+	done.StopsClock = true
+	if err := s.UpdateColumn(ctx, &done); err != nil {
+		t.Fatalf("UpdateColumn: %v", err)
+	}
+	after, err := s.GetBoard(ctx, "sla")
+	if err != nil {
+		t.Fatalf("GetBoard: %v", err)
+	}
+	if after.Columns[0].StopsClock {
+		t.Error("the clock stopped in a column nobody marked")
+	}
+	if !after.Columns[1].StopsClock {
+		t.Error("stops_clock did not survive UpdateColumn")
+	}
+	// CreateColumn is the other way in, and a fresh column runs the clock.
+	added := &model.Column{ID: newID("c"), BoardID: b.ID, Name: "Waiting", StopsClock: true}
+	if err := s.CreateColumn(ctx, added); err != nil {
+		t.Fatalf("CreateColumn: %v", err)
+	}
+	listed, err := s.ListBoards(ctx)
+	if err != nil {
+		t.Fatalf("ListBoards: %v", err)
+	}
+	for _, l := range listed {
+		if l.ID != b.ID {
+			continue
+		}
+		if len(l.Columns) != 3 {
+			t.Fatalf("the board has %d columns, want 3", len(l.Columns))
+		}
+		if !l.Columns[2].StopsClock {
+			t.Error("ListBoards lost stops_clock on the column that was created with it")
+		}
 	}
 }
 

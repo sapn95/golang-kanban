@@ -67,6 +67,7 @@ func New(svc *service.Kanban, log *slog.Logger) http.Handler {
 	mux.HandleFunc("PATCH /api/v1/boards/{board}", s.renameBoard)
 	mux.HandleFunc("DELETE /api/v1/boards/{board}", s.deleteBoard)
 	mux.HandleFunc("PUT /api/v1/boards/{board}/layout", s.setLayout)
+	mux.HandleFunc("PUT /api/v1/boards/{board}/sla", s.setSLA)
 
 	mux.HandleFunc("POST /api/v1/boards/{board}/columns", s.createColumn)
 	mux.HandleFunc("PUT /api/v1/boards/{board}/columns/order", s.reorderColumns)

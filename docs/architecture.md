@@ -38,6 +38,7 @@ Numbers in brackets below point at them.
 ├── internal/
 │   ├── config/            Config struct, FromEnv(), Settings()/Redacted() for `kanban doctor`
 │   ├── model/             Board, Column, Card, Label, Subtask, ID — plain structs, no deps  [0002]
+│   │                      plus SLA and its office-hours clock, arithmetic on those structs [0013]
 │   ├── store/             Store interface, sentinel errors, migration runner                 [0003]
 │   │   ├── storetest/     contract test suite every backend must pass
 │   │   ├── memory/        in-memory backend; tests and demos

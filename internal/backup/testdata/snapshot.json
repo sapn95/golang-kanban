@@ -8,8 +8,19 @@
       "slug": "notes",
       "name": "Notes",
       "layout": "rows",
-      "created_at": "2026-03-04T05:16:07Z",
-      "updated_at": "2026-03-04T05:17:07Z",
+      "sla": {
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "start": "08:00",
+        "end": "17:00"
+      },
+      "created_at": "2026-03-04T05:17:07Z",
+      "updated_at": "2026-03-04T05:18:07Z",
       "columns": [
         {
           "id": "id-16",
@@ -22,8 +33,21 @@
       "slug": "work",
       "name": "Work",
       "layout": "columns",
+      "sla": {
+        "response_hours": 4,
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "start": "08:00",
+        "end": "17:00",
+        "zone": "Europe/Zurich"
+      },
       "created_at": "2026-03-04T05:07:07Z",
-      "updated_at": "2026-03-04T05:07:07Z",
+      "updated_at": "2026-03-04T05:08:07Z",
       "columns": [
         {
           "id": "id-02",
@@ -36,7 +60,8 @@
         },
         {
           "id": "id-04",
-          "name": "Done"
+          "name": "Done",
+          "stops_clock": true
         }
       ],
       "labels": [
@@ -58,8 +83,8 @@
           "description": "Say why S3 is a target and not a store.\nLink 0003.",
           "due_date": "2026-03-31",
           "assignee": "sapn95@users.noreply.github.com",
-          "created_at": "2026-03-04T05:08:07Z",
-          "updated_at": "2026-03-04T05:09:07Z",
+          "created_at": "2026-03-04T05:09:07Z",
+          "updated_at": "2026-03-04T05:10:07Z",
           "labels": [
             "id-05"
           ],
@@ -79,26 +104,26 @@
           "id": "id-13",
           "column_id": "id-02",
           "title": "Second in the column",
-          "created_at": "2026-03-04T05:13:07Z",
-          "updated_at": "2026-03-04T05:13:07Z"
+          "created_at": "2026-03-04T05:14:07Z",
+          "updated_at": "2026-03-04T05:14:07Z"
         },
         {
           "id": "id-10",
           "column_id": "id-03",
           "title": "Fix the filer",
-          "created_at": "2026-03-04T05:10:07Z",
-          "updated_at": "2026-03-04T05:10:07Z",
+          "created_at": "2026-03-04T05:11:07Z",
+          "updated_at": "2026-03-04T05:13:07Z",
           "comments": [
             {
               "id": "id-11",
               "author": "sapn95",
               "body": "The qtree came back.",
-              "created_at": "2026-03-04T05:11:07Z"
+              "created_at": "2026-03-04T05:12:07Z"
             },
             {
               "id": "id-12",
               "body": "Anonymous, from the header-less deployment.",
-              "created_at": "2026-03-04T05:12:07Z"
+              "created_at": "2026-03-04T05:13:07Z"
             }
           ]
         },
@@ -106,9 +131,9 @@
           "id": "id-14",
           "column_id": "id-04",
           "title": "Ship it",
-          "archived_at": "2026-03-04T05:15:07Z",
-          "created_at": "2026-03-04T05:14:07Z",
-          "updated_at": "2026-03-04T05:14:07Z"
+          "archived_at": "2026-03-04T05:16:07Z",
+          "created_at": "2026-03-04T05:15:07Z",
+          "updated_at": "2026-03-04T05:15:07Z"
         }
       ]
     }

@@ -35,7 +35,9 @@ type Board struct {
 	Slug string // URL segment, unique; [a-z0-9]+(-[a-z0-9]+)*
 	Name string
 	// Layout is LayoutColumns or LayoutRows; read it through LayoutOrDefault.
-	Layout    string
+	Layout string
+	// SLA is the board's response-time promise, off unless somebody set one.
+	SLA       SLA
 	Columns   []Column // ordered by Position
 	Labels    []Label  // ordered by Name
 	CreatedAt time.Time
@@ -69,6 +71,10 @@ type Column struct {
 	Name     string
 	Position int
 	WIPLimit int // 0 = no limit
+	// StopsClock takes the column out of the response-time promise: a card
+	// sitting in Done or Waiting for the customer is not a card nobody has
+	// attended to, and a badge that goes red there trains people to ignore it.
+	StopsClock bool
 }
 
 // Card is a task on a board, living in exactly one column.
