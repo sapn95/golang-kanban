@@ -8,7 +8,7 @@ version: 0.3.0
 # The image tag this chart pulls by default, published by .github/workflows/release.yml
 # on a v* tag. Upstream's own packages stop at 1.0.1, which is where this fork
 # started; the boards, identity, search, comments and archive came after it.
-appVersion: "2.2.0"
+appVersion: "2.2.1"
 icon: https://raw.githubusercontent.com/sapn95/golang-kanban/homelab/docs/logo-512.png
 home: https://github.com/sapn95/golang-kanban
 sources:
