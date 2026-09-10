@@ -58,7 +58,9 @@ than at the first request, where it would look like an outage.
 `/healthz` and `/readyz` stay open whatever it says. A kubelet has no assertion
 to present, and a liveness probe that gets a `403` restarts a healthy container
 in a loop. They answer nothing about a board, which is what makes them safe to
-leave out.
+leave out, and the list is a function rather than an exported set so that what
+goes unauthenticated cannot be widened from somewhere else. `/version` is not on
+it: it names the build, and the footer already says that to whoever is signed in.
 
 The verifier is written against the standard library. The token shape is fixed
 and narrow, and a dependency that parses attacker-controlled input is one that
