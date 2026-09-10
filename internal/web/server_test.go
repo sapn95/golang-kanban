@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1144,6 +1145,66 @@ func TestAgo(t *testing.T) {
 				t.Errorf("ago = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBoardPalette(t *testing.T) {
+	label := func(color string) model.Label { return model.Label{Color: color} }
+	cases := []struct {
+		name  string
+		in    []model.Label
+		extra []string
+	}{
+		{"a board on the presets adds nothing", []model.Label{label("#ef4444"), label("#6b7280")}, nil},
+		{"a label with no colour adds nothing", []model.Label{label("")}, nil},
+		{"a colour off the presets is offered", []model.Label{label("#abcdef")}, []string{"#abcdef"}},
+		{"the same colour twice is one swatch", []model.Label{label("#abcdef"), label("#abcdef")}, []string{"#abcdef"}},
+		{"several are sorted, not in label order", []model.Label{label("#fedcba"), label("#abcdef")}, []string{"#abcdef", "#fedcba"}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got := boardPalette(tt.in)
+			want := append(slices.Clone(labelPalette), tt.extra...)
+			if !slices.Equal(got, want) {
+				t.Errorf("boardPalette() = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// Every row offering the same colours is the point: a colour set through the
+// API used to be offered to the label that carried it and to nothing else, so
+// no second label could be given it and the rows were different lengths.
+func TestEveryLabelRowOffersTheSameColours(t *testing.T) {
+	e := seeded(t)
+	ctx := context.Background()
+	b, err := e.svc.Board(ctx, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #0ea5e9 is not one of the presets, which is what an API client is free to
+	// do and what the form has to keep offering afterwards.
+	if _, err := e.svc.CreateLabel(ctx, b.ID, "homelab", "#0ea5e9"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.CreateLabel(ctx, b.ID, "kanban", "#8b5cf6"); err != nil {
+		t.Fatal(err)
+	}
+	body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
+
+	group := regexp.MustCompile(`(?s)aria-label="Colour".*?</div>`)
+	groups := group.FindAllString(body, -1)
+	// One per label row and one for the new-label form.
+	if want := 4; len(groups) != want {
+		t.Fatalf("%d swatch groups, want %d", len(groups), want)
+	}
+	for i, g := range groups {
+		if got, want := strings.Count(g, `name="color"`), len(labelPalette)+2; got != want {
+			t.Errorf("group %d offers %d colours, want %d (the presets, no colour, and the one off the list)", i, got, want)
+		}
+		if !strings.Contains(g, "#0ea5e9") {
+			t.Errorf("group %d does not offer #0ea5e9, the colour another label carries", i)
+		}
 	}
 }
 
