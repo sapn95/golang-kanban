@@ -2584,4 +2584,16 @@ func TestSubtaskRowComesFromTheServer(t *testing.T) {
 	if !strings.Contains(edit, `class="subtask-row flex items-center space-x-2 mb-2"`) {
 		t.Error("the edit form and /subtask-row have drifted apart")
 	}
+	// Both forms carry the button, and in both the container it appends to is
+	// the element right before it, which is what `previous` resolves against.
+	for name, body := range map[string]string{
+		"the edit form": edit,
+		"the add form":  e.do(http.MethodGet, "/b/demo", nil).Body.String(),
+	} {
+		i := strings.Index(body, `class="subtasks-container`)
+		j := strings.Index(body, `hx-get="/subtask-row" hx-target="previous .subtasks-container"`)
+		if i < 0 || j < 0 || j < i {
+			t.Errorf("%s does not have the Add Subtask button after its container (container %d, button %d)", name, i, j)
+		}
+	}
 }

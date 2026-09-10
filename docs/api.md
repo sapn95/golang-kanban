@@ -93,7 +93,9 @@ therefore sends one request, for the destination.
 Every response that moves, adds or removes a card carries the board's column
 headers marked `hx-swap-oob`, so the count, the WIP bar and the notice under it
 are redrawn by the server on both the column the card left and the one it
-arrived in. That is why a delete and an archive answer with a body at all.
+arrived in. That is why a delete and an archive answer with a body at all. A
+page showing search results has no column headers on it, and htmx drops the
+ones it cannot place.
 
 ## Comments
 
