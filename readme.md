@@ -190,9 +190,11 @@ served anonymously, with every write the board has. That is fine where the port
 is only reachable through the proxy, and it is a hole where it is not, which is
 any deployment that also publishes a LAN port beside the tunnel. `AUTH_REQUIRED=true`
 closes it: anything with no identity gets a `403`, except `/healthz` and
-`/readyz`, which a kubelet has to be able to reach. It needs `AUTH_MODE=proxy`
-or `access`, and the trade is that a key rotation the app cannot follow now
-refuses the page rather than drawing it signed out.
+`/readyz`, which a kubelet has to be able to reach. `/version` goes behind it
+with everything else, so the way to read a build off a running deployment
+becomes the footer on the board or `kanban version` in the container. It needs
+`AUTH_MODE=proxy` or `access`, and the trade is that a key rotation the app
+cannot follow now refuses the page rather than drawing it signed out.
 
 ### When it does not come up
 

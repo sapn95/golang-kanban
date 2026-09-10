@@ -423,13 +423,24 @@ func TestMiddlewareRefusesAnonymousWhenRequired(t *testing.T) {
 		}
 	})
 
-	for path := range identity.ProbePaths {
+	for _, path := range []string{"/healthz", "/readyz"} {
 		t.Run("the probe "+path+" stays open", func(t *testing.T) {
+			if !identity.ProbePath(path) {
+				t.Fatalf("ProbePath(%q) = false", path)
+			}
 			if rec := call(t, path, ""); rec.Code != http.StatusOK || !served {
 				t.Errorf("status = %d, served = %v, want the probe answered", rec.Code, served)
 			}
 		})
 	}
+
+	t.Run("nothing else is a probe path", func(t *testing.T) {
+		for _, path := range []string{"/", "/version", "/b/demo", "/healthz/", "/api/v1/boards"} {
+			if identity.ProbePath(path) {
+				t.Errorf("ProbePath(%q) = true; only the two probes are open", path)
+			}
+		}
+	})
 
 	t.Run("without Required an anonymous request is still served", func(t *testing.T) {
 		open := identity.Middleware(identity.Config{Mode: identity.ModeAccess, Verifier: v})(

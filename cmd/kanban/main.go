@@ -212,7 +212,11 @@ func identityMiddleware(cfg config.Config, log *slog.Logger) func(http.Handler) 
 		ic.OnError = func(err error) { log.Warn("access assertion rejected", "err", err) }
 	}
 	if cfg.AuthMode != config.AuthNone {
-		log.Info("request identity enabled", "mode", cfg.AuthMode, "anonymous", map[bool]string{true: "refused", false: "served"}[cfg.AuthRequired])
+		anonymous := "served"
+		if cfg.AuthRequired {
+			anonymous = "refused"
+		}
+		log.Info("request identity enabled", "mode", cfg.AuthMode, "anonymous", anonymous)
 	}
 	return identity.Middleware(ic)
 }

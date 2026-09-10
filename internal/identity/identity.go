@@ -195,14 +195,18 @@ type Config struct {
 	// made safer by it and a deployment that turns it on has to know that a key
 	// rotation now refuses the page rather than drawing it signed out.
 	//
-	// ProbePaths stay open whatever this says.
+	// The paths ProbePath names stay open whatever this says.
 	Required bool
 }
 
-// ProbePaths are served without an identity even when one is required: a
-// kubelet has no assertion to present, and a liveness probe that gets a 403
-// restarts a healthy container in a loop.
-var ProbePaths = map[string]bool{"/healthz": true, "/readyz": true}
+// ProbePath reports whether a path is served without an identity even when one
+// is required: a kubelet has no assertion to present, and a liveness probe that
+// gets a 403 restarts a healthy container in a loop. Neither path answers
+// anything about a board, which is what makes them safe to leave out.
+//
+// A function rather than an exported set, so that what a deployment lets
+// through unauthenticated cannot be widened from another package.
+func ProbePath(p string) bool { return p == "/healthz" || p == "/readyz" }
 
 // The header Cloudflare Access sets on every request it forwards.
 const AccessAssertionHeader = "Cf-Access-Jwt-Assertion"
@@ -235,7 +239,7 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 				}
 			}
 			if u.Anonymous() {
-				if cfg.Required && !ProbePaths[r.URL.Path] {
+				if cfg.Required && !ProbePath(r.URL.Path) {
 					// 403 rather than 401: there is no scheme a browser could
 					// satisfy by asking again, and whatever should have signed
 					// this request in was not in front of it.
