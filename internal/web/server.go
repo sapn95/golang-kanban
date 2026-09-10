@@ -174,6 +174,18 @@ func (s *Server) parseTemplates() {
 			}
 			return "/assets/" + path
 		},
+		// The footer prints what is running. On a deployment that rolls out by
+		// tag, the question "is this the build I merged" is asked at the board
+		// and answered by reading the page rather than by curling /version.
+		"build": func() string {
+			if s.version == "" {
+				return "dev"
+			}
+			return s.version
+		},
+		// Whether the JSON API is mounted, so the footer links to it where it
+		// exists and says nothing where it does not.
+		"hasAPI": func() bool { return s.api != nil },
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles,
 		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))

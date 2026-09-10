@@ -56,6 +56,19 @@
     </button>
   </div>
   {{template "content" .}}
+  <!-- The way back to the board list, and what is running. The header is the
+       board's title and nothing else, so before this a board page had no link
+       home at all; the version is here because the deployment rolls out by tag
+       and "is this the build I merged" was a question for curl. -->
+  <footer class="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700
+                 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-gray-400 dark:text-gray-500">
+    <a href="/" class="hover:text-gray-600 dark:hover:text-gray-300">All boards</a>
+    {{if hasAPI}}
+    <a href="/api/v1/" class="hover:text-gray-600 dark:hover:text-gray-300">JSON API</a>
+    {{end}}
+    <a href="/version" class="tabular-nums hover:text-gray-600 dark:hover:text-gray-300"
+       title="The build this page came from">kanban {{build}}</a>
+  </footer>
 </div>
 </body>
 </html>{{end}}
