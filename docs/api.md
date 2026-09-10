@@ -22,8 +22,8 @@ Reads are `GET`, everything else is `POST`. There is no `PUT` or `DELETE`,
 because a browser form cannot send one and this board works without
 JavaScript for anything but drag-and-drop.
 
-Writes send `application/x-www-form-urlencoded`, except the card order, which
-sends JSON. Bodies are capped at 1 MiB before a handler reads them.
+Writes send `application/x-www-form-urlencoded`. Bodies are capped at 1 MiB
+before a handler reads them.
 
 A write from another origin is refused with `403`. The guard reads
 `Sec-Fetch-Site`, falls back to `Origin`, and lets a request through that
@@ -74,20 +74,26 @@ column marked `stops_clock` on the settings page.
 | `POST /b/{board}/cards` | `title`, `column`, and optionally `description`, `due_date`, `assignee`, `subtasks`, `labels` (once per label) | The new card, with `HX-Retarget: #cards-{column}` and `HX-Reswap: beforeend` so it lands in the right column. `303` to the board without htmx |
 | `GET /cards/{id}` | | The card face |
 | `GET /cards/{id}/edit` | | The edit form with the card's comments |
+| `GET /subtask-row` | | One empty checklist line, appended by the Add Subtask button. Markup only; it reads nothing and takes nothing |
 | `POST /cards/{id}` | the fields above, plus `column` to move it | The card face. `204` with `HX-Refresh: true` when the column changed, because the card now belongs to a list this response cannot reach. `303` to the board without htmx |
 | `POST /cards/{id}/assignee` | `assignee`: an address, `@me`, or empty to unassign | The card face, or `303` without htmx. `403` on `@me` when nobody is signed in |
 | `POST /cards/{id}/due` | `due_date`: `YYYY-MM-DD`, or empty to take the date off | The card face, or `303` without htmx. `400` on anything else |
 | `POST /cards/{id}/labels/{label}/toggle` | | The card face with that label put on or taken off. The label stays on the board either way |
-| `POST /cards/{id}/archive` | | `200` and an empty body. The caller removes the row |
-| `POST /cards/{id}/delete` | | `200` and an empty body |
+| `POST /cards/{id}/archive` | | The column headers, out of band. The row goes with `hx-swap="delete"` |
+| `POST /cards/{id}/delete` | | The same |
 | `POST /cards/{id}/restore` | `?board=` the slug to return to | `204` with `HX-Redirect: /b/{slug}` |
 | `GET /b/{board}/archive` | `?q=` to search, optional | The archived cards, each with a restore button |
 | `POST /b/{board}/cards/bulk` | `action=move\|assign\|archive\|delete`, `ids` (once per card), `target` (a column id for `move`, an address or `@me` for `assign`) | `204` with `HX-Refresh: true`. `403` on `target=@me` when nobody is signed in |
-| `POST /b/{board}/columns/{column}/order` | JSON `{"order":["card-id", …]}` | `OK` as text. `409` when a WIP limit refuses the move |
+| `POST /b/{board}/columns/{column}/order` | `order`, once per card, top first | The board's column headers, each marked `hx-swap-oob`. `409` when a WIP limit refuses the move |
 
 The order request is the whole order of one column, and any card named in it
 moves into that column from wherever it was. A drag between two columns
 therefore sends one request, for the destination.
+
+Every response that moves, adds or removes a card carries the board's column
+headers marked `hx-swap-oob`, so the count, the WIP bar and the notice under it
+are redrawn by the server on both the column the card left and the one it
+arrived in. That is why a delete and an archive answer with a body at all.
 
 ## Comments
 

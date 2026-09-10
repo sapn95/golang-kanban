@@ -131,6 +131,13 @@ into this one, so the origin column needs no second request and no
 renumbering; gaps in `position` are harmless because ordering is by position,
 not by contiguity.
 
+The response is the board's column headers, each marked `hx-swap-oob`, and so
+is the response to adding, archiving or deleting a card. The count, the WIP bar
+and the notice under it are the limit's whole interface, and rendering them on
+the server is what keeps "what does a full column look like" from being
+answered a second time in JavaScript. The browser's part is now the drag itself
+and the list of ids it posts.
+
 ## Command line
 
 `kanban` with no arguments behaves like today (`serve`), so the Dockerfile `CMD`

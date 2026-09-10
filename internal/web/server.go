@@ -93,6 +93,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /b/{board}", s.board)
 	mux.HandleFunc("POST /b/{board}/cards", s.createCard)
 	mux.HandleFunc("POST /b/{board}/columns/{column}/order", s.reorderCards)
+	mux.HandleFunc("GET /subtask-row", s.subtaskRow)
 	mux.HandleFunc("POST /b/{board}/cards/bulk", s.bulkCards)
 	mux.HandleFunc("GET /cards/{id}", s.card)
 	mux.HandleFunc("GET /cards/{id}/edit", s.editCard)
@@ -188,7 +189,8 @@ func (s *Server) parseTemplates() {
 		"hasAPI": func() bool { return s.api != nil },
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles,
-		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html"))
+		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html",
+		"templates/column.html"))
 	s.parts = base
 	s.pages = map[string]*template.Template{}
 	for _, name := range []string{"board", "boards", "archive", "settings"} {
@@ -304,6 +306,26 @@ type columnView struct {
 	// LimitPercent fills the bar under the header, capped at 100 so an
 	// over-full column does not draw outside its own track.
 	LimitPercent int
+	// OOB marks the header as one htmx should take out of the response and
+	// put back where it belongs, rather than swap into the target. Set on
+	// every response that changed a count and left the page standing.
+	OOB bool
+}
+
+// columnHead is one column header's view: the count, and where that count
+// stands against the limit.
+//
+// The arithmetic lives here rather than in the browser because the header is
+// the WIP limit's whole interface, and a copy of these rules in JavaScript was
+// a second place for "what does a full column look like" to be answered.
+func columnHead(col model.Column, count int, oob bool) columnView {
+	cv := columnView{Column: col, Count: count, OOB: oob}
+	if col.WIPLimit > 0 {
+		cv.AtLimit = count == col.WIPLimit
+		cv.OverLimit = count > col.WIPLimit
+		cv.LimitPercent = min(count*100/col.WIPLimit, 100)
+	}
+	return cv
 }
 
 type boardPage struct {
@@ -619,15 +641,36 @@ func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, 
 		byColumn[c.ColumnID] = append(byColumn[c.ColumnID], s.cardView(u, b, clock, c, comments[c.ID], people))
 	}
 	for _, col := range b.Columns {
-		cv := columnView{Column: col, Cards: byColumn[col.ID], Count: len(byColumn[col.ID])}
-		if col.WIPLimit > 0 {
-			cv.AtLimit = cv.Count == col.WIPLimit
-			cv.OverLimit = cv.Count > col.WIPLimit
-			cv.LimitPercent = min(cv.Count*100/col.WIPLimit, 100)
-		}
+		cv := columnHead(col, len(byColumn[col.ID]), false)
+		cv.Cards = byColumn[col.ID]
 		p.Columns = append(p.Columns, cv)
 	}
 	return p
+}
+
+// columnHeads is every column header of b with the counts it has now, marked
+// for an out-of-band swap.
+//
+// Every response that moves, adds or removes a card carries these, so the
+// column the card left is redrawn as well as the one it arrived in without the
+// caller having to say which those were. The counts come from a read rather
+// than from arithmetic on what the last render said, since a header that
+// disagrees with the column under it is worse than a header that costs a query.
+func (s *Server) columnHeads(ctx context.Context, b *model.Board) []fragment {
+	cards, err := s.svc.Cards(ctx, b.ID)
+	if err != nil {
+		s.log.Error("column heads", "board", b.ID, "err", err)
+		return nil
+	}
+	n := map[model.ID]int{}
+	for _, c := range cards {
+		n[c.ColumnID]++
+	}
+	frags := make([]fragment, 0, len(b.Columns))
+	for _, col := range b.Columns {
+		frags = append(frags, fragment{"columnhead", columnHead(col, n[col.ID], true)})
+	}
+	return frags
 }
 
 // --- rendering and errors -----------------------------------------------------
@@ -829,29 +872,40 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	// A card that was created a microsecond ago has no comments; counting them
 	// would be a query that can only ever answer zero.
 	u := identity.FromContext(r.Context())
-	s.render(w, s.parts, "card", http.StatusOK, s.cardView(u, b, b.SLA.Clock(), *c, 0, s.people(r, u, b.ID)))
+	card := fragment{"card", s.cardView(u, b, b.SLA.Clock(), *c, 0, s.people(r, u, b.ID))}
+	s.renderAll(w, s.parts, http.StatusOK, append([]fragment{card}, s.columnHeads(r.Context(), b)...)...)
 }
 
-type orderPayload struct {
-	Order []model.ID `json:"order"`
+// subtaskRow is one empty line of a checklist, for the Add Subtask button. It
+// takes nothing and reads nothing: the row is markup, and the only reason it
+// comes from here is so that the markup of a checklist line lives in one file.
+func (s *Server) subtaskRow(w http.ResponseWriter, _ *http.Request) {
+	s.render(w, s.parts, "subtaskrow", http.StatusOK, model.Subtask{})
 }
 
+// reorderCards takes the whole order of one column as repeated `order` fields,
+// the same encoding every other write on these pages uses. It answers with the
+// board's column headers, so the count and the WIP bar on both the column the
+// card left and the one it landed in are redrawn by the server.
 func (s *Server) reorderCards(w http.ResponseWriter, r *http.Request) {
 	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	var p orderPayload
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&p); err != nil {
-		plain(w, http.StatusBadRequest, "invalid JSON")
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
 		return
 	}
-	if err := s.svc.ReorderCards(r.Context(), b.ID, model.ID(r.PathValue("column")), p.Order); err != nil {
+	order := make([]model.ID, 0, len(r.Form["order"]))
+	for _, id := range r.Form["order"] {
+		order = append(order, model.ID(id))
+	}
+	if err := s.svc.ReorderCards(r.Context(), b.ID, model.ID(r.PathValue("column")), order); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	plain(w, http.StatusOK, "OK")
+	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)
 }
 
 // cardAndBoard loads a card and its board for rendering.
@@ -1171,23 +1225,36 @@ func (s *Server) quickEdited(w http.ResponseWriter, r *http.Request, c *model.Ca
 	s.render(w, s.parts, "card", http.StatusOK, v)
 }
 
+// deleteCard removes the card for good. The row goes with hx-swap="delete" on
+// the button, and the response body is the column headers, which htmx takes
+// out of it and puts back on the board.
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.DeleteCard(r.Context(), model.ID(r.PathValue("id"))); err != nil {
+	c, b, err := s.cardAndBoard(r)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	if err := s.svc.DeleteCard(r.Context(), c.ID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)
 }
 
 // archiveCard takes a card off the board. The card row is removed from the
 // page, exactly as a delete does, because from the board's point of view the
 // two look the same; the difference is that this one can be undone.
 func (s *Server) archiveCard(w http.ResponseWriter, r *http.Request) {
-	if err := s.svc.ArchiveCard(r.Context(), model.ID(r.PathValue("id"))); err != nil {
+	c, b, err := s.cardAndBoard(r)
+	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	if err := s.svc.ArchiveCard(r.Context(), c.ID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)
 }
 
 func (s *Server) restoreCard(w http.ResponseWriter, r *http.Request) {

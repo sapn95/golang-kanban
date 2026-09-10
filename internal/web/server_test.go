@@ -72,7 +72,10 @@ func seeded(t *testing.T, opts ...Option) *env {
 
 func (e *env) do(method, path string, body io.Reader, headers ...string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, body)
-	if body != nil && method == http.MethodPost && !strings.HasPrefix(path, "/b/") || strings.HasSuffix(path, "/cards") {
+	// Every write on these pages is a form now that the card order is one too,
+	// so a POST with a body gets the header a browser would send. A subtest
+	// that wants a different one passes it in headers, which is applied after.
+	if body != nil && method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	for i := 0; i+1 < len(headers); i += 2 {
@@ -184,24 +187,36 @@ func TestReorder(t *testing.T) {
 	todo, doing := e.board.Columns[0].ID, e.board.Columns[1].ID
 	second, _ := e.svc.CreateCard(ctx, e.board.ID, todo, service.CardInput{Title: "Second"})
 
-	body := `{"order":["` + string(second.ID) + `","` + string(e.card.ID) + `"]}`
-	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(doing)+"/order", strings.NewReader(body)), http.StatusOK, "OK")
+	order := func(ids ...model.ID) io.Reader {
+		v := url.Values{}
+		for _, id := range ids {
+			v.Add("order", string(id))
+		}
+		return strings.NewReader(v.Encode())
+	}
+	// The answer is the board's column headers, marked for htmx to put back
+	// where they belong: the column the cards left is redrawn as well as the
+	// one they arrived in.
+	res := e.do(http.MethodPost, "/b/demo/columns/"+string(doing)+"/order", order(second.ID, e.card.ID))
+	want(t, res, http.StatusOK, `id="colhead-`+string(doing)+`" hx-swap-oob="true"`)
+	if body := res.Body.String(); !strings.Contains(body, `id="colhead-`+string(todo)+`"`) {
+		t.Error("the column the cards left was not redrawn")
+	}
 	cards, _ := e.svc.Cards(ctx, e.board.ID)
 	if len(cards) != 2 || cards[0].ID != second.ID || cards[0].ColumnID != doing || cards[1].ColumnID != doing {
 		t.Fatalf("cards = %+v", cards)
 	}
 
-	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(doing)+"/order", strings.NewReader("{")), http.StatusBadRequest, "invalid JSON")
-	want(t, e.do(http.MethodPost, "/b/nope/columns/x/order", strings.NewReader(`{"order":[]}`)), http.StatusNotFound)
-	want(t, e.do(http.MethodPost, "/b/demo/columns/nope/order", strings.NewReader(`{"order":[]}`)), http.StatusNotFound)
-	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader(`{"order":["nope"]}`)), http.StatusNotFound)
-	dup := `{"order":["` + string(second.ID) + `","` + string(second.ID) + `"]}`
-	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader(dup)), http.StatusBadRequest, "invalid request")
+	want(t, e.do(http.MethodPost, "/b/nope/columns/x/order", order()), http.StatusNotFound)
+	want(t, e.do(http.MethodPost, "/b/demo/columns/nope/order", order()), http.StatusNotFound)
+	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", order("nope")), http.StatusNotFound)
+	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", order(second.ID, second.ID)), http.StatusBadRequest, "invalid request")
+	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader("%zz"), "Content-Type", "application/x-www-form-urlencoded"), http.StatusBadRequest, "bad form")
 
 	if err := e.svc.UpdateColumn(ctx, todo, "To Do", 1, false); err != nil {
 		t.Fatal(err)
 	}
-	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader(body)), http.StatusConflict, "WIP limit")
+	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", order(second.ID, e.card.ID)), http.StatusConflict, "WIP limit")
 }
 
 // Dragging a selection posts one order to the destination column, and the cards
@@ -215,8 +230,9 @@ func TestReorderTakesCardsFromSeveralColumnsAtOnce(t *testing.T) {
 
 	// e.card is in To Do, inDoing is in In Progress, and both are dropped into
 	// Done in one request.
-	body := `{"order":["` + string(inDoing.ID) + `","` + string(e.card.ID) + `"]}`
-	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(done)+"/order", strings.NewReader(body)), http.StatusOK, "OK")
+	v := url.Values{"order": {string(inDoing.ID), string(e.card.ID)}}
+	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(done)+"/order", strings.NewReader(v.Encode())),
+		http.StatusOK, `id="colhead-`+string(done)+`"`)
 
 	cards, _ := e.svc.Cards(ctx, e.board.ID)
 	for _, c := range cards {
@@ -1369,10 +1385,11 @@ func TestBoardShowsWhatIsPressing(t *testing.T) {
 		if !strings.Contains(body, "bg-amber-500") {
 			t.Error("the limit bar is not amber on a full column")
 		}
-		// The over-limit notice is in the page too, hidden, so that a drop can
-		// switch to it without the server rendering the copy again.
-		if !strings.Contains(body, "over its limit") {
-			t.Error("the over-limit notice is missing, so a drop has nothing to reveal")
+		// One notice at a time. A drop answers with the header rendered again,
+		// so the copy for a state the column is not in has no reason to be in
+		// the page waiting to be unhidden.
+		if strings.Contains(body, "over its limit") {
+			t.Error("a full column shows the over-limit notice as well")
 		}
 	})
 
@@ -2490,4 +2507,81 @@ func TestSLAThroughTheWeb(t *testing.T) {
 			}
 		})
 	})
+}
+
+// The count on a column header, the bar under it and the notice under that are
+// the WIP limit's whole interface, and every write that changes a count has to
+// bring them along or the board disagrees with itself until the next reload.
+func TestColumnHeadersComeBackWithEveryWrite(t *testing.T) {
+	oob := func(t *testing.T, rr *httptest.ResponseRecorder, cols ...model.ID) {
+		t.Helper()
+		body := rr.Body.String()
+		for _, c := range cols {
+			if !strings.Contains(body, `id="colhead-`+string(c)+`" hx-swap-oob="true"`) {
+				t.Errorf("the response does not redraw column %s:\n%s", c, body)
+			}
+		}
+	}
+
+	t.Run("adding a card", func(t *testing.T) {
+		e := seeded(t)
+		todo := e.board.Columns[0].ID
+		rr := e.do(http.MethodPost, "/b/demo/cards", form("title", "new", "column", string(todo)), "HX-Request", "true")
+		want(t, rr, http.StatusOK, "new")
+		oob(t, rr, todo)
+	})
+
+	t.Run("archiving one", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/archive", nil)
+		want(t, rr, http.StatusOK)
+		oob(t, rr, e.board.Columns[0].ID)
+	})
+
+	t.Run("deleting one", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/delete", nil)
+		want(t, rr, http.StatusOK)
+		oob(t, rr, e.board.Columns[0].ID)
+	})
+
+	t.Run("a full column says so in the header it sends back", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		todo := e.board.Columns[0]
+		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1, false); err != nil {
+			t.Fatal(err)
+		}
+		// The card that is already there is archived and put back, so the
+		// header arrives once under the limit and once at it.
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/archive", nil)
+		if body := rr.Body.String(); strings.Contains(body, "At the limit.") {
+			t.Error("an empty column reports itself full")
+		}
+		second, err := e.svc.CreateCard(ctx, e.board.ID, todo.ID, service.CardInput{Title: "second"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rr = e.do(http.MethodPost, "/cards/"+string(second.ID)+"/archive", nil)
+		want(t, rr, http.StatusOK)
+		if body := rr.Body.String(); strings.Contains(body, "0 / 1") == false {
+			t.Errorf("the header does not report the count against the limit:\n%s", body)
+		}
+	})
+}
+
+// The Add Subtask button asks the server for the row rather than building one,
+// so a checklist line is written down once.
+func TestSubtaskRowComesFromTheServer(t *testing.T) {
+	e := seeded(t)
+	rr := e.do(http.MethodGet, "/subtask-row", nil)
+	want(t, rr, http.StatusOK, "subtask-row", "subtask-text", "subtask-complete", "remove-subtask-btn")
+	if body := rr.Body.String(); strings.Contains(body, "checked") {
+		t.Error("a row that nobody has typed in yet arrives ticked")
+	}
+	// The same markup the edit form renders for a subtask a card already has.
+	edit := e.do(http.MethodGet, "/cards/"+string(e.card.ID)+"/edit", nil).Body.String()
+	if !strings.Contains(edit, `class="subtask-row flex items-center space-x-2 mb-2"`) {
+		t.Error("the edit form and /subtask-row have drifted apart")
+	}
 }
