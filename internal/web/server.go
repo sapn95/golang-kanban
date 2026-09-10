@@ -323,23 +323,49 @@ type boardsPage struct {
 	Error     string
 }
 
-// labelPalette is what the label form offers.
+// labelPalette is the set of colours the label form offers on every board.
 //
 // A board reads better when its labels come from one set of colours than when
 // every one is picked by hand, and a fixed list cannot produce a value the
 // template has to refuse. The service still accepts any hex colour, so an API
-// client is not held to these eight.
-var labelPalette = []string{"#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280"}
+// client is not held to these ten.
+//
+// Roughly a spectrum, warm to cool, so neighbouring swatches are the ones that
+// look alike and the list can be scanned rather than read.
+var labelPalette = []string{
+	"#ef4444", "#f97316", "#f59e0b", "#eab308", "#22c55e",
+	"#0ea5e9", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280",
+}
+
+// boardPalette is what one board's label rows offer: the presets, plus any
+// colour a label on this board already carries that is not one of them.
+//
+// The colours in use have to be in every row, not only in the row that carries
+// one. A colour set through the API was offered to the label that had it and to
+// nothing else, so a board with a label in a colour off this list could not be
+// given a second label to match it, and each row showed a different number of
+// swatches for a reason nobody could see from the page.
+func boardPalette(labels []model.Label) []string {
+	palette := slices.Clone(labelPalette)
+	var extra []string
+	for _, l := range labels {
+		if l.Color != "" && !slices.Contains(palette, l.Color) && !slices.Contains(extra, l.Color) {
+			extra = append(extra, l.Color)
+		}
+	}
+	// Sorted, so the row does not reshuffle when a label is renamed: the labels
+	// arrive in name order, and appending in that order would move a swatch.
+	slices.Sort(extra)
+	return append(palette, extra...)
+}
 
 type labelView struct {
 	Label model.Label
 	// Cards is how many cards carry the label, archived ones included.
 	// Deleting takes it off all of them, so the page says so first.
 	Cards int
-	// Custom is a colour that is not one of the presets, set by an API client
-	// or an older board. The form offers it as a ninth swatch rather than
-	// showing the label as though it had no colour and quietly losing it.
-	Custom  bool
+	// Palette is boardPalette, the same list in every row, so a colour one
+	// label carries can be given to another.
 	Palette []string
 }
 
@@ -1104,12 +1130,13 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 		s.fail(w, r, err)
 		return
 	}
+	palette := boardPalette(b.Labels)
 	p := settingsPage{
 		Title:     b.Name + " · settings",
 		User:      identity.FromContext(r.Context()),
 		BoardSlug: b.Slug,
 		Board:     b,
-		NewLabel:  labelView{Palette: labelPalette},
+		NewLabel:  labelView{Palette: palette},
 		Error:     message,
 	}
 	for i, col := range b.Columns {
@@ -1131,8 +1158,7 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 		p.Labels = append(p.Labels, labelView{
 			Label:   l,
 			Cards:   labelUse[l.ID],
-			Custom:  l.Color != "" && !slices.Contains(labelPalette, l.Color),
-			Palette: labelPalette,
+			Palette: palette,
 		})
 	}
 	s.render(w, s.pages["settings"], "layout", status, p)
