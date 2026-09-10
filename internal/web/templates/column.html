@@ -5,27 +5,36 @@
      again in the browser. */}}
 {{define "columnhead"}}
 <div id="colhead-{{.Column.ID}}"{{if .OOB}} hx-swap-oob="true"{{end}}>
-  <h3 class="text-xl font-bold text-center mb-2 text-gray-700 dark:text-gray-300 flex justify-center items-center gap-2">
-    <span>{{.Column.Name}}</span>
-    <span class="text-sm font-normal tabular-nums {{if .OverLimit}}text-red-600 dark:text-red-400{{else if .AtLimit}}text-amber-600 dark:text-amber-400{{else}}text-gray-500 dark:text-gray-400{{end}}">{{if .Column.WIPLimit}}{{.Count}} / {{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
+  <!-- The name reads as a heading over a list rather than as a title in the
+       middle of one: left, small, and in the tracking a label wants. The count
+       goes to the far side, where the eye already is after reading the name. -->
+  <h3 class="flex items-baseline gap-2 mb-2.5">
+    <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{.Column.Name}}</span>
+    {{if .Column.StopsClock}}
+    <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide
+                 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
+          title="The response-time clock does not run in this column">clock stops</span>
+    {{end}}
+    <span class="ml-auto text-xs font-medium tabular-nums {{if .OverLimit}}text-rose-600 dark:text-rose-400{{else if .AtLimit}}text-amber-600 dark:text-amber-400{{else}}text-slate-400 dark:text-slate-500{{end}}">{{if .Column.WIPLimit}}{{.Count}} / {{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
   </h3>
   <!-- A WIP limit used to be visible only as a drop the server refused. The
        bar says how close the column is before anyone drags anything. -->
   {{if .Column.WIPLimit}}
-  <div class="h-1 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden mb-2"
+  <div class="h-0.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden mb-3"
        title="{{.Count}} of {{.Column.WIPLimit}} allowed in this column">
-    <div class="h-full rounded-full {{if .OverLimit}}bg-red-500{{else if .AtLimit}}bg-amber-500{{else}}bg-blue-500{{end}}"
+    <div class="h-full rounded-full {{if .OverLimit}}bg-rose-500{{else if .AtLimit}}bg-amber-500{{else}}bg-indigo-500{{end}}"
          style="width: {{.LimitPercent}}%"></div>
   </div>
+  {{else}}
+  <div class="mb-3"></div>
   {{end}}
-  <div class="border-b border-gray-200 dark:border-gray-600 mb-4"></div>
   {{if .Column.WIPLimit}}
   {{if .OverLimit}}
-  <p class="mb-3 text-xs text-red-600 dark:text-red-400 text-center">
-    This column is over its limit. Finish something before moving more in.
+  <p class="mb-3 text-xs text-rose-600 dark:text-rose-400">
+    Over its limit. Finish something before moving more in.
   </p>
   {{else if .AtLimit}}
-  <p class="mb-3 text-xs text-amber-600 dark:text-amber-400 text-center">
+  <p class="mb-3 text-xs text-amber-600 dark:text-amber-400">
     At the limit. Finish something before starting another.
   </p>
   {{end}}

@@ -20,7 +20,13 @@ import (
 // Only what is served: tailwind.sh, tailwind.config.js and tailwind.input.css
 // are the compile's inputs and have no business in the binary.
 //
-//go:embed vendor app.js app.css tailwind.css logo.svg
+// manifest.webmanifest and sw.js are embedded here and served from the root, not
+// from /assets/: a service worker controls only what is under the path it came
+// from, and a manifest's scope defaults to its own directory. The PNGs are the
+// touch icon Safari wants, which has never taken an SVG, and the two sizes an
+// Android install reads out of the manifest.
+//
+//go:embed vendor app.js app.css tailwind.css logo.svg manifest.webmanifest sw.js icon-180.png icon-192.png icon-512.png
 var files embed.FS
 
 // FS is the embedded file tree, rooted at the assets directory.

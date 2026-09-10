@@ -151,6 +151,9 @@ Cloudflare Access, protects this too.
 | `GET /readyz` | | `ready`, or `503 not ready` when the database does not answer |
 | `GET /version` | | `kanban {version} (commit {sha})`, which is how you find out whether a deploy landed |
 | `GET /favicon.ico` | | `204` |
+| `GET /manifest.webmanifest` | | The web app manifest, `no-cache`. At the root because a manifest's scope defaults to its own directory |
+| `GET /sw.js` | | The service worker, `no-cache`. At the root because a worker only controls what is under the path it came from |
+| `GET /offline` | | The page the service worker answers a navigation with when the server cannot be reached |
 
 ## What a failure looks like
 

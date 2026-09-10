@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -140,6 +141,13 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /version", s.buildInfo)
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	// The three that make the board installable. All at the root, because a
+	// service worker only controls what is under the path it was served from
+	// and a manifest's scope defaults to its own directory: from /assets/ both
+	// would cover the assets and nothing else.
+	mux.HandleFunc("GET /manifest.webmanifest", s.manifest)
+	mux.HandleFunc("GET /sw.js", s.serviceWorker)
+	mux.HandleFunc("GET /offline", s.offline)
 	return s.logging(s.recover(s.secureHeaders(s.crossSite(s.limitBody(mux)))))
 }
 
@@ -193,7 +201,7 @@ func (s *Server) parseTemplates() {
 		"templates/column.html"))
 	s.parts = base
 	s.pages = map[string]*template.Template{}
-	for _, name := range []string{"board", "boards", "archive", "settings"} {
+	for _, name := range []string{"board", "boards", "archive", "settings", "offline"} {
 		s.pages[name] = template.Must(template.Must(base.Clone()).ParseFS(templateFiles, "templates/"+name+".html"))
 	}
 }
@@ -1749,6 +1757,47 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 
 // staticHandler serves embedded files with a long cache and no directory
 // listings.
+// manifest and serviceWorker serve two files out of the embedded tree at the
+// root rather than under /assets/. Neither carries the digest in its URL, so
+// neither can be cached for a year the way an asset is: a manifest is read once
+// on install and a service worker is checked for a new copy on every load, and
+// a stale one of either is a board that will not update.
+func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
+	s.rootAsset(w, r, "manifest.webmanifest", "application/manifest+json")
+}
+
+func (s *Server) serviceWorker(w http.ResponseWriter, r *http.Request) {
+	s.rootAsset(w, r, "sw.js", "text/javascript; charset=utf-8")
+}
+
+func (s *Server) rootAsset(w http.ResponseWriter, r *http.Request, name, contentType string) {
+	b, err := fs.ReadFile(assets.FS(), name)
+	if err != nil {
+		s.log.Error("root asset", "name", name, "err", err)
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(b)
+}
+
+// offline is what the service worker answers with when a navigation cannot
+// reach the server. It says so in the board's own words rather than leaving the
+// browser to draw its error page over an installed application.
+func (s *Server) offline(w http.ResponseWriter, r *http.Request) {
+	s.render(w, s.pages["offline"], "layout", http.StatusOK,
+		offlinePage{Title: "Offline", User: identity.FromContext(r.Context())})
+}
+
+type offlinePage struct {
+	Title string
+	User  identity.User
+	// BoardSlug is what layout.html reads for the body attribute; there is no
+	// board here, and an empty one leaves the attribute off.
+	BoardSlug string
+}
+
 func staticHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") {

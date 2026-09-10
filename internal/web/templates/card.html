@@ -1,9 +1,9 @@
 {{define "card"}}
-<div class="bg-white dark:bg-gray-700 rounded-lg p-3 sm:p-4 shadow-md border border-gray-200 dark:border-gray-600 cursor-move hover:shadow-lg transition-all duration-200" id="card-{{.Card.ID}}"{{if .OOB}} hx-swap-oob="true"{{end}} data-id="{{.Card.ID}}">
+<div class="bg-white dark:bg-slate-800 rounded-xl p-3.5 sm:p-4 shadow-sm dark:shadow-none border border-slate-200 dark:border-slate-700 cursor-move hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-md dark:hover:shadow-none transition-all duration-200" id="card-{{.Card.ID}}"{{if .OOB}} hx-swap-oob="true"{{end}} data-id="{{.Card.ID}}">
   <div class="flex items-start gap-2 mb-2">
     <input type="checkbox" class="card-select mt-1.5 w-4 h-4 rounded shrink-0 cursor-pointer"
            value="{{.Card.ID}}" aria-label="Select card">
-    <h5 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex-1 break-words">{{.Card.Title}}</h5>
+    <h5 class="text-base sm:text-lg font-semibold text-slate-900 dark:text-white flex-1 break-words">{{.Card.Title}}</h5>
   </div>
   <!-- Always drawn: the due date is set from here, so the row has to be there
        even on a card that has neither a date nor a label yet. -->
@@ -17,7 +17,7 @@
          draggable="false" so a drag that starts on a chip moves the card
          instead of the browser dragging the link. -->
     <span class="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-full text-xs font-semibold leading-none
-      {{if not .Color}}bg-gray-200 text-gray-800 ring-1 ring-gray-400 dark:bg-gray-500 dark:text-white dark:ring-gray-400{{end}}"
+      {{if not .Color}}bg-slate-200 text-slate-800 ring-1 ring-slate-400 dark:bg-slate-500 dark:text-white dark:ring-slate-400{{end}}"
       {{with .Color}}style="background-color: {{.}}; color: {{readableOn .}}"{{end}}>
       <a href="/b/{{$.BoardSlug}}?q=label:%22{{.Name}}%22" draggable="false"
         title="Find every card with this label"
@@ -40,18 +40,18 @@
          too, and the dashed chip below is the way in on a card with no date,
          which has nothing to double-click. -->
     <button type="button" class="dbl-toggle select-none px-2 py-0.5 rounded-full
-      {{if eq .DueState "overdue"}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200
-      {{else if eq .DueState "today"}}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200
-      {{else if eq .DueState "soon"}}bg-yellow-50 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200
-      {{else}}bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200{{end}}"
+      {{if eq .DueState "overdue"}}bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300
+      {{else if eq .DueState "today"}}bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300
+      {{else if eq .DueState "soon"}}bg-yellow-100 text-yellow-800 dark:bg-yellow-400/15 dark:text-yellow-200
+      {{else}}bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300{{end}}"
       data-panel="due-{{.Card.ID}}"
       title="{{if eq .DueState "overdue"}}Overdue{{else if eq .DueState "today"}}Due today{{else if eq .DueState "soon"}}Due within days{{else}}Due{{end}}. Double-click to change it">
       <i class="bi bi-calendar-event mr-1"></i>{{.Due}}
     </button>
     {{else}}
     <button type="button" class="quick-toggle inline-flex items-center px-2 py-1 rounded-full leading-none border border-dashed
-                                 border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-400
-                                 hover:text-blue-600 hover:border-blue-400 dark:hover:text-blue-400"
+                                 border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-400
+                                 hover:text-indigo-600 hover:border-indigo-400 dark:hover:text-indigo-400"
             data-panel="due-{{.Card.ID}}" title="No due date. Click to set one" aria-label="Due date">
       <i class="bi bi-calendar-event"></i>
     </button>
@@ -62,17 +62,17 @@
          page. Green is deliberately quiet, because on a desk that is keeping its
          promise every card carries one. -->
     <span class="inline-flex items-center px-2 py-0.5 rounded-full leading-none tabular-nums
-      {{if eq . "breached"}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200
-      {{else if eq . "soon"}}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200
-      {{else}}bg-emerald-50 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200{{end}}"
+      {{if eq . "breached"}}bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300
+      {{else if eq . "soon"}}bg-amber-100 text-amber-800 dark:bg-amber-400/15 dark:text-amber-300
+      {{else}}bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300{{end}}"
       title="{{if eq . "breached"}}The response time ran out on {{$.SLADue}}{{else}}Answer by {{$.SLADue}}{{end}}">
       <i class="bi bi-stopwatch mr-1"></i>{{$.SLALeft}}
     </span>
     {{end}}
     {{if .BoardLabels}}
     <button type="button" class="quick-toggle inline-flex items-center px-2 py-1 rounded-full leading-none border border-dashed
-                                 border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-400
-                                 hover:text-blue-600 hover:border-blue-400 dark:hover:text-blue-400"
+                                 border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-400
+                                 hover:text-indigo-600 hover:border-indigo-400 dark:hover:text-indigo-400"
             data-panel="labels-{{.Card.ID}}" title="Labels" aria-label="Labels">
       <i class="bi bi-plus-lg"></i>
     </button>
@@ -82,12 +82,12 @@
     <!-- The description is markdown, rendered by the server. The md class is
          what app.css styles: Tailwind's reset takes the bullets off a list and
          the size off a heading, so the rendered block needs rules of its own. -->
-    <div class="md text-gray-600 dark:text-gray-300 text-sm mb-3">{{markdown .Card.Description}}</div>
+    <div class="md text-slate-600 dark:text-slate-300 text-sm mb-3">{{markdown .Card.Description}}</div>
   {{end}}
   {{if .Card.Subtasks}}
-    <div class="flex items-center gap-2 mb-1.5 text-xs text-gray-500 dark:text-gray-400">
-      <div class="flex-1 h-1.5 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
-        <div class="h-full rounded-full {{if eq .SubtasksDone .SubtasksTotal}}bg-green-500{{else}}bg-blue-500{{end}}"
+    <div class="flex items-center gap-2 mb-1.5 text-xs text-slate-500 dark:text-slate-400">
+      <div class="flex-1 h-1.5 rounded-full bg-slate-200 dark:bg-slate-600 overflow-hidden">
+        <div class="h-full rounded-full {{if eq .SubtasksDone .SubtasksTotal}}bg-green-500{{else}}bg-indigo-500{{end}}"
              style="width: {{.SubtasksPercent}}%"></div>
       </div>
       <span class="tabular-nums shrink-0">{{.SubtasksDone}}/{{.SubtasksTotal}}</span>
@@ -95,21 +95,21 @@
     <ul class="space-y-1 mb-3">
       {{range .Card.Subtasks}}
       <li class="flex items-center text-sm">
-        <i class="bi bi-check-square{{if .Done}}-fill text-green-500{{else}} text-gray-400{{end}} mr-2"></i>
-        <span class="{{if .Done}}line-through text-gray-500{{else}}text-gray-700 dark:text-gray-300{{end}}">{{.Title}}</span>
+        <i class="bi bi-check-square{{if .Done}}-fill text-green-500{{else}} text-slate-400{{end}} mr-2"></i>
+        <span class="{{if .Done}}line-through text-slate-500{{else}}text-slate-700 dark:text-slate-300{{end}}">{{.Title}}</span>
       </li>
       {{end}}
     </ul>
   {{end}}
-  <div class="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-600">
+  <div class="card-foot flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-700">
     <span class="flex items-center gap-2 mr-auto min-w-0">
       <button type="button" class="quick-toggle flex items-center gap-1.5 min-w-0 -mx-1 px-1 py-0.5 rounded-lg text-xs
-                                   hover:bg-gray-100 dark:hover:bg-gray-600"
+                                   hover:bg-slate-100 dark:hover:bg-slate-600"
               data-panel="assignee-{{.Card.ID}}" aria-label="Assignee"
               title="{{if .Card.Assignee}}{{.Card.Assignee}}{{else}}Nobody is assigned{{end}}">
         {{if .Card.Assignee}}
         <span class="relative inline-flex items-center justify-center w-6 h-6 shrink-0 overflow-hidden rounded-full text-white text-[10px] font-semibold uppercase
-                     {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-blue-600 to-purple-600{{else}}bg-gray-400 dark:bg-gray-500{{end}}">
+                     {{if eq .Card.Assignee .Viewer.Email}}bg-gradient-to-br from-indigo-500 to-violet-500{{else}}bg-slate-400 dark:bg-slate-500{{end}}">
           {{initials .Card.Assignee}}
           <!-- The picture covers the initials rather than replacing them, so
                they are the fallback for free: an <img> with an empty alt that
@@ -119,34 +119,36 @@
           <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
           {{end}}
         </span>
-        <span class="hidden sm:inline truncate text-gray-600 dark:text-gray-300">{{personName .Card.Assignee}}</span>
+        <span class="hidden sm:inline truncate text-slate-600 dark:text-slate-300">{{personName .Card.Assignee}}</span>
         {{else}}
         <span class="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full border border-dashed
-                     border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-500">
+                     border-slate-300 dark:border-slate-500 text-slate-400 dark:text-slate-500">
           <i class="bi bi-person"></i>
         </span>
-        <span class="hidden sm:inline text-gray-400 dark:text-gray-500">Unassigned</span>
+        <span class="hidden sm:inline text-slate-400 dark:text-slate-500">Unassigned</span>
         {{end}}
       </button>
       {{if .CommentCount}}
-      <span class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 shrink-0"
+      <span class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 shrink-0"
             title="{{.CommentCount}} comment{{if ne .CommentCount 1}}s{{end}}">
         <i class="bi bi-chat-left-text"></i>{{.CommentCount}}
       </span>
       {{end}}
     </span>
-    <button type="button" class="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900 rounded-lg transition-colors duration-200"
+    <span class="card-acts flex items-center gap-0.5">
+    <button type="button" class="p-2 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 rounded-lg transition-colors duration-200"
       hx-get="/cards/{{.Card.ID}}/edit" hx-target="#editCardModalContent" hx-swap="innerHTML" title="Edit">
       <i class="bi bi-pencil text-sm"></i>
     </button>
-    <button type="button" class="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-colors duration-200"
+    <button type="button" class="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600 rounded-lg transition-colors duration-200"
       hx-post="/cards/{{.Card.ID}}/archive" hx-target="#card-{{.Card.ID}}" hx-swap="delete" title="Archive">
       <i class="bi bi-archive text-sm"></i>
     </button>
-    <button type="button" class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg transition-colors duration-200"
+    <button type="button" class="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-500/15 rounded-lg transition-colors duration-200"
       hx-post="/cards/{{.Card.ID}}/delete" hx-target="#card-{{.Card.ID}}" hx-swap="delete" hx-confirm="Delete this card for good? Archiving is the reversible one." title="Delete">
       <i class="bi bi-trash text-sm"></i>
     </button>
+    </span>
   </div>
 
   <!-- The quick-edit panels. They sit in the card's own flow and push it
@@ -157,8 +159,8 @@
        unambiguous. A single form with a submit button per person would depend
        on htmx sending the submitter's value, and the free-text field below
        shares the field name. -->
-  <div id="assignee-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-gray-100 dark:border-gray-600">
-    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Assign to</p>
+  <div id="assignee-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Assign to</p>
     <div class="flex flex-col gap-0.5 max-h-44 overflow-y-auto">
       {{range .People}}
       <form hx-post="/cards/{{$.Card.ID}}/assignee" hx-target="#card-{{$.Card.ID}}" hx-swap="outerHTML">
@@ -167,18 +169,18 @@
         <input type="hidden" name="assignee" value="{{if eq . $.Viewer.Email}}@me{{else}}{{.}}{{end}}">
         <button type="submit" class="quick-item" title="{{if eq . $.Viewer.Email}}You{{else}}{{.}}{{end}}">
           <span class="relative inline-flex items-center justify-center w-5 h-5 shrink-0 overflow-hidden rounded-full
-                       bg-gray-300 dark:bg-gray-500 text-[9px] font-semibold uppercase text-white">{{initials .}}
+                       bg-slate-300 dark:bg-slate-500 text-[9px] font-semibold uppercase text-white">{{initials .}}
             {{with avatar .}}<img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">{{end}}
           </span>
           <span class="truncate">{{personName .}}{{if eq . $.Viewer.Email}} (you){{end}}</span>
-          {{if eq . $.Card.Assignee}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
+          {{if eq . $.Card.Assignee}}<i class="bi bi-check2 ml-auto shrink-0 text-indigo-600 dark:text-indigo-400"></i>{{end}}
         </button>
       </form>
       {{end}}
       {{if .Card.Assignee}}
       <form hx-post="/cards/{{.Card.ID}}/assignee" hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML">
         <input type="hidden" name="assignee" value="">
-        <button type="submit" class="quick-item text-gray-500 dark:text-gray-400">
+        <button type="submit" class="quick-item text-slate-500 dark:text-slate-400">
           <i class="bi bi-person-dash w-5 shrink-0 text-center"></i><span>Unassign</span>
         </button>
       </form>
@@ -189,9 +191,9 @@
       <!-- required, so that Set on an empty box does nothing rather than
            quietly unassigning the card. Unassign is its own button. -->
       <input type="email" name="assignee" maxlength="320" required placeholder="somebody@example.com"
-             class="min-w-0 flex-1 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600
-                    bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-      <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white">Set</button>
+             class="min-w-0 flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600
+                    bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+      <button type="submit" class="px-2 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-700 text-white">Set</button>
     </form>
   </div>
 
@@ -200,22 +202,22 @@
        costs no script. The form posts on a change as well as on submit, so
        picking a day in that calendar is the whole interaction and Set is only
        there for a browser that leaves a text field instead. -->
-  <div id="due-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-gray-100 dark:border-gray-600">
-    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Due date</p>
+  <div id="due-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Due date</p>
     <div class="flex items-center gap-1">
       <form class="flex min-w-0 flex-1 items-center gap-1" hx-post="/cards/{{.Card.ID}}/due"
             hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML" hx-trigger="change, submit">
         <input type="date" name="due_date" value="{{.DueInput}}" aria-label="Due date"
-               class="min-w-0 flex-1 px-2 py-1 text-xs rounded border border-gray-300 dark:border-gray-600
-                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
-        <button type="submit" class="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white">Set</button>
+               class="min-w-0 flex-1 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600
+                      bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+        <button type="submit" class="px-2 py-1 text-xs rounded bg-indigo-600 hover:bg-indigo-700 text-white">Set</button>
       </form>
       {{if .Due}}
       <!-- A button with hx-vals rather than a second form: an empty date input
            in a form of its own would send the same field name twice and the
            first value wins, so Clear would post the date it was clearing. -->
-      <button type="button" class="shrink-0 px-2 py-1 text-xs rounded text-gray-500 dark:text-gray-400
-                                   hover:bg-gray-100 dark:hover:bg-gray-600"
+      <button type="button" class="shrink-0 px-2 py-1 text-xs rounded text-slate-500 dark:text-slate-400
+                                   hover:bg-slate-100 dark:hover:bg-slate-600"
               hx-post="/cards/{{.Card.ID}}/due" hx-vals='{"due_date": ""}'
               hx-target="#card-{{.Card.ID}}" hx-swap="outerHTML" title="Take the due date off this card">Clear</button>
       {{end}}
@@ -223,18 +225,18 @@
   </div>
 
   {{if .BoardLabels}}
-  <div id="labels-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-gray-100 dark:border-gray-600">
-    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Labels</p>
+  <div id="labels-{{.Card.ID}}" class="quick-panel hidden mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+    <p class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Labels</p>
     <div class="flex flex-col gap-0.5 max-h-44 overflow-y-auto">
       {{$card := .Card}}
       {{range .BoardLabels}}
       <div class="quick-row">
         <button type="button" class="quick-item"
                 hx-post="/cards/{{$card.ID}}/labels/{{.ID}}/toggle" hx-target="#card-{{$card.ID}}" hx-swap="outerHTML">
-          <span class="w-3 h-3 shrink-0 rounded-full ring-1 ring-gray-300 dark:ring-gray-500"
+          <span class="w-3 h-3 shrink-0 rounded-full ring-1 ring-slate-300 dark:ring-slate-500"
                 {{with .Color}}style="background-color: {{.}}"{{end}}></span>
           <span class="truncate">{{.Name}}</span>
-          {{if hasLabel $card .ID}}<i class="bi bi-check2 ml-auto shrink-0 text-blue-600 dark:text-blue-400"></i>{{end}}
+          {{if hasLabel $card .ID}}<i class="bi bi-check2 ml-auto shrink-0 text-indigo-600 dark:text-indigo-400"></i>{{end}}
         </button>
         <!-- This deletes the label from the board, where the button beside it
              only takes it off this card. It is here because the alternative is
