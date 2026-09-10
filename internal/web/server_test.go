@@ -2305,6 +2305,38 @@ func TestQuickEditOnTheCardFace(t *testing.T) {
 	})
 }
 
+// TestFooterIsOnEveryPage covers the line at the bottom of the layout. The
+// version is the point of it: the Pi rolls out by tag, and before this the only
+// way to tell which build a page came from was to curl /version.
+func TestFooterIsOnEveryPage(t *testing.T) {
+	e := seeded(t, WithBuild("2.2.1", "abcdef0"))
+	// A second board, so the index is a page rather than a redirect to the only
+	// board there is.
+	if _, err := e.svc.CreateBoard(context.Background(), "Other", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/b/demo", "/b/demo/settings", "/b/demo/archive"} {
+		t.Run(path, func(t *testing.T) {
+			want(t, e.do(http.MethodGet, path, nil), http.StatusOK,
+				"<footer", `href="/"`, `href="/version"`, "kanban 2.2.1", "All boards")
+		})
+	}
+
+	t.Run("an unbuilt binary says dev rather than nothing", func(t *testing.T) {
+		e := seeded(t)
+		want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK, "kanban dev")
+	})
+
+	t.Run("the API is linked only where it is mounted", func(t *testing.T) {
+		off := seeded(t)
+		if body := off.do(http.MethodGet, "/b/demo", nil).Body.String(); strings.Contains(body, `href="/api/v1/"`) {
+			t.Error("the footer links to an API this deployment does not serve")
+		}
+		on := seeded(t, WithAPI(http.NotFoundHandler()))
+		want(t, on.do(http.MethodGet, "/b/demo", nil), http.StatusOK, `href="/api/v1/"`)
+	})
+}
+
 // TestSLAThroughTheWeb is the response-time promise as the settings form and the
 // card face see it.
 func TestSLAThroughTheWeb(t *testing.T) {
