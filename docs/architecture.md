@@ -190,6 +190,12 @@ differs, so a variable cannot arrive without its row. The same tags drive the
 `kanban doctor` report, which makes a new setting a tagged field and nothing
 else.
 
+`internal/model/zones.go` is generated the same way, from the Go toolchain's
+`lib/time/zoneinfo.zip`, which is the database `time/tzdata` embeds. The
+time-zone picker therefore offers exactly the names the server can load, and a
+test walks the list and loads every one of them rather than trusting the
+generator.
+
 `config.FromEnv()` is the only place that reads the environment, and `Validate()`
 refuses what cannot work before the server binds: two backup targets, a bucket
 with no region or no credentials, a prefix that would need escaping in a signed

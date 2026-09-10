@@ -32,9 +32,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Comments on a card, with who wrote them and when. They cannot be edited and
   the author can remove their own; the reasoning is in
   [docs/adr/0007](docs/adr/0007-comments-are-append-only.md).
-- A response time, for a board that is somebody's support desk: how many hours a
-  card may sit untouched, which days the desk is open, between which hours and in
-  which zone. The card face carries what is left of it, and the count is office
+- A response time, for a board that is somebody's support desk: a switch, how
+  many hours a card may sit untouched, which days the desk is open, between which
+  hours and in which zone, picked from every zone the binary can load. The card face carries what is left of it, and the count is office
   hours, so a card that arrives on Friday evening is not overdue on Saturday
   morning. Touching the card starts it again, and a column can be marked as one
   where the clock does not run, such as Done or Waiting for the customer; see
@@ -292,14 +292,17 @@ go test ./...                       # memory and sqlite backends, no database ne
 KANBAN_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/kanban_test?sslmode=disable go test ./...
 ```
 
-Two things are generated and committed. Adding a Tailwind class to a template or
-to `app.js` needs the stylesheet rebuilt, which fetches one pinned binary and no
-package manager; adding an environment variable to `config.Config` needs the
-reference page rendered again from it.
+Three things are generated and committed. Adding a Tailwind class to a template
+or to `app.js` needs the stylesheet rebuilt, which fetches one pinned binary and
+no package manager; adding an environment variable to `config.Config` needs the
+reference page rendered again from it; and the time-zone picker's list comes out
+of the Go toolchain's own zone database, so it cannot offer a zone the server
+would refuse.
 
 ``` bash
 go generate ./assets/               # writes assets/tailwind.css; commit it
 go generate ./internal/config/      # writes docs/configuration.md; commit it
+go generate ./internal/model/       # writes internal/model/zones.go; commit it
 ```
 
 Both are checked in CI against what is committed, so forgetting one is a failing

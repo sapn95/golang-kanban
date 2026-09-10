@@ -2366,7 +2366,7 @@ func TestSLAThroughTheWeb(t *testing.T) {
 	// it once replaces the whole week rather than adding to it.
 	week := func(kv ...string) io.Reader {
 		v := url.Values{
-			"start": {"08:00"}, "end": {"17:00"}, "zone": {"Europe/Zurich"},
+			"on": {"1"}, "start": {"08:00"}, "end": {"17:00"}, "zone": {"Europe/Zurich"},
 			"days": {"mon", "tue", "wed", "thu", "fri"},
 		}
 		for i := 0; i+1 < len(kv); i += 2 {
@@ -2382,7 +2382,7 @@ func TestSLAThroughTheWeb(t *testing.T) {
 		e := seeded(t)
 		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK,
 			`action="/b/demo/sla"`, `name="response_hours"`, `name="days"`, `value="mon"`,
-			"No promise. Cards carry no clock.")
+			`name="on"`, "Off. No card carries a clock.")
 		// Nothing on the board carries a clock either.
 		if body := e.do(http.MethodGet, "/b/demo", nil).Body.String(); strings.Contains(body, "bi-stopwatch") {
 			t.Error("a board with no promise drew a response-time badge")
@@ -2402,7 +2402,8 @@ func TestSLAThroughTheWeb(t *testing.T) {
 			t.Fatalf("stored sla = %+v, want %+v", b.SLA, want)
 		}
 		want2 := []string{"4 office hours, Mon to Fri, 08:00 to 17:00 Europe/Zurich",
-			`value="08:00"`, `value="17:00"`, `value="Europe/Zurich"`}
+			`value="08:00"`, `value="17:00"`, `<option selected>Europe/Zurich</option>`,
+			`name="on" value="1" class="sr-only" checked`}
 		body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
 		for _, s := range want2 {
 			if !strings.Contains(body, s) {
@@ -2424,16 +2425,66 @@ func TestSLAThroughTheWeb(t *testing.T) {
 			"2 office hours, Mon to Sun, 00:00 to 00:00 Europe/Zurich")
 	})
 
-	t.Run("zero hours switches it off and keeps the hours", func(t *testing.T) {
+	// The switch is the way off, and it is the only way off: an unticked
+	// checkbox sends no field, so the hours in the form are not what decides.
+	t.Run("the switch turns it off and the office hours stay", func(t *testing.T) {
 		e := seeded(t)
 		want(t, post(e, "/b/demo/sla", week("response_hours", "4")), http.StatusSeeOther)
-		want(t, post(e, "/b/demo/sla", week("response_hours", "0")), http.StatusSeeOther)
+
+		// The same form, submitted with the switch off: the hours are still in
+		// the box and are still ignored.
+		want(t, post(e, "/b/demo/sla", week("on", "")), http.StatusSeeOther)
 		b, _ := e.svc.Board(context.Background(), "demo")
 		if b.SLA.ResponseHours != 0 || b.SLA.Start != 8*60 || b.SLA.Zone != "Europe/Zurich" {
 			t.Errorf("stored sla = %+v, want the office hours kept and the clock off", b.SLA)
 		}
+		body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
+		for _, s := range []string{"Off. No card carries a clock.", `value="08:00"`, `value="8"`} {
+			if !strings.Contains(body, s) {
+				t.Errorf("settings page missing %q", s)
+			}
+		}
+		if strings.Contains(body, `name="on" value="1" class="sr-only" checked`) {
+			t.Error("the switch still reads as on")
+		}
+
+		// And back on, with the number the form was already showing.
+		want(t, post(e, "/b/demo/sla", week("response_hours", "8")), http.StatusSeeOther)
+		if b, _ = e.svc.Board(context.Background(), "demo"); b.SLA.ResponseHours != 8 {
+			t.Errorf("stored sla = %+v, want the promise back at 8", b.SLA)
+		}
+	})
+
+	// The picker is a select over the whole zone database rather than a text
+	// field with six suggestions, which is what made it look like one zone.
+	t.Run("the zone picker offers every zone the binary can load", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
+		for _, s := range []string{`<select name="zone"`, `<optgroup label="Europe">`,
+			`<optgroup label="Pacific">`, "<option>Europe/Zurich</option>", "<option>Pacific/Auckland</option>"} {
+			if !strings.Contains(body, s) {
+				t.Errorf("the zone picker is missing %q", s)
+			}
+		}
+		if n := strings.Count(body, "<option"); n < model.ZoneCount {
+			t.Errorf("the picker draws %d options, want at least the %d zones", n, model.ZoneCount)
+		}
+		if strings.Contains(body, "<datalist") {
+			t.Error("the datalist that filtered itself down to one entry is still there")
+		}
+	})
+
+	// A zone set through the API that the generated list does not carry is kept
+	// on offer, so saving the form does not quietly change it.
+	t.Run("a zone from somewhere else is not dropped", func(t *testing.T) {
+		e := seeded(t)
+		if err := e.svc.SetBoardSLA(context.Background(), e.board.ID, model.SLA{
+			ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60, Zone: "US/Eastern",
+		}); err != nil {
+			t.Fatal(err)
+		}
 		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK,
-			"No promise. Cards carry no clock.", `value="08:00"`)
+			`<optgroup label="Set on this board">`, "<option selected>US/Eastern</option>")
 	})
 
 	t.Run("what the form refuses", func(t *testing.T) {
@@ -2443,10 +2494,11 @@ func TestSLAThroughTheWeb(t *testing.T) {
 		}{
 			{"a zone nobody can load", "IANA time zone", week("response_hours", "4", "zone", "Mars/Olympus")},
 			{"hours that are not a number", "whole number", week("response_hours", "soon")},
+			{"the switch on with no hours behind it", "at least one office hour", week("response_hours", "0")},
 			{"a clock reading that is not one", "not a time of day", week("response_hours", "4", "start", "half eight")},
 			{"an end before the start", "must end after", week("response_hours", "4", "start", "17:00", "end", "08:00")},
 			{"a promise on no day at all", "at least one day",
-				form("response_hours", "4", "start", "08:00", "end", "17:00")},
+				form("on", "1", "response_hours", "4", "start", "08:00", "end", "17:00")},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				e := seeded(t)
