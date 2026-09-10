@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"kanban/internal/model"
 	"kanban/internal/service"
 )
 
@@ -100,6 +101,7 @@ var schemaOf = map[string]any{
 	"Error":         errorBody{},
 	"Board":         boardBody{},
 	"Column":        columnBody{},
+	"SLA":           slaBody{},
 	"Label":         labelBody{},
 	"Card":          cardBody{},
 	"Subtask":       subtaskBody{},
@@ -107,6 +109,7 @@ var schemaOf = map[string]any{
 	"BoardInput":    boardInput{},
 	"BoardPatch":    boardPatch{},
 	"LayoutInput":   layoutInput{},
+	"SLAInput":      slaInput{},
 	"ColumnInput":   columnInput{},
 	"OrderInput":    orderInput{},
 	"LabelInput":    labelInput{},
@@ -122,7 +125,7 @@ var schemaOf = map[string]any{
 // not a judgement call: a field without omitempty is always in the JSON, so it
 // is required, and one with omitempty never is.
 var responseSchemas = []string{
-	"Index", "Error", "Board", "Column", "Label", "Card", "Subtask", "Comment", "BulkResult",
+	"Index", "Error", "Board", "Column", "SLA", "Label", "Card", "Subtask", "Comment", "BulkResult",
 }
 
 func TestSchemaPropertiesMatchTheGoTypes(t *testing.T) {
@@ -220,6 +223,7 @@ func TestTheSpecStatesTheServiceLimits(t *testing.T) {
 		{"AssigneeInput", "assignee", "maxLength", service.MaxAssignee},
 		{"CommentInput", "body", "maxLength", service.MaxComment},
 		{"BulkInput", "ids", "maxItems", service.MaxBulk},
+		{"SLAInput", "response_hours", "maximum", model.MaxResponseHours},
 	}
 	schemas := spec(t).schemas()
 	for _, l := range limits {

@@ -42,14 +42,14 @@ type Store interface {
 	// CreateBoard stores b and its Columns; column positions are assigned
 	// 1..n in slice order. ErrConflict on a duplicate slug.
 	CreateBoard(ctx context.Context, b *model.Board) error
-	// UpdateBoard changes Name, Slug and UpdatedAt.
+	// UpdateBoard changes Name, Slug, Layout, SLA and UpdatedAt.
 	UpdateBoard(ctx context.Context, b *model.Board) error
 	// DeleteBoard removes the board and everything it owns.
 	DeleteBoard(ctx context.Context, id model.ID) error
 
 	// CreateColumn appends c to its board; c.Position is set on return.
 	CreateColumn(ctx context.Context, c *model.Column) error
-	// UpdateColumn changes Name and WIPLimit.
+	// UpdateColumn changes Name, WIPLimit and StopsClock.
 	UpdateColumn(ctx context.Context, c *model.Column) error
 	// DeleteColumn removes a column. Its cards are appended to moveCardsTo,
 	// a column of the same board, or deleted when moveCardsTo is empty.

@@ -70,7 +70,12 @@ func seed(t *testing.T, s store.Store) {
 
 	work, err := svc.CreateBoard(ctx, "Work", "work", []string{"To Do", "Doing", "Done"})
 	must(t, "create board", err)
-	must(t, "wip limit", svc.UpdateColumn(ctx, work.Columns[1].ID, "Doing", 2))
+	must(t, "wip limit", svc.UpdateColumn(ctx, work.Columns[1].ID, "Doing", 2, false))
+	// A desk with a promise, and the column its clock does not run in.
+	must(t, "stops clock", svc.UpdateColumn(ctx, work.Columns[2].ID, "Done", 0, true))
+	must(t, "sla", svc.SetBoardSLA(ctx, work.ID, model.SLA{
+		ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60, Zone: "Europe/Zurich",
+	}))
 	bug, err := svc.CreateLabel(ctx, work.ID, "bug", "#e11d48")
 	must(t, "create label", err)
 	_, err = svc.CreateLabel(ctx, work.ID, "ops", "")

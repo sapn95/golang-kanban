@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"time"
 
 	"kanban/internal/model"
@@ -38,6 +39,7 @@ type boardBody struct {
 	Slug      string       `json:"slug"`
 	Name      string       `json:"name"`
 	Layout    string       `json:"layout"`
+	SLA       slaBody      `json:"sla"`
 	Columns   []columnBody `json:"columns"`
 	Labels    []labelBody  `json:"labels"`
 	CreatedAt time.Time    `json:"created_at"`
@@ -50,6 +52,27 @@ type columnBody struct {
 	Position int    `json:"position"`
 	// WIPLimit is 0 for a column that holds as many cards as you like.
 	WIPLimit int `json:"wip_limit"`
+	// StopsClock is a column where the response-time clock does not run.
+	StopsClock bool `json:"stops_clock"`
+}
+
+// slaBody is the board's response-time promise, in and out.
+//
+// The days are names and the hours are clock readings, so that a caller reading
+// a board in a terminal can see the promise. The model holds a bitmask and
+// minutes since midnight; that is storage, not a contract.
+type slaBody struct {
+	// ResponseHours is the promise in office hours, 0 for a board with none.
+	ResponseHours int `json:"response_hours"`
+	// Days are the office days, lowercase and three letters: ["mon", "tue"].
+	Days []string `json:"days"`
+	// Start and End are the office hours as HH:MM. An End of "00:00" is the
+	// midnight that ends the day, so a desk staffed around the clock is
+	// "00:00" to "00:00".
+	Start string `json:"start"`
+	End   string `json:"end"`
+	// Zone is an IANA name such as Europe/Zurich; empty is UTC.
+	Zone string `json:"zone"`
 }
 
 type labelBody struct {
@@ -120,7 +143,14 @@ type layoutInput struct {
 type columnInput struct {
 	Name     string `json:"name"`
 	WIPLimit int    `json:"wip_limit"`
+	// StopsClock takes the column out of the response-time promise.
+	StopsClock bool `json:"stops_clock"`
 }
+
+// slaInput is a whole promise, the same shape it is read in. A PUT with no
+// response_hours switches the SLA off, the way the settings form does when the
+// hours are cleared.
+type slaInput slaBody
 
 // orderInput is the whole order of one column, or of a board's columns.
 type orderInput struct {
@@ -192,6 +222,7 @@ func toBoard(b model.Board) boardBody {
 		Slug:      b.Slug,
 		Name:      b.Name,
 		Layout:    model.LayoutOrDefault(b.Layout),
+		SLA:       toSLA(b.SLA),
 		Columns:   toColumns(b.Columns),
 		Labels:    toLabels(b.Labels),
 		CreatedAt: b.CreatedAt,
@@ -208,7 +239,27 @@ func toBoards(boards []model.Board) []boardBody {
 }
 
 func toColumn(c model.Column) columnBody {
-	return columnBody{ID: string(c.ID), Name: c.Name, Position: c.Position, WIPLimit: c.WIPLimit}
+	return columnBody{
+		ID: string(c.ID), Name: c.Name, Position: c.Position,
+		WIPLimit: c.WIPLimit, StopsClock: c.StopsClock,
+	}
+}
+
+// toSLA writes the promise out. Days is never null: a caller looping over it
+// should not have to check, and a board with no office days is a promise that is
+// off rather than a missing field.
+func toSLA(s model.SLA) slaBody {
+	days := s.Days.Names()
+	if days == nil {
+		days = []string{}
+	}
+	return slaBody{
+		ResponseHours: s.ResponseHours,
+		Days:          days,
+		Start:         model.ClockString(s.Start),
+		End:           model.ClockString(s.End),
+		Zone:          s.Zone,
+	}
 }
 
 func toColumns(columns []model.Column) []columnBody {
@@ -308,6 +359,36 @@ func (in cardInput) toService() service.CardInput {
 		Labels:      labels,
 		Subtasks:    subtasks,
 	}
+}
+
+// toModel reads a promise in. The names and the clock readings are parsed here
+// rather than in the service, because they are this package's format: the
+// settings form posts the same words and goes through the same two parsers.
+//
+// An empty start or end is the default office day, so a caller who only wants to
+// set the hours of the promise does not have to restate 08:00 to 17:00.
+func (in slaInput) toModel() (model.SLA, error) {
+	sla := model.DefaultSLA()
+	sla.ResponseHours = in.ResponseHours
+	sla.Zone = strings.TrimSpace(in.Zone)
+	days, err := model.ParseDays(in.Days)
+	if err != nil {
+		return sla, &service.ValidationError{Field: "days", Message: err.Error()}
+	}
+	if in.Days != nil {
+		sla.Days = days
+	}
+	if v := strings.TrimSpace(in.Start); v != "" {
+		if sla.Start, err = model.ParseClock(v, false); err != nil {
+			return sla, &service.ValidationError{Field: "start", Message: err.Error()}
+		}
+	}
+	if v := strings.TrimSpace(in.End); v != "" {
+		if sla.End, err = model.ParseClock(v, true); err != nil {
+			return sla, &service.ValidationError{Field: "end", Message: err.Error()}
+		}
+	}
+	return sla, nil
 }
 
 func toIDs(ids []string) []model.ID {

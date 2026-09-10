@@ -173,7 +173,12 @@ func (k *Kanban) CreateBoard(ctx context.Context, name, slug string, columns []s
 		columns = DefaultColumns
 	}
 	now := k.now()
-	b := &model.Board{ID: k.newID(), Slug: slug, Name: name, Layout: model.LayoutColumns, CreatedAt: now, UpdatedAt: now}
+	// DefaultSLA is the office week with the clock switched off, the same thing
+	// the SQL column defaults give a board that predates the promise. Set here
+	// rather than left zero, so the settings form opens on office hours somebody
+	// would want on every backend, the in-memory one included.
+	b := &model.Board{ID: k.newID(), Slug: slug, Name: name, Layout: model.LayoutColumns,
+		SLA: model.DefaultSLA(), CreatedAt: now, UpdatedAt: now}
 	for _, c := range columns {
 		c = strings.TrimSpace(c)
 		if err := checkText("column", c, MaxName, true); err != nil {
@@ -227,13 +232,50 @@ func (k *Kanban) SetBoardLayout(ctx context.Context, id model.ID, layout string)
 	return k.store.UpdateBoard(ctx, b)
 }
 
+// SetBoardSLA sets the board's response-time promise. Zero hours switches it
+// off, which is what a board has until somebody sets one.
+//
+// The zone is checked here rather than trusted, because a name nobody can load
+// would leave the board measuring in UTC while the form claimed otherwise. An
+// end before the start is refused for the same reason: SLA.Enabled would read
+// it as off, and a promise that silently stopped promising is worse than one
+// the form would not accept.
+func (k *Kanban) SetBoardSLA(ctx context.Context, id model.ID, sla model.SLA) error {
+	if sla.ResponseHours < 0 || sla.ResponseHours > model.MaxResponseHours {
+		return invalid("response_hours", fmt.Sprintf("must be between 0 and %d", model.MaxResponseHours))
+	}
+	if sla.Days&^model.AllDays != 0 {
+		return invalid("days", "must be a set of weekdays")
+	}
+	if sla.Start < 0 || sla.End > model.MinutesPerDay {
+		return invalid("hours", "must be inside one day")
+	}
+	if sla.Start >= sla.End {
+		return invalid("hours", "the day must end after it starts")
+	}
+	if sla.ResponseHours > 0 && !sla.Days.Any() {
+		return invalid("days", "pick at least one day the clock runs on")
+	}
+	if sla.Zone != "" {
+		if _, err := time.LoadLocation(sla.Zone); err != nil {
+			return invalid("zone", "must be an IANA time zone such as Europe/Zurich")
+		}
+	}
+	b, err := k.store.GetBoardByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	b.SLA, b.UpdatedAt = sla, k.now()
+	return k.store.UpdateBoard(ctx, b)
+}
+
 func (k *Kanban) DeleteBoard(ctx context.Context, id model.ID) error {
 	return k.store.DeleteBoard(ctx, id)
 }
 
 // --- columns ----------------------------------------------------------------
 
-func (k *Kanban) AddColumn(ctx context.Context, boardID model.ID, name string, wipLimit int) (*model.Column, error) {
+func (k *Kanban) AddColumn(ctx context.Context, boardID model.ID, name string, wipLimit int, stopsClock bool) (*model.Column, error) {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
 		return nil, err
@@ -241,14 +283,14 @@ func (k *Kanban) AddColumn(ctx context.Context, boardID model.ID, name string, w
 	if wipLimit < 0 {
 		return nil, invalid("wip_limit", "must not be negative")
 	}
-	c := &model.Column{ID: k.newID(), BoardID: boardID, Name: name, WIPLimit: wipLimit}
+	c := &model.Column{ID: k.newID(), BoardID: boardID, Name: name, WIPLimit: wipLimit, StopsClock: stopsClock}
 	if err := k.store.CreateColumn(ctx, c); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func (k *Kanban) UpdateColumn(ctx context.Context, id model.ID, name string, wipLimit int) error {
+func (k *Kanban) UpdateColumn(ctx context.Context, id model.ID, name string, wipLimit int, stopsClock bool) error {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
 		return err
@@ -256,7 +298,7 @@ func (k *Kanban) UpdateColumn(ctx context.Context, id model.ID, name string, wip
 	if wipLimit < 0 {
 		return invalid("wip_limit", "must not be negative")
 	}
-	return k.store.UpdateColumn(ctx, &model.Column{ID: id, Name: name, WIPLimit: wipLimit})
+	return k.store.UpdateColumn(ctx, &model.Column{ID: id, Name: name, WIPLimit: wipLimit, StopsClock: stopsClock})
 }
 
 // RemoveColumn deletes a column of boardID, moving its cards to moveCardsTo
@@ -639,6 +681,17 @@ func (k *Kanban) CommentCounts(ctx context.Context, boardID model.ID) (map[model
 
 // AddComment appends a comment to a card. author is whoever the identity layer
 // says is asking; it is stored as given and never looked up.
+//
+// Commenting moves the card's UpdatedAt, because answering somebody is
+// attending to their card and the response-time clock reads UpdatedAt as when
+// the card was last attended to. Without this a desk replies to a ticket and
+// the badge still turns red, which is how a badge stops being read.
+//
+// The touch is a second write and it is not in a transaction with the comment.
+// A failure there is dropped on purpose: the comment is stored, so the action
+// the person took succeeded, and answering them with an error would only get
+// the same comment posted twice. What it costs is an SLA badge that stays red
+// until the next edit.
 func (k *Kanban) AddComment(ctx context.Context, cardID model.ID, author, body string) (*model.Comment, error) {
 	body = strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n"))
 	if err := checkText("body", body, MaxComment, true); err != nil {
@@ -651,6 +704,10 @@ func (k *Kanban) AddComment(ctx context.Context, cardID model.ID, author, body s
 	c := &model.Comment{ID: k.newID(), CardID: cardID, Author: author, Body: body, CreatedAt: k.now()}
 	if err := k.store.CreateComment(ctx, c); err != nil {
 		return nil, err
+	}
+	if card, err := k.store.GetCard(ctx, cardID); err == nil {
+		card.UpdatedAt = c.CreatedAt
+		_ = k.store.UpdateCard(ctx, card)
 	}
 	return c, nil
 }

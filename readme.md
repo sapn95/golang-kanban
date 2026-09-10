@@ -32,6 +32,13 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Comments on a card, with who wrote them and when. They cannot be edited and
   the author can remove their own; the reasoning is in
   [docs/adr/0007](docs/adr/0007-comments-are-append-only.md).
+- A response time, for a board that is somebody's support desk: how many hours a
+  card may sit untouched, which days the desk is open, between which hours and in
+  which zone. The card face carries what is left of it, and the count is office
+  hours, so a card that arrives on Friday evening is not overdue on Saturday
+  morning. Touching the card starts it again, and a column can be marked as one
+  where the clock does not run, such as Done or Waiting for the customer; see
+  [docs/adr/0013](docs/adr/0013-response-time-is-office-hours.md).
 - Search on the board's own URL, so a result set can be linked to. A bare
   word matches the title, the description or a label name:
   `label:bug assignee:someone due:overdue is:archived`, plus `"quoted phrases"`.

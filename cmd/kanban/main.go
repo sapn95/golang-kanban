@@ -22,6 +22,12 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+	// The zone database, in the binary. A board's office hours are local hours,
+	// and time.LoadLocation on a host without /usr/share/zoneinfo falls back to
+	// UTC, which is a response-time badge that is an hour or two out and says
+	// nothing about why. Half a megabyte to make the zone name mean what it
+	// says wherever the binary runs.
+	_ "time/tzdata"
 
 	"kanban/internal/api"
 	"kanban/internal/config"

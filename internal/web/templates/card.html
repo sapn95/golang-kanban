@@ -56,6 +56,19 @@
       <i class="bi bi-calendar-event"></i>
     </button>
     {{end}}
+    {{with .SLAState}}
+    <!-- The response-time badge. Nothing to click: the way to stop this clock is
+         to answer the card, and the way to change the promise is the settings
+         page. Green is deliberately quiet, because on a desk that is keeping its
+         promise every card carries one. -->
+    <span class="inline-flex items-center px-2 py-0.5 rounded-full leading-none tabular-nums
+      {{if eq . "breached"}}bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200
+      {{else if eq . "soon"}}bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200
+      {{else}}bg-emerald-50 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200{{end}}"
+      title="{{if eq . "breached"}}The response time ran out on {{$.SLADue}}{{else}}Answer by {{$.SLADue}}{{end}}">
+      <i class="bi bi-stopwatch mr-1"></i>{{$.SLALeft}}
+    </span>
+    {{end}}
     {{if .BoardLabels}}
     <button type="button" class="quick-toggle inline-flex items-center px-2 py-1 rounded-full leading-none border border-dashed
                                  border-gray-300 dark:border-gray-500 text-gray-400 dark:text-gray-400

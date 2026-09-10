@@ -1,11 +1,11 @@
 # Endpoints
 
-Every route the server answers, all 35 of them, registered in one block in
+Every route the server answers, all 36 of them, registered in one block in
 `internal/web/server.go`. A test compares this file against that block and
 fails when either side has something the other does not, so a route cannot be
 added or removed without the table changing with it.
 
-The last of those 35 is the JSON API, which brings its own thirty routes under
+The last of those 36 is the JSON API, which brings its own thirty-one routes under
 `/api/v1/` and its own document; the [table below](#the-json-api) gives it one
 row. This file is about the page routes.
 
@@ -47,6 +47,7 @@ policy, which the two routes that serve bytes rather than a page do.
 | `POST /boards` | `name` | `303` to the new board. `400` and the list again, with the reason, when the name is empty or already taken |
 | `GET /b/{board}` | `?q=` to search, optional | The board. `404` for a slug that does not exist |
 | `POST /b/{board}/layout` | `layout=columns` or `rows` | `303` back to the board |
+| `POST /b/{board}/sla` | `response_hours`, `days` (once per day), `start`, `end`, `zone` | `303` back to settings. `400` re-renders the page with the reason |
 
 `q` matches a bare word against the title, the description and the label
 names, and understands `label:`, `assignee:`, `due:` and `is:archived`, with
@@ -58,6 +59,13 @@ more, two from eight, and a swapped pair of letters counts as one. Under four
 letters there is no tolerance, and a `"quoted phrase"` is always literal. The
 same `q` works on `GET /b/{board}/archive`, where it is scoped to the archive
 whether or not it says `is:archived`.
+
+The response-time promise is one per board: how many office hours a card may
+sit untouched before the badge on it turns. `days` is sent once per office day,
+`start` and `end` are `HH:MM` read in `zone`, and `response_hours=0` switches
+the whole thing off. An `end` of `00:00` is the midnight that ends the day, for
+a desk that never closes. The clock does not run on an archived card, or in a
+column marked `stops_clock` on the settings page.
 
 ## Cards
 
@@ -104,8 +112,8 @@ message and the appropriate status rather than redirecting.
 | `POST /b/{board}/labels` | `name`, `color` | `303` to settings. `400` or `409` re-renders it with the reason |
 | `POST /b/{board}/labels/{id}` | `name`, `color` | as above |
 | `POST /b/{board}/labels/{id}/delete` | | `204` with `HX-Refresh: true` over htmx, `303` to settings otherwise. The label comes off every card that carries it |
-| `POST /b/{board}/columns` | `name`, `wip_limit` (empty or `0` for none) | `303` to settings |
-| `POST /b/{board}/columns/{id}` | `name`, `wip_limit` | `303` to settings |
+| `POST /b/{board}/columns` | `name`, `wip_limit` (empty or `0` for none), `stops_clock` | `303` to settings |
+| `POST /b/{board}/columns/{id}` | `name`, `wip_limit`, `stops_clock` | `303` to settings |
 | `POST /b/{board}/columns/{id}/delete` | `move_to`: the column the cards go to, empty to delete them with it | `303` to settings |
 | `POST /b/{board}/columns/{id}/move` | `direction=up\|down` | `303` to settings. A move off either end changes nothing |
 

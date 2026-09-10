@@ -141,6 +141,9 @@ func validate(snap *Snapshot) error {
 			return fmt.Errorf("%w: two boards have the slug %s", ErrInvalid, b.Slug)
 		}
 		slugs[b.Slug] = true
+		if _, err := b.SLA.parse(); err != nil {
+			return fmt.Errorf("%w: board %s has an sla that does not read: %v", ErrInvalid, b.Slug, err)
+		}
 		if len(b.Columns) == 0 {
 			// The service refuses to delete the last column for the same
 			// reason: a board without one holds no cards and offers nowhere to
@@ -225,20 +228,25 @@ func importBoard(ctx context.Context, s store.Store, b Board, opts Options, rep 
 		rep.Replaced += n
 	}
 
+	// The promise was checked by validate, so a parse error here cannot happen
+	// and the default it returns is the office week a new board gets.
+	sla, _ := b.SLA.parse()
 	board := &model.Board{
 		ID:        model.ID(b.ID),
 		Slug:      b.Slug,
 		Name:      b.Name,
 		Layout:    model.LayoutOrDefault(b.Layout),
+		SLA:       sla,
 		CreatedAt: b.CreatedAt,
 		UpdatedAt: b.UpdatedAt,
 	}
 	for _, c := range b.Columns {
 		board.Columns = append(board.Columns, model.Column{
-			ID:       model.ID(c.ID),
-			BoardID:  board.ID,
-			Name:     c.Name,
-			WIPLimit: c.WIPLimit,
+			ID:         model.ID(c.ID),
+			BoardID:    board.ID,
+			Name:       c.Name,
+			WIPLimit:   c.WIPLimit,
+			StopsClock: c.StopsClock,
 		})
 	}
 	if err := s.CreateBoard(ctx, board); err != nil {

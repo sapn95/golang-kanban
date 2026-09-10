@@ -458,7 +458,7 @@ func TestUpdateCardMovesItFirst(t *testing.T) {
 func TestAWIPLimitRefusesTheMoveAndKeepsTheCard(t *testing.T) {
 	e := seeded(t)
 	ctx := context.Background()
-	full, err := e.svc.AddColumn(ctx, e.board.ID, "Full", 1)
+	full, err := e.svc.AddColumn(ctx, e.board.ID, "Full", 1, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -706,5 +706,117 @@ func TestNewWithoutALoggerDoesNotPanic(t *testing.T) {
 	h.ServeHTTP(rr, httptest.NewRequest("GET", "/api/v1/", nil))
 	if rr.Code != http.StatusOK {
 		t.Errorf("got %d", rr.Code)
+	}
+}
+
+// TestBoardSLA is the response-time promise over the API. The board's own
+// representation carries it, so a client that reads a board sees the promise it
+// is being held to without a second request.
+func TestBoardSLA(t *testing.T) {
+	e := seeded(t)
+
+	// A board with no promise still reports the shape, so a client does not have
+	// to tell "off" from "absent".
+	board := e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
+	sla, ok := board.body["sla"].(map[string]any)
+	if !ok {
+		t.Fatalf("a board without a promise has no sla object: %v", board.body)
+	}
+	if sla["response_hours"] != float64(0) {
+		t.Errorf("response_hours is %v on a board with no promise", sla["response_hours"])
+	}
+
+	e.do("PUT", "/api/v1/boards/demo/sla",
+		`{"response_hours":4,"days":["mon","tue","wed","thu","fri"],"start":"08:00","end":"17:00","zone":"Europe/Zurich"}`,
+	).want(t, 204)
+
+	sla = e.do("GET", "/api/v1/boards/demo", "").want(t, 200).body["sla"].(map[string]any)
+	for field, want := range map[string]any{
+		"response_hours": float64(4), "start": "08:00", "end": "17:00", "zone": "Europe/Zurich",
+	} {
+		if sla[field] != want {
+			t.Errorf("%s is %v, want %v", field, sla[field], want)
+		}
+	}
+	if days, _ := sla["days"].([]any); len(days) != 5 || days[0] != "mon" || days[4] != "fri" {
+		t.Errorf("days is %v, want the office week", sla["days"])
+	}
+
+	// A desk staffed around the clock. A time of day cannot say 24:00, so the
+	// end of the day goes back as the midnight it is.
+	e.do("PUT", "/api/v1/boards/demo/sla",
+		`{"response_hours":2,"days":["mon","tue","wed","thu","fri","sat","sun"],"start":"00:00","end":"00:00"}`,
+	).want(t, 204)
+	sla = e.do("GET", "/api/v1/boards/demo", "").want(t, 200).body["sla"].(map[string]any)
+	if sla["start"] != "00:00" || sla["end"] != "00:00" || len(sla["days"].([]any)) != 7 {
+		t.Errorf("sla is %v, want the whole week from midnight to midnight", sla)
+	}
+
+	// A PUT is the whole promise, and what it leaves out is the office week the
+	// document names rather than whatever the board held before. Which is how
+	// the clock is switched off in one line.
+	e.do("PUT", "/api/v1/boards/demo/sla", `{"response_hours":0}`).want(t, 204)
+	sla = e.do("GET", "/api/v1/boards/demo", "").want(t, 200).body["sla"].(map[string]any)
+	if sla["response_hours"] != float64(0) || sla["start"] != "08:00" || sla["end"] != "17:00" {
+		t.Errorf("sla is %v after a promise that named only its hours", sla)
+	}
+	if days, _ := sla["days"].([]any); len(days) != 5 {
+		t.Errorf("days is %v, want the office week the document names", sla["days"])
+	}
+
+	for _, body := range []string{
+		`{"response_hours":-1}`,
+		`{"response_hours":100000}`,
+		`{"response_hours":4,"days":["sunnday"]}`,
+		`{"response_hours":4,"days":[]}`,
+		`{"response_hours":4,"start":"half eight"}`,
+		`{"response_hours":4,"start":"25:00"}`,
+		`{"response_hours":4,"start":"17:00","end":"08:00"}`,
+		`{"response_hours":4,"zone":"Mars/Olympus"}`,
+	} {
+		res := e.do("PUT", "/api/v1/boards/demo/sla", body).want(t, 400)
+		if res.body["field"] == nil {
+			t.Errorf("the 400 for %s names no field: %v", body, res.body)
+		}
+	}
+
+	e.do("PUT", "/api/v1/boards/demo/sla", `{"resposne_hours":4}`).want(t, 400)
+	e.do("PUT", "/api/v1/boards/demo/sla", `{"response_hours":4}`, "Content-Type", "text/plain").want(t, 415)
+	e.do("PUT", "/api/v1/boards/nope/sla", `{"response_hours":4}`).want(t, 404)
+}
+
+// TestColumnStopsClock covers the column flag the response-time clock reads, over
+// the API where it is a field of its own rather than a checkbox.
+func TestColumnStopsClock(t *testing.T) {
+	e := seeded(t)
+
+	created := e.do("POST", "/api/v1/boards/demo/columns", `{"name":"Waiting","stops_clock":true}`).want(t, 201)
+	if created.body["stops_clock"] != true {
+		t.Fatalf("stops_clock is %v on the column that asked for it", created.body["stops_clock"])
+	}
+	id := created.str(t, "id")
+
+	// A patch carries the whole column, so it has to say so again to keep it.
+	e.do("PATCH", "/api/v1/boards/demo/columns/"+id, `{"name":"Waiting","stops_clock":true}`).want(t, 204)
+	board := e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
+	for _, c := range board.body["columns"].([]any) {
+		col := c.(map[string]any)
+		if col["id"] == id && col["stops_clock"] != true {
+			t.Errorf("stops_clock is %v after the patch", col["stops_clock"])
+		}
+		// Every other column says so rather than leaving the field out.
+		if col["id"] != id && col["stops_clock"] != false {
+			t.Errorf("column %v has stops_clock %v, want false", col["name"], col["stops_clock"])
+		}
+	}
+
+	// And a patch that leaves it out takes it off, the same as it does the WIP
+	// limit, because on this route the fields it does not carry are cleared.
+	e.do("PATCH", "/api/v1/boards/demo/columns/"+id, `{"name":"Waiting"}`).want(t, 204)
+	board = e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
+	for _, c := range board.body["columns"].([]any) {
+		if col := c.(map[string]any); col["id"] == id && col["stops_clock"] != false {
+			t.Errorf("stops_clock is %v after a patch that left it out, want false", col["stops_clock"])
+		}
 	}
 }

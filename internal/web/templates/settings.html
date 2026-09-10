@@ -85,6 +85,14 @@
             value="{{if .Column.WIPLimit}}{{.Column.WIPLimit}}{{end}}"
             class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
         </label>
+        <!-- An unchecked box posts nothing at all, which is why the handler reads
+             this one by presence and not by value. -->
+        <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0"
+               title="The response-time clock does not run while a card sits here">
+          <input type="checkbox" name="stops_clock" value="1"{{if .Column.StopsClock}} checked{{end}}
+            class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 accent-blue-600">
+          Clock stops
+        </label>
         <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
       </div>
     </form>
@@ -141,6 +149,12 @@
         <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
           class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
       </label>
+      <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0"
+             title="The response-time clock does not run while a card sits here">
+        <input type="checkbox" name="stops_clock" value="1"
+          class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 accent-blue-600">
+        Clock stops
+      </label>
       <button type="submit" class="ml-auto px-3 py-2 text-sm rounded-lg bg-gray-800 dark:bg-gray-600 hover:bg-gray-900 dark:hover:bg-gray-500 text-white sm:ml-0">
         <i class="bi bi-plus mr-1"></i>Add
       </button>
@@ -151,7 +165,71 @@
 <p class="mb-8 text-sm text-gray-400 dark:text-gray-500">
   A WIP limit is the most cards the column should hold. It is shown on the board
   and refuses a drop that would go past it. Empty means no limit. The last
-  column cannot be deleted.
+  column cannot be deleted. A column where the clock stops is one nobody is
+  waiting on, such as Done or Waiting for the customer.
+</p>
+
+<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Response time</h2>
+{{with .SLA}}
+<!-- One form for the whole promise, posted in one go. The day names it sends are
+     the ones the JSON API takes, so both go through one parser. -->
+<form method="post" action="/b/{{$slug}}/sla" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 flex flex-col gap-4">
+  <div class="flex flex-wrap items-end gap-4">
+    <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+      Office hours to answer in
+      <input type="number" name="response_hours" min="0" max="2000" step="1" placeholder="off"
+        value="{{if .Hours}}{{.Hours}}{{end}}"
+        class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+    </label>
+    <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+      The desk opens
+      <input type="time" name="start" value="{{.Start}}" required
+        class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+    </label>
+    <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+      and closes
+      <input type="time" name="end" value="{{.End}}" required
+        class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+    </label>
+    <label class="flex flex-1 flex-col gap-1 min-w-0 text-sm text-gray-600 dark:text-gray-300">
+      Time zone
+      <input type="text" name="zone" value="{{.Zone}}" placeholder="UTC" maxlength="64" list="zones"
+        autocomplete="off" spellcheck="false"
+        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+      <!-- A datalist suggests without restricting: any IANA name the binary
+           knows is accepted, and these are the ones worth one keystroke. -->
+      <datalist id="zones">
+        <option value="Europe/Zurich"></option>
+        <option value="Europe/Berlin"></option>
+        <option value="Europe/London"></option>
+        <option value="America/New_York"></option>
+        <option value="Asia/Tokyo"></option>
+        <option value="UTC"></option>
+      </datalist>
+    </label>
+  </div>
+  <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Office days">
+    {{range .Days}}
+    <label class="cursor-pointer">
+      <input type="checkbox" name="days" value="{{.Value}}" class="sr-only peer"{{if .Checked}} checked{{end}}>
+      <span class="block px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 peer-checked:bg-blue-600 peer-checked:border-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500">{{.Short}}</span>
+    </label>
+    {{end}}
+  </div>
+  <div class="flex flex-wrap items-center gap-3">
+    <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Save</button>
+    <span class="text-sm text-gray-500 dark:text-gray-400">
+      {{if .On}}<i class="bi bi-stopwatch mr-1"></i>{{.Summary}}{{else}}No promise. Cards carry no clock.{{end}}
+    </span>
+  </div>
+</form>
+{{end}}
+
+<p class="mt-4 mb-8 text-sm text-gray-400 dark:text-gray-500">
+  How long a card may sit untouched before the board says so. The clock counts
+  office hours only, so a card that arrives on Friday evening is not overdue on
+  Saturday morning. Editing a card, moving it or commenting on it starts it
+  again. Empty, or 0, and no card carries a clock.
 </p>
 
 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Labels</h2>

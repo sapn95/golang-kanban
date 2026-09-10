@@ -39,6 +39,7 @@ func migrations() []store.Migration {
 		{Version: 4, Name: "archive", Up: store.SQL(sqlFile("0004_archive.sql"))},
 		{Version: 5, Name: "comments", Up: store.SQL(sqlFile("0005_comments.sql"))},
 		{Version: 6, Name: "layout", Up: store.SQL(sqlFile("0006_layout.sql"))},
+		{Version: 7, Name: "sla", Up: store.SQL(sqlFile("0007_sla.sql"))},
 	}
 }
 
@@ -136,13 +137,17 @@ func ids(in []model.ID) []string {
 
 // --- boards -----------------------------------------------------------------
 
-const boardColumns = `id, slug, name, layout, created_at, updated_at`
+const boardColumns = `id, slug, name, layout, sla_response_hours, sla_days, sla_start, sla_end, sla_zone, created_at, updated_at`
 
 func scanBoard(row interface{ Scan(...any) error }) (*model.Board, error) {
 	var b model.Board
-	if err := row.Scan(&b.ID, &b.Slug, &b.Name, &b.Layout, &b.CreatedAt, &b.UpdatedAt); err != nil {
+	var days int
+	if err := row.Scan(&b.ID, &b.Slug, &b.Name, &b.Layout,
+		&b.SLA.ResponseHours, &days, &b.SLA.Start, &b.SLA.End, &b.SLA.Zone,
+		&b.CreatedAt, &b.UpdatedAt); err != nil {
 		return nil, mapErr(err)
 	}
+	b.SLA.Days = model.DaySet(days)
 	b.CreatedAt, b.UpdatedAt = b.CreatedAt.UTC(), b.UpdatedAt.UTC()
 	return &b, nil
 }
@@ -158,14 +163,14 @@ func (s *Store) fillBoards(ctx context.Context, boards []*model.Board) error {
 		byID[b.ID] = b
 		list = append(list, string(b.ID))
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, board_id, name, position, wip_limit FROM columns
+	rows, err := s.db.QueryContext(ctx, `SELECT id, board_id, name, position, wip_limit, stops_clock FROM columns
 		WHERE board_id = ANY($1) ORDER BY board_id, position, id`, pq.Array(list))
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var c model.Column
-		if err := rows.Scan(&c.ID, &c.BoardID, &c.Name, &c.Position, &c.WIPLimit); err != nil {
+		if err := rows.Scan(&c.ID, &c.BoardID, &c.Name, &c.Position, &c.WIPLimit, &c.StopsClock); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -240,16 +245,21 @@ func (s *Store) GetBoardByID(ctx context.Context, id model.ID) (*model.Board, er
 
 func (s *Store) CreateBoard(ctx context.Context, b *model.Board) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO boards (id, slug, name, layout, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-			b.ID, b.Slug, b.Name, model.LayoutOrDefault(b.Layout), b.CreatedAt.UTC(), b.UpdatedAt.UTC()); err != nil {
+		sla := b.SLA.Clean()
+		if _, err := tx.ExecContext(ctx, `INSERT INTO boards
+			(id, slug, name, layout, sla_response_hours, sla_days, sla_start, sla_end, sla_zone, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+			b.ID, b.Slug, b.Name, model.LayoutOrDefault(b.Layout),
+			sla.ResponseHours, int(sla.Days), sla.Start, sla.End, sla.Zone,
+			b.CreatedAt.UTC(), b.UpdatedAt.UTC()); err != nil {
 			return err
 		}
 		for i := range b.Columns {
 			c := &b.Columns[i]
 			c.BoardID = b.ID
 			c.Position = i + 1
-			if _, err := tx.ExecContext(ctx, `INSERT INTO columns (id, board_id, name, position, wip_limit) VALUES ($1, $2, $3, $4, $5)`,
-				c.ID, c.BoardID, c.Name, c.Position, c.WIPLimit); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO columns (id, board_id, name, position, wip_limit, stops_clock) VALUES ($1, $2, $3, $4, $5, $6)`,
+				c.ID, c.BoardID, c.Name, c.Position, c.WIPLimit, c.StopsClock); err != nil {
 				return err
 			}
 		}
@@ -258,8 +268,11 @@ func (s *Store) CreateBoard(ctx context.Context, b *model.Board) error {
 }
 
 func (s *Store) UpdateBoard(ctx context.Context, b *model.Board) error {
-	return affected(s.db.ExecContext(ctx, `UPDATE boards SET name = $1, slug = $2, layout = $3, updated_at = $4 WHERE id = $5`,
-		b.Name, b.Slug, model.LayoutOrDefault(b.Layout), b.UpdatedAt.UTC(), b.ID))
+	sla := b.SLA.Clean()
+	return affected(s.db.ExecContext(ctx, `UPDATE boards SET name = $1, slug = $2, layout = $3,
+		sla_response_hours = $4, sla_days = $5, sla_start = $6, sla_end = $7, sla_zone = $8, updated_at = $9 WHERE id = $10`,
+		b.Name, b.Slug, model.LayoutOrDefault(b.Layout),
+		sla.ResponseHours, int(sla.Days), sla.Start, sla.End, sla.Zone, b.UpdatedAt.UTC(), b.ID))
 }
 
 func (s *Store) DeleteBoard(ctx context.Context, id model.ID) error {
@@ -273,15 +286,15 @@ func (s *Store) CreateColumn(ctx context.Context, c *model.Column) error {
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) + 1 FROM columns WHERE board_id = $1`, c.BoardID).Scan(&c.Position); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO columns (id, board_id, name, position, wip_limit) VALUES ($1, $2, $3, $4, $5)`,
-			c.ID, c.BoardID, c.Name, c.Position, c.WIPLimit)
+		_, err := tx.ExecContext(ctx, `INSERT INTO columns (id, board_id, name, position, wip_limit, stops_clock) VALUES ($1, $2, $3, $4, $5, $6)`,
+			c.ID, c.BoardID, c.Name, c.Position, c.WIPLimit, c.StopsClock)
 		return err
 	})
 }
 
 func (s *Store) UpdateColumn(ctx context.Context, c *model.Column) error {
-	return affected(s.db.ExecContext(ctx, `UPDATE columns SET name = $1, wip_limit = $2, updated_at = now() WHERE id = $3`,
-		c.Name, c.WIPLimit, c.ID))
+	return affected(s.db.ExecContext(ctx, `UPDATE columns SET name = $1, wip_limit = $2, stops_clock = $3, updated_at = now() WHERE id = $4`,
+		c.Name, c.WIPLimit, c.StopsClock, c.ID))
 }
 
 func (s *Store) DeleteColumn(ctx context.Context, id, moveCardsTo model.ID) error {

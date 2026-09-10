@@ -59,10 +59,12 @@ type Snapshot struct {
 // column: an archived card still belongs to the column it left, and both store
 // methods that return cards return one flat list per board.
 type Board struct {
-	ID        string    `json:"id"`
-	Slug      string    `json:"slug"`
-	Name      string    `json:"name"`
-	Layout    string    `json:"layout"`
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Name   string `json:"name"`
+	Layout string `json:"layout"`
+	// SLA is the response-time promise, absent for a board that has none.
+	SLA       *SLA      `json:"sla,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Columns   []Column  `json:"columns"`
@@ -75,6 +77,70 @@ type Column struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	WIPLimit int    `json:"wip_limit,omitempty"`
+	// StopsClock is a column the response-time clock does not run in.
+	StopsClock bool `json:"stops_clock,omitempty"`
+}
+
+// SLA is a board's response-time promise, written the way the JSON API writes
+// it: day names and clock readings rather than the bitmask and the minutes the
+// model holds, because a snapshot is a document people read and edit.
+type SLA struct {
+	// ResponseHours is the promise in office hours, 0 for a board that keeps
+	// its office hours on file and makes no promise against them.
+	ResponseHours int `json:"response_hours,omitempty"`
+	// Days are the office days, lowercase and three letters: ["mon", "tue"].
+	Days []string `json:"days,omitempty"`
+	// Start and End are HH:MM. An End of "00:00" is the midnight that ends the
+	// day, so a desk that never closes is "00:00" to "00:00".
+	Start string `json:"start,omitempty"`
+	End   string `json:"end,omitempty"`
+	// Zone is an IANA name such as Europe/Zurich; empty is UTC.
+	Zone string `json:"zone,omitempty"`
+}
+
+// toSLA is the model's promise as a document, or nil for a board that has
+// nothing to say: an older snapshot has no sla block and an importer that meets
+// one gives the board the office week every new board gets.
+func toSLA(s model.SLA) *SLA {
+	if s == (model.SLA{}) {
+		return nil
+	}
+	return &SLA{
+		ResponseHours: s.ResponseHours,
+		Days:          s.Days.Names(),
+		Start:         model.ClockString(s.Start),
+		End:           model.ClockString(s.End),
+		Zone:          s.Zone,
+	}
+}
+
+// parse reads the document back. A nil promise is the default office week,
+// which is what CreateBoard would have given the board.
+func (s *SLA) parse() (model.SLA, error) {
+	out := model.DefaultSLA()
+	if s == nil {
+		return out, nil
+	}
+	out.ResponseHours = s.ResponseHours
+	out.Zone = s.Zone
+	days, err := model.ParseDays(s.Days)
+	if err != nil {
+		return out, err
+	}
+	if s.Days != nil {
+		out.Days = days
+	}
+	if s.Start != "" {
+		if out.Start, err = model.ParseClock(s.Start, false); err != nil {
+			return out, fmt.Errorf("start %q: %w", s.Start, err)
+		}
+	}
+	if s.End != "" {
+		if out.End, err = model.ParseClock(s.End, true); err != nil {
+			return out, fmt.Errorf("end %q: %w", s.End, err)
+		}
+	}
+	return out, nil
 }
 
 // Label is a per-board tag.
@@ -138,11 +204,14 @@ func Export(ctx context.Context, s store.Store) (*Snapshot, error) {
 			Slug:      b.Slug,
 			Name:      b.Name,
 			Layout:    model.LayoutOrDefault(b.Layout),
+			SLA:       toSLA(b.SLA),
 			CreatedAt: b.CreatedAt.UTC(),
 			UpdatedAt: b.UpdatedAt.UTC(),
 		}
 		for _, c := range b.Columns {
-			out.Columns = append(out.Columns, Column{ID: string(c.ID), Name: c.Name, WIPLimit: c.WIPLimit})
+			out.Columns = append(out.Columns, Column{
+				ID: string(c.ID), Name: c.Name, WIPLimit: c.WIPLimit, StopsClock: c.StopsClock,
+			})
 		}
 		for _, l := range b.Labels {
 			out.Labels = append(out.Labels, Label{ID: string(l.ID), Name: l.Name, Color: l.Color})

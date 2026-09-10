@@ -139,9 +139,12 @@ func (s *Store) CreateBoard(_ context.Context, b *model.Board) error {
 		return store.ErrConflict
 	}
 	stored := copyBoard(b)
-	// The SQL backends get this from the column default; here it has to be
-	// written, or a board created without a layout would read back empty.
+	// The SQL backends get these from the column defaults and the CHECK
+	// constraints; here they have to be written, or a board created without a
+	// layout would read back empty and one created with an out-of-range SLA
+	// would keep a value the other two backends refuse.
 	stored.Layout = model.LayoutOrDefault(stored.Layout)
+	stored.SLA = stored.SLA.Clean()
 	for i := range stored.Columns {
 		stored.Columns[i].BoardID = b.ID
 		stored.Columns[i].Position = i + 1
@@ -167,6 +170,7 @@ func (s *Store) UpdateBoard(_ context.Context, b *model.Board) error {
 	}
 	cur.Name, cur.Slug, cur.UpdatedAt = b.Name, b.Slug, b.UpdatedAt
 	cur.Layout = model.LayoutOrDefault(b.Layout)
+	cur.SLA = b.SLA.Clean()
 	return nil
 }
 
@@ -213,7 +217,7 @@ func (s *Store) UpdateColumn(_ context.Context, c *model.Column) error {
 	if cur == nil {
 		return store.ErrNotFound
 	}
-	cur.Name, cur.WIPLimit = c.Name, c.WIPLimit
+	cur.Name, cur.WIPLimit, cur.StopsClock = c.Name, c.WIPLimit, c.StopsClock
 	return nil
 }
 

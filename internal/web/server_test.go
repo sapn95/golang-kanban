@@ -172,7 +172,7 @@ func TestCreateCard(t *testing.T) {
 	want(t, e.do(http.MethodPost, "/b/demo/cards", form("title", "x", "due_date", "soon")), http.StatusBadRequest, "due_date")
 	want(t, e.do(http.MethodPost, "/b/demo/cards", strings.NewReader("%zz"), "Content-Type", "application/x-www-form-urlencoded"), http.StatusBadRequest, "bad form")
 
-	if err := e.svc.UpdateColumn(context.Background(), col, "In Progress", 1); err != nil {
+	if err := e.svc.UpdateColumn(context.Background(), col, "In Progress", 1, false); err != nil {
 		t.Fatal(err)
 	}
 	want(t, e.do(http.MethodPost, "/b/demo/cards", form("title", "over", "column", string(col))), http.StatusConflict, "WIP limit")
@@ -198,7 +198,7 @@ func TestReorder(t *testing.T) {
 	dup := `{"order":["` + string(second.ID) + `","` + string(second.ID) + `"]}`
 	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader(dup)), http.StatusBadRequest, "invalid request")
 
-	if err := e.svc.UpdateColumn(ctx, todo, "To Do", 1); err != nil {
+	if err := e.svc.UpdateColumn(ctx, todo, "To Do", 1, false); err != nil {
 		t.Fatal(err)
 	}
 	want(t, e.do(http.MethodPost, "/b/demo/columns/"+string(todo)+"/order", strings.NewReader(body)), http.StatusConflict, "WIP limit")
@@ -593,7 +593,7 @@ func TestEditFormMovesTheCard(t *testing.T) {
 		// title must not have been written either.
 		full := b.Columns[1]
 		full.WIPLimit = 1
-		if err := e.svc.UpdateColumn(ctx, full.ID, full.Name, 1); err != nil {
+		if err := e.svc.UpdateColumn(ctx, full.ID, full.Name, 1, false); err != nil {
 			t.Fatalf("setting a WIP limit: %v", err)
 		}
 		if _, err := e.svc.CreateCard(ctx, b.ID, full.ID, service.CardInput{Title: "occupies the slot"}); err != nil {
@@ -1356,7 +1356,7 @@ func TestBoardShowsWhatIsPressing(t *testing.T) {
 
 		// One card in the column already, so a limit of 1 is a full column
 		// rather than an over-full one.
-		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1); err != nil {
+		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1, false); err != nil {
 			t.Fatal(err)
 		}
 		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
@@ -1385,7 +1385,7 @@ func TestBoardShowsWhatIsPressing(t *testing.T) {
 		}
 		// Set the limit after the fact: a limit lowered under a column that is
 		// already fuller than it is the case the board has to survive.
-		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1); err != nil {
+		if err := e.svc.UpdateColumn(ctx, todo.ID, todo.Name, 1, false); err != nil {
 			t.Fatal(err)
 		}
 		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
@@ -2302,5 +2302,160 @@ func TestQuickEditOnTheCardFace(t *testing.T) {
 		if got := rr.Header().Get("Location"); got != "/b/demo" {
 			t.Errorf("Location = %q, want /b/demo", got)
 		}
+	})
+}
+
+// TestSLAThroughTheWeb is the response-time promise as the settings form and the
+// card face see it.
+func TestSLAThroughTheWeb(t *testing.T) {
+	post := func(e *env, path string, body io.Reader) *httptest.ResponseRecorder {
+		return e.do(http.MethodPost, path, body, "Content-Type", "application/x-www-form-urlencoded",
+			"Sec-Fetch-Site", "same-origin")
+	}
+	// The office week as the form posts it, with anything named in kv replacing
+	// the default for that field. days may be named more than once, and naming
+	// it once replaces the whole week rather than adding to it.
+	week := func(kv ...string) io.Reader {
+		v := url.Values{
+			"start": {"08:00"}, "end": {"17:00"}, "zone": {"Europe/Zurich"},
+			"days": {"mon", "tue", "wed", "thu", "fri"},
+		}
+		for i := 0; i+1 < len(kv); i += 2 {
+			v.Del(kv[i])
+		}
+		for i := 0; i+1 < len(kv); i += 2 {
+			v.Add(kv[i], kv[i+1])
+		}
+		return strings.NewReader(v.Encode())
+	}
+
+	t.Run("a board starts with no promise", func(t *testing.T) {
+		e := seeded(t)
+		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK,
+			`action="/b/demo/sla"`, `name="response_hours"`, `name="days"`, `value="mon"`,
+			"No promise. Cards carry no clock.")
+		// Nothing on the board carries a clock either.
+		if body := e.do(http.MethodGet, "/b/demo", nil).Body.String(); strings.Contains(body, "bi-stopwatch") {
+			t.Error("a board with no promise drew a response-time badge")
+		}
+	})
+
+	t.Run("the form writes it and the page reads it back", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/sla", week("response_hours", "4")), http.StatusSeeOther)
+
+		b, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := model.SLA{ResponseHours: 4, Days: model.MonToFri, Start: 8 * 60, End: 17 * 60, Zone: "Europe/Zurich"}
+		if b.SLA != want {
+			t.Fatalf("stored sla = %+v, want %+v", b.SLA, want)
+		}
+		want2 := []string{"4 office hours, Mon to Fri, 08:00 to 17:00 Europe/Zurich",
+			`value="08:00"`, `value="17:00"`, `value="Europe/Zurich"`}
+		body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
+		for _, s := range want2 {
+			if !strings.Contains(body, s) {
+				t.Errorf("settings page missing %q", s)
+			}
+		}
+	})
+
+	t.Run("a desk open around the clock", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/sla", week("response_hours", "2", "start", "00:00", "end", "00:00",
+			"days", "mon", "days", "tue", "days", "wed", "days", "thu", "days", "fri",
+			"days", "sat", "days", "sun")), http.StatusSeeOther)
+		b, _ := e.svc.Board(context.Background(), "demo")
+		if b.SLA.Start != 0 || b.SLA.End != model.MinutesPerDay || b.SLA.Days != model.AllDays {
+			t.Fatalf("stored sla = %+v, want the whole week from midnight to midnight", b.SLA)
+		}
+		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK,
+			"2 office hours, Mon to Sun, 00:00 to 00:00 Europe/Zurich")
+	})
+
+	t.Run("zero hours switches it off and keeps the hours", func(t *testing.T) {
+		e := seeded(t)
+		want(t, post(e, "/b/demo/sla", week("response_hours", "4")), http.StatusSeeOther)
+		want(t, post(e, "/b/demo/sla", week("response_hours", "0")), http.StatusSeeOther)
+		b, _ := e.svc.Board(context.Background(), "demo")
+		if b.SLA.ResponseHours != 0 || b.SLA.Start != 8*60 || b.SLA.Zone != "Europe/Zurich" {
+			t.Errorf("stored sla = %+v, want the office hours kept and the clock off", b.SLA)
+		}
+		want(t, e.do(http.MethodGet, "/b/demo/settings", nil), http.StatusOK,
+			"No promise. Cards carry no clock.", `value="08:00"`)
+	})
+
+	t.Run("what the form refuses", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, says string
+			body       io.Reader
+		}{
+			{"a zone nobody can load", "IANA time zone", week("response_hours", "4", "zone", "Mars/Olympus")},
+			{"hours that are not a number", "whole number", week("response_hours", "soon")},
+			{"a clock reading that is not one", "not a time of day", week("response_hours", "4", "start", "half eight")},
+			{"an end before the start", "must end after", week("response_hours", "4", "start", "17:00", "end", "08:00")},
+			{"a promise on no day at all", "at least one day",
+				form("response_hours", "4", "start", "08:00", "end", "17:00")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				e := seeded(t)
+				rr := post(e, "/b/demo/sla", tc.body)
+				// The settings page comes back with the reason on it rather
+				// than a bare 400, because the form it belongs to is there.
+				want(t, rr, http.StatusBadRequest, tc.says, `action="/b/demo/sla"`)
+				b, _ := e.svc.Board(context.Background(), "demo")
+				if b.SLA.Enabled() {
+					t.Errorf("a refused form switched the clock on: %+v", b.SLA)
+				}
+			})
+		}
+	})
+
+	t.Run("the badge grades a card against the promise", func(t *testing.T) {
+		// A desk open around the clock, so the badge does not depend on which
+		// weekday the fixed test clock happens to be.
+		open := func(e *env) {
+			t.Helper()
+			if err := e.svc.SetBoardSLA(context.Background(), e.board.ID, model.SLA{
+				ResponseHours: 4, Days: model.AllDays, End: model.MinutesPerDay,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		t.Run("a card touched just now", func(t *testing.T) {
+			e := seeded(t)
+			open(e)
+			want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK,
+				"bi-stopwatch", "4h left", "bg-emerald-50", "Answer by")
+		})
+
+		t.Run("an hour from the deadline", func(t *testing.T) {
+			e := seeded(t, WithClock(func() time.Time { return today.Add(3 * time.Hour) }))
+			open(e)
+			want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK, "1h left", "bg-amber-100")
+		})
+
+		t.Run("two days past it", func(t *testing.T) {
+			e := seeded(t, WithClock(func() time.Time { return today.Add(48 * time.Hour) }))
+			open(e)
+			want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK,
+				"44h over", "bg-red-100", "The response time ran out on")
+		})
+
+		t.Run("the clock does not run in a column that stops it", func(t *testing.T) {
+			e := seeded(t, WithClock(func() time.Time { return today.Add(48 * time.Hour) }))
+			open(e)
+			ctx := context.Background()
+			col := e.board.Columns[0]
+			if err := e.svc.UpdateColumn(ctx, col.ID, col.Name, 0, true); err != nil {
+				t.Fatal(err)
+			}
+			if body := e.do(http.MethodGet, "/b/demo", nil).Body.String(); strings.Contains(body, "bi-stopwatch") {
+				t.Error("a card in a column where the clock stops still carries a badge")
+			}
+		})
 	})
 }

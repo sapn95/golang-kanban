@@ -98,6 +98,30 @@ func (s *Server) setLayout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// setSLA replaces the whole promise. A PUT with response_hours 0 is how a board
+// stops making one, which is also what the settings form posts when the hours
+// are cleared.
+func (s *Server) setSLA(w http.ResponseWriter, r *http.Request) {
+	b, ok := s.board(w, r)
+	if !ok {
+		return
+	}
+	var in slaInput
+	if !s.decode(w, r, &in) {
+		return
+	}
+	sla, err := in.toModel()
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if err := s.svc.SetBoardSLA(r.Context(), b.ID, sla); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- columns ------------------------------------------------------------------
 
 func (s *Server) createColumn(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +133,7 @@ func (s *Server) createColumn(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
-	c, err := s.svc.AddColumn(r.Context(), b.ID, in.Name, in.WIPLimit)
+	c, err := s.svc.AddColumn(r.Context(), b.ID, in.Name, in.WIPLimit, in.StopsClock)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -130,7 +154,7 @@ func (s *Server) updateColumn(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
-	if err := s.svc.UpdateColumn(r.Context(), id, in.Name, in.WIPLimit); err != nil {
+	if err := s.svc.UpdateColumn(r.Context(), id, in.Name, in.WIPLimit, in.StopsClock); err != nil {
 		s.fail(w, r, err)
 		return
 	}
