@@ -248,3 +248,43 @@ html.dark { color-scheme: dark; background-color: #111827; }
 .dark .md blockquote { border-left-color: #4b5563; color: #9ca3af; }
 .md hr { margin: 0.75em 0; border: 0; border-top: 1px solid #e5e7eb; }
 .dark .md hr { border-top-color: #4b5563; }
+
+/* The response-time switch. A checkbox and two spans, so the state lives in the
+   form and gets posted with it; everything below is what a checkbox looks like
+   when it is a switch. No script: the track reads the checkbox through the
+   sibling combinator, and the word beside it comes out of a pseudo-element for
+   the same reason. */
+.sla-switch .track {
+  position: relative;
+  display: inline-block;
+  width: 2.75rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  background-color: #9ca3af;
+  transition: background-color .15s ease;
+}
+.dark .sla-switch .track { background-color: #4b5563; }
+.sla-switch .track::after {
+  content: "";
+  position: absolute;
+  top: 0.1875rem;
+  left: 0.1875rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  background-color: #fff;
+  transition: transform .15s ease;
+}
+.sla-switch input:checked + .track { background-color: #4f46e5; }
+.sla-switch input:checked + .track::after { transform: translateX(1.25rem); }
+.sla-switch input:focus-visible + .track { outline: 2px solid #6366f1; outline-offset: 2px; }
+.sla-switch .state::after { content: "Off"; }
+.sla-switch input:checked ~ .state::after { content: "On"; }
+
+/* With the promise switched off the fields stay where they are and stop asking
+   to be read. :has() is what lets one control dim a block that is not its own
+   sibling; a browser without it draws them at full strength, which is untidy
+   rather than broken, and the switch still decides what gets saved. */
+.sla-form:has(input[name="on"]:not(:checked)) .sla-fields {
+  opacity: .45;
+}

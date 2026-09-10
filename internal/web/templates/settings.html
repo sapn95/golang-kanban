@@ -169,16 +169,31 @@
   waiting on, such as Done or Waiting for the customer.
 </p>
 
-<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Response time</h2>
 {{with .SLA}}
 <!-- One form for the whole promise, posted in one go. The day names it sends are
      the ones the JSON API takes, so both go through one parser. -->
-<form method="post" action="/b/{{$slug}}/sla" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 flex flex-col gap-4">
-  <div class="flex flex-wrap items-end gap-4">
+<form method="post" action="/b/{{$slug}}/sla" class="sla-form bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 flex flex-col gap-4">
+  <!-- The switch is the control that says whether the board promises anything.
+       Clearing the hours did the same thing and said nothing, so nobody found
+       it. The fields below stay readable and keep their values while it is off:
+       app.css dims them through :has(), and a browser without :has() shows them
+       at full strength, which is untidy rather than broken. -->
+  <div class="flex flex-wrap items-center gap-3 pb-3 border-b border-gray-100 dark:border-gray-700">
+    <div class="flex-1 min-w-0">
+      <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Response time</h3>
+      <p class="text-xs text-gray-500 dark:text-gray-400">Counted in office hours, so Friday evening is not overdue on Saturday.</p>
+    </div>
+    <label class="sla-switch flex items-center gap-2 cursor-pointer shrink-0">
+      <input type="checkbox" name="on" value="1" class="sr-only"{{if .On}} checked{{end}}>
+      <span class="track" aria-hidden="true"></span>
+      <span class="state text-sm font-medium text-gray-600 dark:text-gray-300"></span>
+    </label>
+  </div>
+  <div class="sla-fields flex flex-wrap items-end gap-4">
     <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
       Office hours to answer in
-      <input type="number" name="response_hours" min="0" max="2000" step="1" placeholder="off"
-        value="{{if .Hours}}{{.Hours}}{{end}}"
+      <input type="number" name="response_hours" min="1" max="2000" step="1"
+        value="{{.Hours}}"
         class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
     </label>
     <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
@@ -193,22 +208,25 @@
     </label>
     <label class="flex flex-1 flex-col gap-1 min-w-0 text-sm text-gray-600 dark:text-gray-300">
       Time zone
-      <input type="text" name="zone" value="{{.Zone}}" placeholder="UTC" maxlength="64" list="zones"
-        autocomplete="off" spellcheck="false"
+      <!-- Every zone the binary can load, grouped by region and generated from
+           the same database it carries, so the list cannot offer one the server
+           would refuse. It used to be a text field with a datalist of six, and a
+           datalist filters itself down to whatever is already in the box: with
+           Europe/Zurich in there it offered Europe/Zurich, which read as the
+           only zone this board had. -->
+      <select name="zone"
         class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
-      <!-- A datalist suggests without restricting: any IANA name the binary
-           knows is accepted, and these are the ones worth one keystroke. -->
-      <datalist id="zones">
-        <option value="Europe/Zurich"></option>
-        <option value="Europe/Berlin"></option>
-        <option value="Europe/London"></option>
-        <option value="America/New_York"></option>
-        <option value="Asia/Tokyo"></option>
-        <option value="UTC"></option>
-      </datalist>
+        <option value=""{{if not .Zone}} selected{{end}}>UTC</option>
+        {{$zone := .Zone}}
+        {{range .Zones}}
+        <optgroup label="{{.Region}}">
+          {{range .Zones}}<option{{if eq . $zone}} selected{{end}}>{{.}}</option>{{end}}
+        </optgroup>
+        {{end}}
+      </select>
     </label>
   </div>
-  <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Office days">
+  <div class="sla-fields flex flex-wrap items-center gap-2" role="group" aria-label="Office days">
     {{range .Days}}
     <label class="cursor-pointer">
       <input type="checkbox" name="days" value="{{.Value}}" class="sr-only peer"{{if .Checked}} checked{{end}}>
@@ -219,17 +237,18 @@
   <div class="flex flex-wrap items-center gap-3">
     <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Save</button>
     <span class="text-sm text-gray-500 dark:text-gray-400">
-      {{if .On}}<i class="bi bi-stopwatch mr-1"></i>{{.Summary}}{{else}}No promise. Cards carry no clock.{{end}}
+      {{if .On}}<i class="bi bi-stopwatch mr-1"></i>{{.Summary}}{{else}}Off. No card carries a clock.{{end}}
     </span>
   </div>
 </form>
 {{end}}
 
 <p class="mt-4 mb-8 text-sm text-gray-400 dark:text-gray-500">
-  How long a card may sit untouched before the board says so. The clock counts
-  office hours only, so a card that arrives on Friday evening is not overdue on
-  Saturday morning. Editing a card, moving it or commenting on it starts it
-  again. Empty, or 0, and no card carries a clock.
+  How long a card may sit untouched before the board says so. Editing a card,
+  moving it or commenting on it starts it again, and a column marked as one
+  where the clock stops takes the badge off every card in it. With the switch
+  off no card carries a clock, and the hours in the form are what the board
+  would promise if it were on.
 </p>
 
 <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Labels</h2>

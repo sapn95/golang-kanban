@@ -451,6 +451,9 @@ type slaView struct {
 	Start string
 	End   string
 	Zone  string
+	// Zones is what the picker offers, by region, with the board's own zone
+	// kept on the list even when it is not one of the generated names.
+	Zones []model.ZoneGroup
 	// Summary is the promise in one line, under the form.
 	Summary string
 }
@@ -475,6 +478,14 @@ func slaSettings(sla model.SLA) slaView {
 		Start: clockValue(sla.Start),
 		End:   clockValue(sla.End),
 		Zone:  sla.Zone,
+		Zones: model.Zones(sla.Zone),
+	}
+	// A board with no promise still shows a number, so that turning the switch
+	// on and saving asks for nothing else. Zero in the box would read as "off,
+	// and also zero hours", which is the confusion the switch is there to end.
+	// Eight because it is the office day the rest of the form opens on.
+	if v.Hours <= 0 {
+		v.Hours = 8
 	}
 	for _, w := range []time.Weekday{time.Monday, time.Tuesday, time.Wednesday,
 		time.Thursday, time.Friday, time.Saturday, time.Sunday} {
@@ -1556,10 +1567,23 @@ func readSLA(r *http.Request) (model.SLA, error) {
 	if err := r.ParseForm(); err != nil {
 		return model.SLA{}, &service.ValidationError{Field: "form", Message: "could not be read"}
 	}
+	// The switch decides whether the board promises anything; the number decides
+	// how much. An unticked checkbox sends no field at all, which is what makes
+	// the switch readable here without a hidden companion field.
+	on := r.PostFormValue("on") != ""
 	hours, err := strconv.Atoi(orZero(r.PostFormValue("response_hours")))
 	if err != nil || hours < 0 {
 		return model.SLA{}, &service.ValidationError{
-			Field: "response_hours", Message: "must be a whole number of hours, or 0 to switch the clock off"}
+			Field: "response_hours", Message: "must be a whole number of office hours"}
+	}
+	switch {
+	case !on:
+		// The hours in the form are kept out of the write: off is off, and a
+		// board that promises nothing holds no number to argue about.
+		hours = 0
+	case hours == 0:
+		return model.SLA{}, &service.ValidationError{
+			Field: "response_hours", Message: "must be at least one office hour, or switch the response time off"}
 	}
 	start, err := clockMinutes(r.PostFormValue("start"), false)
 	if err != nil {

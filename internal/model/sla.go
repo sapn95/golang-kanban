@@ -1,8 +1,11 @@
+//go:generate go run gen_zones.go
+
 package model
 
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -122,6 +125,25 @@ func ClockString(m int) string {
 		return "00:00"
 	}
 	return fmt.Sprintf("%02d:%02d", m/60, m%60)
+}
+
+// Zones is the time-zone picker's list: every region, and inside each one the
+// names sorted. When current is a zone the list does not carry, it comes back
+// as a group of its own at the front rather than being dropped, because a board
+// whose zone was set through the API must not lose it the next time somebody
+// saves the form.
+func Zones(current string) []ZoneGroup {
+	if current == "" || current == "UTC" {
+		return zoneGroups
+	}
+	for _, g := range zoneGroups {
+		if slices.Contains(g.Zones, current) {
+			return zoneGroups
+		}
+	}
+	out := make([]ZoneGroup, 0, len(zoneGroups)+1)
+	out = append(out, ZoneGroup{Region: "Set on this board", Zones: []string{current}})
+	return append(out, zoneGroups...)
 }
 
 // ErrBadClock is returned by ParseClock for anything that is not a time of day.

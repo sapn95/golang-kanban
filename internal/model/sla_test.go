@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -317,5 +318,54 @@ func TestClockWithNoOfficeDay(t *testing.T) {
 	}
 	if got := c.Deadline(at); !got.IsZero() {
 		t.Errorf("Deadline = %s, want no deadline at all", got.Format(time.RFC3339))
+	}
+}
+
+// The picker must not offer a name the server would then refuse, which is the
+// one way a generated list can be wrong in a way nobody notices until a board
+// will not save.
+func TestEveryZoneOnOfferLoads(t *testing.T) {
+	seen := map[string]string{}
+	n := 0
+	for _, g := range Zones("") {
+		if len(g.Zones) == 0 {
+			t.Errorf("region %q offers nothing", g.Region)
+		}
+		if !slices.IsSorted(g.Zones) {
+			t.Errorf("region %q is not sorted, so the list reads at random", g.Region)
+		}
+		for _, name := range g.Zones {
+			if was, dup := seen[name]; dup {
+				t.Errorf("%s is offered twice, in %q and %q", name, was, g.Region)
+			}
+			seen[name] = g.Region
+			if _, err := time.LoadLocation(name); err != nil {
+				t.Errorf("LoadLocation(%q): %v", name, err)
+			}
+			n++
+		}
+	}
+	if n != ZoneCount {
+		t.Errorf("walked %d zones, ZoneCount says %d", n, ZoneCount)
+	}
+	if n < 300 {
+		t.Errorf("only %d zones; the list has lost most of itself", n)
+	}
+}
+
+// A zone the list does not carry is kept rather than dropped, so a board set up
+// through the API does not lose its zone the next time somebody saves the form.
+func TestAZoneFromSomewhereElseStaysOnOffer(t *testing.T) {
+	groups := Zones("US/Eastern")
+	if len(groups) != len(zoneGroups)+1 {
+		t.Fatalf("groups = %d, want one more than the %d generated", len(groups), len(zoneGroups))
+	}
+	if got := groups[0].Zones; len(got) != 1 || got[0] != "US/Eastern" {
+		t.Errorf("first group = %v, want the board's own zone", got)
+	}
+	for _, current := range []string{"", "UTC", "Europe/Zurich"} {
+		if len(Zones(current)) != len(zoneGroups) {
+			t.Errorf("Zones(%q) added a group for a zone that is already on offer", current)
+		}
 	}
 }
