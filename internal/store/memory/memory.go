@@ -339,6 +339,17 @@ func (s *Store) ListArchivedCards(_ context.Context, boardID model.ID) ([]model.
 	return out, nil
 }
 
+func (s *Store) TouchCard(_ context.Context, id model.ID, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.cards[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	c.UpdatedAt = at.UTC()
+	return nil
+}
+
 func (s *Store) SetCardArchived(_ context.Context, id model.ID, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -27,6 +27,7 @@ func Run(t *testing.T, newStore New) {
 		"Cards":         testCards,
 		"Assignee":      testAssignee,
 		"Archive":       testArchive,
+		"Touch":         testTouch,
 		"Comments":      testComments,
 		"Layout":        testLayout,
 		"SLA":           testSLA,
@@ -758,6 +759,45 @@ func testArchive(t *testing.T, s store.Store) {
 	}
 	if got.Archived() {
 		t.Error("CreateCard honoured ArchivedAt; it should leave archiving to SetCardArchived")
+	}
+}
+
+// testTouch is the one card write that changes nothing but the timestamp. A
+// comment restarts the response-time clock with it, and it has to do that
+// without carrying a copy of the card through the call, or two people working
+// on one card at the same time would each undo the other.
+func testTouch(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "touch", "A")
+	c := mustCard(t, s, b, b.Columns[0].ID, "before")
+
+	// What somebody saved while the comment was on its way.
+	c.Title, c.Description, c.UpdatedAt = "renamed", "edited", now()
+	if err := s.UpdateCard(ctx, c); err != nil {
+		t.Fatalf("UpdateCard: %v", err)
+	}
+
+	when := now().Add(time.Minute)
+	if err := s.TouchCard(ctx, c.ID, when); err != nil {
+		t.Fatalf("TouchCard: %v", err)
+	}
+	got, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatalf("GetCard: %v", err)
+	}
+	if !got.UpdatedAt.Equal(when) {
+		t.Errorf("UpdatedAt = %s, want %s", got.UpdatedAt, when)
+	}
+	if got.Title != "renamed" || got.Description != "edited" {
+		t.Errorf("the touch also wrote %q / %q, want the edit left alone", got.Title, got.Description)
+	}
+	if !got.CreatedAt.Equal(c.CreatedAt) {
+		t.Errorf("CreatedAt = %s, want it unchanged at %s", got.CreatedAt, c.CreatedAt)
+	}
+
+	// A card that is not there is a miss, not a silent success.
+	if err := s.TouchCard(ctx, model.ID("nope"), when); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("touching an unknown card = %v, want ErrNotFound", err)
 	}
 }
 

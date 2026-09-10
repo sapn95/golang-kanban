@@ -642,6 +642,47 @@ func TestComments(t *testing.T) {
 		}
 	})
 
+	t.Run("a comment restarts the card's clock and leaves the rest of it alone", func(t *testing.T) {
+		// The response-time clock reads UpdatedAt, so answering in the thread
+		// has to count as touching the card. Its own clock, because the one in
+		// newSvc never moves and a touch that changed nothing would pass.
+		n := 0
+		tick := fixed
+		k := New(memory.New(),
+			WithClock(func() time.Time { return tick }),
+			WithIDs(func() model.ID { n++; return model.ID(fmt.Sprintf("id%03d", n)) }))
+		ctx := context.Background()
+		b, err := k.CreateBoard(ctx, "B", "", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		card, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "card", Description: "as written"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tick = fixed.Add(time.Hour)
+		if _, err := k.AddComment(ctx, card.ID, "her@example.com", "answered"); err != nil {
+			t.Fatalf("AddComment: %v", err)
+		}
+		got, err := k.Card(ctx, card.ID)
+		if err != nil {
+			t.Fatalf("Card: %v", err)
+		}
+		if !got.UpdatedAt.Equal(tick) {
+			t.Errorf("UpdatedAt = %v, want the comment's instant %v", got.UpdatedAt, tick)
+		}
+		if got.Title != "card" || got.Description != "as written" {
+			t.Errorf("the comment also wrote %q / %q", got.Title, got.Description)
+		}
+	})
+
+	t.Run("a comment on a card that is not there is still refused by the store", func(t *testing.T) {
+		k, ctx, _ := newCard(t)
+		if _, err := k.AddComment(ctx, model.ID("nope"), "her@example.com", "into the void"); err == nil {
+			t.Error("AddComment on an unknown card returned no error")
+		}
+	})
+
 	t.Run("an empty or oversized body is refused", func(t *testing.T) {
 		k, ctx, card := newCard(t)
 		if _, err := k.AddComment(ctx, card, "her@example.com", "   \n  "); !isValidation(err, "body") {

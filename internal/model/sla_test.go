@@ -285,3 +285,37 @@ func TestClockOpenAllTheTime(t *testing.T) {
 		t.Errorf("Between = %v, want 50h", got)
 	}
 }
+
+// A promise that needs more office days than a round-number bound would allow.
+// Fifteen minutes is a legal office day and 2000 hours is the largest promise
+// the model takes, so this one comes due eight thousand office days out, and a
+// walk that gave up before then would answer with the day it stopped on.
+func TestClockDeadlineOnAVeryShortOfficeDay(t *testing.T) {
+	desk := SLA{ResponseHours: MaxResponseHours, Days: MonToFri,
+		Start: 8 * 60, End: 8*60 + 15, Zone: "Europe/Zurich"}
+	c := desk.Clock()
+	from := time.Date(2026, time.September, 10, 9, 0, 0, 0, c.Location())
+	deadline := c.Deadline(from)
+	if got := c.Between(from, deadline); got != desk.Window() {
+		t.Errorf("office time up to the deadline = %v, want the whole promise %v", got, desk.Window())
+	}
+	// Eight thousand office days, five to the week, is past 2050.
+	if deadline.Year() < 2050 {
+		t.Errorf("Deadline = %s, too early for 2000 hours at a quarter of an hour a day",
+			deadline.Format(time.RFC3339))
+	}
+}
+
+// A week with no office day in it has no office instant to walk to, so nothing
+// searches for one.
+func TestClockWithNoOfficeDay(t *testing.T) {
+	desk := SLA{ResponseHours: 4, Days: 0, Start: 8 * 60, End: 17 * 60}
+	c := desk.Clock()
+	at := time.Date(2026, time.September, 10, 9, 0, 0, 0, time.UTC)
+	if got := c.next(at); !got.Equal(at) {
+		t.Errorf("next = %s, want the instant it was given", got.Format(time.RFC3339))
+	}
+	if got := c.Deadline(at); !got.IsZero() {
+		t.Errorf("Deadline = %s, want no deadline at all", got.Format(time.RFC3339))
+	}
+}

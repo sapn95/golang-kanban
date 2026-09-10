@@ -11,6 +11,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+	// seed() sets a board's SLA, and the service checks the zone name with
+	// time.LoadLocation before it writes one. A host with no
+	// /usr/share/zoneinfo would fail the seed rather than the assertion, so
+	// the test binary carries the zone database the same way cmd/kanban does.
+	_ "time/tzdata"
 
 	"kanban/internal/model"
 	"kanban/internal/service"
