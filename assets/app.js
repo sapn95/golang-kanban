@@ -281,7 +281,20 @@
   });
   }
 
+  // Registering the worker is what makes the board installable; the worker
+  // itself caches nothing but the offline page. A service worker needs a secure
+  // context, so over plain http on a LAN address this does nothing and the board
+  // works exactly as it did, which is the right way round: the tunnel is where
+  // it gets installed from.
+  function initServiceWorker() {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) { return; }
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('service worker not registered', err);
+    });
+  }
+
   function init() {
+    initServiceWorker();
     initDarkMode();
     initHtmxHooks();
     initQuickEdit();
@@ -325,7 +338,7 @@
       const card = b.closest('[data-id]');
       if (!card) return;
       card.classList.toggle('ring-2', b.checked);
-      card.classList.toggle('ring-blue-500', b.checked);
+      card.classList.toggle('ring-indigo-500', b.checked);
     });
   }
 

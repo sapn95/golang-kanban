@@ -1,0 +1,17 @@
+{{define "content"}}
+<!-- What the service worker answers a navigation with when the server cannot be
+     reached. Nothing on it is loaded from anywhere: an installed board with no
+     network has to be able to draw this page out of the cache alone. -->
+<div class="mx-auto max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none p-8 text-center">
+  <i class="bi bi-wifi-off text-4xl text-slate-300 dark:text-slate-600"></i>
+  <h2 class="mt-4 text-lg font-semibold text-slate-800 dark:text-slate-100">No connection</h2>
+  <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+    The board lives on the server, so there is nothing to show until this device
+    can reach it again. Nothing you did was lost: the last thing you saved is on
+    the server, and this page never held anything else.
+  </p>
+  <a href="/" class="mt-6 inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
+    <i class="bi bi-arrow-clockwise"></i>Try again
+  </a>
+</div>
+{{end}}

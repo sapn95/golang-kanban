@@ -15,12 +15,12 @@
   {{$current := .Label.Color}}
   <label class="cursor-pointer" title="No colour">
     <input type="radio" name="color" value="" class="sr-only peer"{{if not $current}} checked{{end}}>
-    <span class="block w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-600 ring-offset-1 ring-offset-white dark:ring-offset-gray-800 peer-checked:ring-2 peer-checked:ring-gray-900 dark:peer-checked:ring-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500"></span>
+    <span class="block w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-600 ring-offset-1 ring-offset-white dark:ring-offset-slate-800 peer-checked:ring-2 peer-checked:ring-slate-900 dark:peer-checked:ring-white peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500"></span>
   </label>
   {{range .Palette}}
   <label class="cursor-pointer" title="{{.}}">
     <input type="radio" name="color" value="{{.}}" class="sr-only peer"{{if eq . $current}} checked{{end}}>
-    <span class="block w-6 h-6 rounded-full ring-offset-1 ring-offset-white dark:ring-offset-gray-800 peer-checked:ring-2 peer-checked:ring-gray-900 dark:peer-checked:ring-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500" style="background-color: {{.}}"></span>
+    <span class="block w-6 h-6 rounded-full ring-offset-1 ring-offset-white dark:ring-offset-slate-800 peer-checked:ring-2 peer-checked:ring-slate-900 dark:peer-checked:ring-white peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500" style="background-color: {{.}}"></span>
   </label>
   {{end}}
 </div>
@@ -33,10 +33,10 @@
 <div class="mx-auto max-w-4xl">
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <a href="/b/{{.BoardSlug}}"
-     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm">
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-100 text-sm">
     <i class="bi bi-arrow-left"></i>Back to the board
   </a>
-  <span class="text-sm text-gray-500 dark:text-gray-400">
+  <span class="text-sm text-slate-500 dark:text-slate-400">
     {{len .Columns}} column{{if ne (len .Columns) 1}}s{{end}},
     {{len .Labels}} label{{if ne (len .Labels) 1}}s{{end}}
   </span>
@@ -50,8 +50,8 @@
 
 {{$slug := .BoardSlug}}
 
-<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Columns</h2>
-<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg divide-y divide-gray-100 dark:divide-gray-700 mb-3">
+<h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Columns</h2>
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none divide-y divide-slate-100 dark:divide-slate-800 mb-3">
   {{range .Columns}}
   <!-- A phone gets three stacked lines, one row from sm up: the name, the
        limit with its Save, then what the column holds and what can be done to
@@ -72,38 +72,38 @@
     <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}"
       class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
       <input type="text" name="name" value="{{.Column.Name}}" required maxlength="100" aria-label="Column name"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+        class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm sm:w-72">
       <!-- row-save: one Save per row is six of them on a page with three
            columns and three labels, all shouting at once. The class lets
            app.js keep a row's Save out of sight until that row has been
            changed. It is rendered visible, so a browser running no script has
            the button it needs. -->
       <div class="w-full flex items-center gap-3 sm:w-auto">
-        <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0">
+        <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0">
           WIP limit
           <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
             value="{{if .Column.WIPLimit}}{{.Column.WIPLimit}}{{end}}"
-            class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+            class="w-20 px-2 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
         </label>
         <!-- An unchecked box posts nothing at all, which is why the handler reads
              this one by presence and not by value. -->
-        <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0"
+        <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0"
                title="The response-time clock does not run while a card sits here">
           <input type="checkbox" name="stops_clock" value="1"{{if .Column.StopsClock}} checked{{end}}
-            class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 accent-blue-600">
+            class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-indigo-600">
           Clock stops
         </label>
-        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
+        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white sm:ml-0">Save</button>
       </div>
     </form>
     <div class="w-full flex flex-wrap items-center gap-2 min-w-0 sm:w-auto sm:gap-3">
-      <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0 tabular-nums">
+      <span class="text-xs text-slate-500 dark:text-slate-400 shrink-0 tabular-nums">
         {{if .Cards}}{{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}empty{{end}}
       </span>
       {{if not .First}}
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move" class="shrink-0">
         <input type="hidden" name="direction" value="up">
-        <button type="submit" title="Move left" class="p-2 rounded-lg text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <button type="submit" title="Move left" class="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700">
           <i class="bi bi-arrow-left-short text-lg"></i>
         </button>
       </form>
@@ -111,7 +111,7 @@
       {{if not .Last}}
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move" class="shrink-0">
         <input type="hidden" name="direction" value="down">
-        <button type="submit" title="Move right" class="p-2 rounded-lg text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <button type="submit" title="Move right" class="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700">
           <i class="bi bi-arrow-right-short text-lg"></i>
         </button>
       </form>
@@ -125,7 +125,7 @@
             onsubmit="return confirm('Delete this column?')">
         {{if .Cards}}
         <select name="move_to" aria-label="Where its cards go"
-          class="flex-1 min-w-0 px-2 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white sm:flex-none">
+          class="flex-1 min-w-0 px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white sm:flex-none">
           {{range .Others}}<option value="{{.ID}}">move cards to {{.Name}}</option>{{end}}
           <option value="">delete the cards too</option>
         </select>
@@ -142,71 +142,72 @@
 
   <form method="post" action="/b/{{$slug}}/columns" class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
     <input type="text" name="name" required maxlength="100" placeholder="New column" aria-label="New column name"
-      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+      class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm sm:w-72">
     <div class="w-full flex items-center gap-3 sm:w-auto sm:contents">
-      <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0">
+      <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0">
         WIP limit
         <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
-          class="w-20 px-2 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+          class="w-20 px-2 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
       </label>
-      <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 shrink-0"
+      <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0"
              title="The response-time clock does not run while a card sits here">
         <input type="checkbox" name="stops_clock" value="1"
-          class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 accent-blue-600">
+          class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-indigo-600">
         Clock stops
       </label>
-      <button type="submit" class="ml-auto px-3 py-2 text-sm rounded-lg bg-gray-800 dark:bg-gray-600 hover:bg-gray-900 dark:hover:bg-gray-500 text-white sm:ml-0">
+      <button type="submit" class="ml-auto px-3 py-2 text-sm rounded-lg bg-slate-800 dark:bg-slate-600 hover:bg-slate-900 dark:hover:bg-slate-500 text-white sm:ml-0">
         <i class="bi bi-plus mr-1"></i>Add
       </button>
     </div>
   </form>
 </div>
 
-<p class="mb-8 text-sm text-gray-400 dark:text-gray-500">
+<p class="mb-8 text-sm text-slate-400 dark:text-slate-500">
   A WIP limit is the most cards the column should hold. It is shown on the board
   and refuses a drop that would go past it. Empty means no limit. The last
   column cannot be deleted. A column where the clock stops is one nobody is
   waiting on, such as Done or Waiting for the customer.
 </p>
 
+<h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Response time</h2>
 {{with .SLA}}
 <!-- One form for the whole promise, posted in one go. The day names it sends are
      the ones the JSON API takes, so both go through one parser. -->
-<form method="post" action="/b/{{$slug}}/sla" class="sla-form bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 flex flex-col gap-4">
+<form method="post" action="/b/{{$slug}}/sla" class="sla-form bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none p-4 flex flex-col gap-4">
   <!-- The switch is the control that says whether the board promises anything.
        Clearing the hours did the same thing and said nothing, so nobody found
        it. The fields below stay readable and keep their values while it is off:
        app.css dims them through :has(), and a browser without :has() shows them
        at full strength, which is untidy rather than broken. -->
-  <div class="flex flex-wrap items-center gap-3 pb-3 border-b border-gray-100 dark:border-gray-700">
+  <div class="flex flex-wrap items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
     <div class="flex-1 min-w-0">
-      <h3 class="text-sm font-semibold text-gray-800 dark:text-gray-100">Response time</h3>
-      <p class="text-xs text-gray-500 dark:text-gray-400">Counted in office hours, so Friday evening is not overdue on Saturday.</p>
+      <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Response time</h3>
+      <p class="text-xs text-slate-500 dark:text-slate-400">Counted in office hours, so Friday evening is not overdue on Saturday.</p>
     </div>
     <label class="sla-switch flex items-center gap-2 cursor-pointer shrink-0">
       <input type="checkbox" name="on" value="1" class="sr-only"{{if .On}} checked{{end}}>
       <span class="track" aria-hidden="true"></span>
-      <span class="state text-sm font-medium text-gray-600 dark:text-gray-300"></span>
+      <span class="state text-sm font-medium text-slate-600 dark:text-slate-300"></span>
     </label>
   </div>
   <div class="sla-fields flex flex-wrap items-end gap-4">
-    <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+    <label class="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
       Office hours to answer in
       <input type="number" name="response_hours" min="1" max="2000" step="1"
         value="{{.Hours}}"
-        class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+        class="w-24 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
     </label>
-    <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+    <label class="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
       The desk opens
       <input type="time" name="start" value="{{.Start}}" required
-        class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+        class="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
     </label>
-    <label class="flex flex-col gap-1 text-sm text-gray-600 dark:text-gray-300">
+    <label class="flex flex-col gap-1 text-sm text-slate-600 dark:text-slate-300">
       and closes
       <input type="time" name="end" value="{{.End}}" required
-        class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm tabular-nums">
+        class="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
     </label>
-    <label class="flex flex-1 flex-col gap-1 min-w-0 text-sm text-gray-600 dark:text-gray-300">
+    <label class="flex flex-1 flex-col gap-1 min-w-0 text-sm text-slate-600 dark:text-slate-300">
       Time zone
       <!-- Every zone the binary can load, grouped by region and generated from
            the same database it carries, so the list cannot offer one the server
@@ -215,7 +216,7 @@
            Europe/Zurich in there it offered Europe/Zurich, which read as the
            only zone this board had. -->
       <select name="zone"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+        class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm">
         <option value=""{{if not .Zone}} selected{{end}}>UTC</option>
         {{$zone := .Zone}}
         {{range .Zones}}
@@ -230,20 +231,20 @@
     {{range .Days}}
     <label class="cursor-pointer">
       <input type="checkbox" name="days" value="{{.Value}}" class="sr-only peer"{{if .Checked}} checked{{end}}>
-      <span class="block px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 peer-checked:bg-blue-600 peer-checked:border-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500">{{.Short}}</span>
+      <span class="block px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-sm text-slate-600 dark:text-slate-300 peer-checked:bg-indigo-600 peer-checked:border-indigo-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500">{{.Short}}</span>
     </label>
     {{end}}
   </div>
   <div class="flex flex-wrap items-center gap-3">
-    <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Save</button>
-    <span class="text-sm text-gray-500 dark:text-gray-400">
+    <button type="submit" class="px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white">Save</button>
+    <span class="text-sm text-slate-500 dark:text-slate-400">
       {{if .On}}<i class="bi bi-stopwatch mr-1"></i>{{.Summary}}{{else}}Off. No card carries a clock.{{end}}
     </span>
   </div>
 </form>
 {{end}}
 
-<p class="mt-4 mb-8 text-sm text-gray-400 dark:text-gray-500">
+<p class="mt-4 mb-8 text-sm text-slate-400 dark:text-slate-500">
   How long a card may sit untouched before the board says so. Editing a card,
   moving it or commenting on it starts it again, and a column marked as one
   where the clock stops takes the badge off every card in it. With the switch
@@ -251,8 +252,8 @@
   would promise if it were on.
 </p>
 
-<h2 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Labels</h2>
-<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg divide-y divide-gray-100 dark:divide-gray-700">
+<h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Labels</h2>
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none divide-y divide-slate-100 dark:divide-slate-800">
   {{range .Labels}}
   <!-- Same shape as a column row: the name on its own line, then the colours
        with the Save that writes them, then how many cards carry the label. -->
@@ -260,14 +261,14 @@
     <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}"
       class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
       <input type="text" name="name" value="{{.Label.Name}}" required maxlength="100" aria-label="Label name"
-        class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+        class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm sm:w-72">
       <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto sm:flex-nowrap">
         {{template "swatches" .}}
-        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white sm:ml-0">Save</button>
+        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white sm:ml-0">Save</button>
       </div>
     </form>
     <div class="w-full flex items-center gap-3 min-w-0 sm:w-auto">
-      <span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+      <span class="text-xs text-slate-500 dark:text-slate-400 shrink-0">
         {{if .Cards}}on {{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}unused{{end}}
       </span>
       <!-- A second form rather than a second button in the first: a form inside
@@ -289,19 +290,19 @@
        the field gives up what the row is short of. -->
   <form method="post" action="/b/{{$slug}}/labels" class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
     <input type="text" name="name" required maxlength="100" placeholder="New label" aria-label="New label name"
-      class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm sm:w-72">
+      class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm sm:w-72">
     <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto sm:flex-nowrap">
       {{template "swatches" .NewLabel}}
       <!-- shrink-0, or a tight row takes the width out of the button instead of
            the field and breaks "+ Add" over two lines. -->
-      <button type="submit" class="ml-auto shrink-0 px-3 py-2 text-sm rounded-lg bg-gray-800 dark:bg-gray-600 hover:bg-gray-900 dark:hover:bg-gray-500 text-white sm:ml-0">
+      <button type="submit" class="ml-auto shrink-0 px-3 py-2 text-sm rounded-lg bg-slate-800 dark:bg-slate-600 hover:bg-slate-900 dark:hover:bg-slate-500 text-white sm:ml-0">
         <i class="bi bi-plus mr-1"></i>Add
       </button>
     </div>
   </form>
 </div>
 
-<p class="mt-4 text-sm text-gray-400 dark:text-gray-500">
+<p class="mt-4 text-sm text-slate-400 dark:text-slate-500">
   Labels belong to this board. Renaming one changes it on every card at once.
 </p>
 </div>

@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <link rel="icon" href="{{asset "logo.svg"}}" type="image/svg+xml">
+  <!-- Installable. The manifest is what a browser reads to decide the board can
+       be added to a home screen and run without its chrome; Safari reads none of
+       it and wants the three lines below instead, including a PNG, because it
+       has never taken an SVG for a touch icon. The colour is the page's own
+       ground, so the status bar and the splash match what opens behind them. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#020617">
+  <link rel="apple-touch-icon" href="{{asset "icon-180.png"}}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Kanban">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- Before anything paints. app.js is deferred, so leaving the theme to it
        meant every navigation flashed white before the dark class landed. -->
   <script>
@@ -26,18 +37,23 @@
   <script src="{{asset "vendor/sortablejs/Sortable.min.js"}}"></script>
   <script src="{{asset "app.js"}}" defer></script>
 </head>
-<body class="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200"{{with .BoardSlug}} data-board="{{.}}"{{end}}>
-<div class="container mx-auto py-4 px-3 sm:py-8 sm:px-4">
-  <div class="flex justify-between items-center gap-2 mb-4 sm:mb-8">
-    <img src="{{asset "logo.svg"}}" alt="" width="40" height="40" class="w-8 h-8 sm:w-10 sm:h-10 shrink-0">
-    <h1 class="text-2xl sm:text-4xl font-bold text-center flex-1 truncate bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-      {{.Title}}
-    </h1>
+<body class="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200"{{with .BoardSlug}} data-board="{{.}}"{{end}}>
+<!-- The title used to be a 4xl gradient headline across the middle of the page,
+     which on a phone was a third of the first screen before a single card. It
+     is an app bar now: the mark, what you are looking at, who you are, and the
+     one control that is not about the board. -->
+<header class="sticky top-0 z-30 border-b border-slate-200 dark:border-slate-800
+               bg-slate-100/85 dark:bg-slate-950/85 backdrop-blur">
+  <div class="container mx-auto flex items-center gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
+    <a href="/" class="shrink-0" title="All boards">
+      <img src="{{asset "logo.svg"}}" alt="All boards" width="32" height="32" class="w-7 h-7 sm:w-8 sm:h-8">
+    </a>
+    <h1 class="min-w-0 flex-1 truncate text-base sm:text-lg font-semibold tracking-tight">{{.Title}}</h1>
     {{if .User.Email}}
-    <span class="hidden sm:flex items-center gap-2 mr-3 text-sm text-gray-600 dark:text-gray-300"
+    <span class="hidden sm:flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
           title="{{.User.Email}}">
       <span class="relative inline-flex items-center justify-center w-7 h-7 shrink-0 overflow-hidden rounded-full
-                   bg-gradient-to-br from-blue-600 to-purple-600 text-white text-xs font-semibold uppercase">
+                   bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-xs font-semibold uppercase">
         {{.User.Initials}}
         <!-- Same as on a card: the picture covers the initials rather than
              replacing them, so they stay as the fallback. -->
@@ -49,24 +65,27 @@
     </span>
     {{end}}
     <button id="darkModeToggle" type="button"
-      class="p-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200"
+      class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 dark:border-slate-700
+             text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors duration-200"
       title="Toggle dark mode">
-      <i class="bi bi-sun text-xl dark:hidden"></i>
-      <i class="bi bi-moon text-xl hidden dark:inline"></i>
+      <i class="bi bi-sun text-lg dark:hidden"></i>
+      <i class="bi bi-moon text-lg hidden dark:inline"></i>
     </button>
   </div>
+</header>
+<div class="container mx-auto py-4 px-3 sm:py-6 sm:px-4">
   {{template "content" .}}
   <!-- The way back to the board list, and what is running. The header is the
        board's title and nothing else, so before this a board page had no link
        home at all; the version is here because the deployment rolls out by tag
        and "is this the build I merged" was a question for curl. -->
-  <footer class="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700
-                 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-gray-400 dark:text-gray-500">
-    <a href="/" class="hover:text-gray-600 dark:hover:text-gray-300">All boards</a>
+  <footer class="mt-10 pt-4 border-t border-slate-200 dark:border-slate-800
+                 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-400 dark:text-slate-500">
+    <a href="/" class="hover:text-slate-600 dark:hover:text-slate-300">All boards</a>
     {{if hasAPI}}
-    <a href="/api/v1/" class="hover:text-gray-600 dark:hover:text-gray-300">JSON API</a>
+    <a href="/api/v1/" class="hover:text-slate-600 dark:hover:text-slate-300">JSON API</a>
     {{end}}
-    <a href="/version" class="tabular-nums hover:text-gray-600 dark:hover:text-gray-300"
+    <a href="/version" class="tabular-nums hover:text-slate-600 dark:hover:text-slate-300"
        title="The build this page came from">kanban {{build}}</a>
   </footer>
 </div>

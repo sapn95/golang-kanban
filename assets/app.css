@@ -4,8 +4,8 @@
    JavaScript and flashed white on every navigation until it had; with the
    compiled stylesheet the flash is gone, and setting color-scheme here is still
    what makes a form control and a scrollbar dark. */
-html { color-scheme: light; background-color: #f3f4f6; }
-html.dark { color-scheme: dark; background-color: #111827; }
+html { color-scheme: light; background-color: #f1f5f9; }
+html.dark { color-scheme: dark; background-color: #020617; }
 
 /* Modal dialog used by the add and edit card forms. */
 .modal {
@@ -55,12 +55,14 @@ html.dark { color-scheme: dark; background-color: #111827; }
 .modal-dialog .modal-content > form > :first-child { flex: 0 0 auto; }
 .modal-content {
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.25);
 }
 .dark .modal-content {
-  background: #374151;
+  background: #0f172a;
   color: white;
+  border: 1px solid #334155;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
 .sortable-ghost { opacity: 0.4; }
 
@@ -91,10 +93,39 @@ html.dark { color-scheme: dark; background-color: #111827; }
   overflow-y: auto;
   padding-right: 0.25rem;
 }
+
+/* The three buttons on a card are noise on every card at rest and the only way
+   to edit one at reach. On a pointer they come back when the pointer is on the
+   card or the keyboard is in it; on a touch screen, where there is no hover to
+   come back from, they never leave. */
+@media (hover: hover) and (pointer: fine) {
+  .card-acts {
+    opacity: 0;
+    transition: opacity .12s ease;
+  }
+  .kanban-cards > div:hover .card-acts,
+  .card-acts:focus-within {
+    opacity: 1;
+  }
+}
 @media (min-width: 640px) {
-  .kanban-scroller { gap: 1.5rem; }
+  .kanban-scroller { gap: 1.25rem; }
   .kanban-column { flex: 1 1 20rem; min-width: 20rem; }
   .kanban-cards { padding-right: 0.5rem; }
+}
+
+/* The column strip on a phone. The columns already swipe, one to a screen, and
+   nothing said which one you were on or let you jump. These are anchors to the
+   card lists, so the browser does the scrolling and there is no script; the
+   strip is hidden where the columns are side by side and the question does not
+   arise. */
+.column-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+@media (min-width: 640px) {
+  .column-tabs { display: none; }
 }
 
 /* The rows layout: the columns stack and each one's cards flow across it.
@@ -134,12 +165,12 @@ html.dark { color-scheme: dark; background-color: #111827; }
   font-size: 0.75rem;
   line-height: 1.25;
   text-align: left;
-  color: #374151;
+  color: #334155;
   cursor: pointer;
 }
-.quick-item:hover { background-color: #f3f4f6; }
-.dark .quick-item { color: #e5e7eb; }
-.dark .quick-item:hover { background-color: #4b5563; }
+.quick-item:hover { background-color: #f1f5f9; }
+.dark .quick-item { color: #e2e8f0; }
+.dark .quick-item:hover { background-color: #334155; }
 
 /* A row where the choice carries a second, destructive action beside it. The
    choice takes the width that is left; the delete stays the size of its icon
@@ -182,11 +213,11 @@ html.dark { color-scheme: dark; background-color: #111827; }
   padding: 0.25rem;
   border-radius: 0.375rem;
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: #94a3b8;
   cursor: pointer;
 }
-.quick-danger:hover { color: #b91c1c; background-color: #fee2e2; }
-.dark .quick-danger:hover { color: #fca5a5; background-color: #7f1d1d; }
+.quick-danger:hover { color: #be123c; background-color: #ffe4e6; }
+.dark .quick-danger:hover { color: #fda4af; background-color: #881337; }
 
 /* A rendered card description. Tailwind's reset is what makes this necessary:
    it takes the bullets off a list, the size off a heading and the margins off a
@@ -203,27 +234,27 @@ html.dark { color-scheme: dark; background-color: #111827; }
   margin: 0.75em 0 0.35em;
   font-weight: 600;
   line-height: 1.3;
-  color: #374151;
+  color: #334155;
 }
 .md h4 { font-size: 1.1em; }
 .md h5 { font-size: 1em; }
 .md h6 { font-size: 0.95em; }
-.dark .md h4, .dark .md h5, .dark .md h6 { color: #f3f4f6; }
+.dark .md h4, .dark .md h5, .dark .md h6 { color: #f1f5f9; }
 .md ul, .md ol { margin: 0 0 0.5em; padding-left: 1.35em; }
 .md ul { list-style: disc; }
 .md ol { list-style: decimal; }
 .md li { margin: 0.15em 0; }
-.md a { color: #2563eb; text-decoration: underline; overflow-wrap: anywhere; }
-.md a:hover { color: #1d4ed8; }
-.dark .md a { color: #93c5fd; }
-.dark .md a:hover { color: #bfdbfe; }
+.md a { color: #4f46e5; text-decoration: underline; overflow-wrap: anywhere; }
+.md a:hover { color: #4338ca; }
+.dark .md a { color: #a5b4fc; }
+.dark .md a:hover { color: #c7d2fe; }
 .md strong { font-weight: 600; }
 .md em { font-style: italic; }
 .md del { text-decoration: line-through; opacity: 0.75; }
 .md code {
   padding: 0.1em 0.3em;
   border-radius: 0.25rem;
-  background-color: #f3f4f6;
+  background-color: #f1f5f9;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
   overflow-wrap: anywhere;
@@ -234,20 +265,20 @@ html.dark { color-scheme: dark; background-color: #111827; }
   margin: 0 0 0.5em;
   padding: 0.5em 0.6em;
   border-radius: 0.375rem;
-  background-color: #f3f4f6;
+  background-color: #f1f5f9;
   overflow-x: auto;
 }
 .md pre code { padding: 0; background: none; white-space: pre; }
-.dark .md code, .dark .md pre { background-color: #1f2937; }
+.dark .md code, .dark .md pre { background-color: #0f172a; }
 .md blockquote {
   margin: 0 0 0.5em;
   padding-left: 0.7em;
-  border-left: 3px solid #d1d5db;
-  color: #6b7280;
+  border-left: 3px solid #cbd5e1;
+  color: #64748b;
 }
-.dark .md blockquote { border-left-color: #4b5563; color: #9ca3af; }
-.md hr { margin: 0.75em 0; border: 0; border-top: 1px solid #e5e7eb; }
-.dark .md hr { border-top-color: #4b5563; }
+.dark .md blockquote { border-left-color: #334155; color: #94a3b8; }
+.md hr { margin: 0.75em 0; border: 0; border-top: 1px solid #e2e8f0; }
+.dark .md hr { border-top-color: #334155; }
 
 /* The response-time switch. A checkbox and two spans, so the state lives in the
    form and gets posted with it; everything below is what a checkbox looks like
@@ -260,10 +291,10 @@ html.dark { color-scheme: dark; background-color: #111827; }
   width: 2.75rem;
   height: 1.5rem;
   border-radius: 9999px;
-  background-color: #9ca3af;
+  background-color: #94a3b8;
   transition: background-color .15s ease;
 }
-.dark .sla-switch .track { background-color: #4b5563; }
+.dark .sla-switch .track { background-color: #334155; }
 .sla-switch .track::after {
   content: "";
   position: absolute;
@@ -287,4 +318,22 @@ html.dark { color-scheme: dark; background-color: #111827; }
    rather than broken, and the switch still decides what gets saved. */
 .sla-form:has(input[name="on"]:not(:checked)) .sla-fields {
   opacity: .45;
+}
+
+/* On a phone the one button that adds work goes to the corner a thumb reaches,
+   and the row it came from keeps the three that are about looking at the board.
+   Above 640px it is a button in that row like the others. */
+@media (max-width: 639px) {
+  .add-card {
+    position: fixed;
+    right: 1rem;
+    bottom: 1.25rem;
+    z-index: 40;
+    width: 3.5rem;
+    height: 3.5rem;
+    padding: 0;
+    border-radius: 9999px;
+    font-size: 1.35rem;
+    box-shadow: 0 8px 22px rgba(79, 70, 229, .45);
+  }
 }

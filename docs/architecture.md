@@ -124,6 +124,11 @@ shape worth knowing here:
   carries the digest.
 - `/healthz` says the process is up, `/readyz` runs `store.Ping`, `/version`
   says which build is answering.
+- `/manifest.webmanifest`, `/sw.js` and `/offline` are at the root rather than
+  under `/assets/`, because a service worker controls only what is under the
+  path it was served from and a manifest's scope defaults to its own directory.
+  Both are served `no-cache`: the assets can be immutable for a year because
+  their URL carries a digest, and these two have no digest to carry.
 
 A drag between columns sends one `order` request for the destination column.
 `ReorderCards` moves any listed card that currently lives in another column

@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -136,7 +137,7 @@ func TestBoardPage(t *testing.T) {
 	e := seeded(t)
 	rr := e.do(http.MethodGet, "/b/demo", nil)
 	want(t, rr, http.StatusOK, "Demo Board", "To Do", "In Progress", "Done", "First card", "sub one", "sub two",
-		`data-board="demo"`, "1 Sep 2026", "bg-red-100", ">bug<", `id="card-`+string(e.card.ID)+`"`,
+		`data-board="demo"`, "1 Sep 2026", "bg-rose-100", ">bug<", `id="card-`+string(e.card.ID)+`"`,
 		`hx-post="/b/demo/cards"`, `/assets/vendor/htmx/htmx.min.js`)
 	if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("content type = %q", ct)
@@ -456,7 +457,7 @@ func TestAssigneeIsMarkedWhenItIsTheViewer(t *testing.T) {
 	e.h.ServeHTTP(rec, req)
 
 	// The viewer's own cards get the gradient bubble; everyone else's is grey.
-	if !strings.Contains(rec.Body.String(), "from-blue-600 to-purple-600") {
+	if !strings.Contains(rec.Body.String(), "from-indigo-500 to-violet-500") {
 		t.Error("a card assigned to the viewer is not marked as theirs")
 	}
 }
@@ -1409,7 +1410,7 @@ func TestBoardShowsWhatIsPressing(t *testing.T) {
 		if !strings.Contains(body, "2 / 1") {
 			t.Error("the header does not show the column past its limit")
 		}
-		if !strings.Contains(body, "bg-red-500") {
+		if !strings.Contains(body, "bg-rose-500") {
 			t.Error("the limit bar is not red on an over-full column")
 		}
 		// Capped, so the bar does not draw outside its own track.
@@ -1433,10 +1434,10 @@ func TestDueDatesAreGradedOnTheCardFace(t *testing.T) {
 		due  string
 		want string
 	}{
-		{"overdue is red", "2026-09-01", "bg-red-100"},
+		{"overdue is red", "2026-09-01", "bg-rose-100"},
 		{"today is amber", "2026-09-05", "bg-amber-100"},
-		{"within days is yellow", "2026-09-07", "bg-yellow-50"},
-		{"further out is blue", "2026-11-01", "bg-blue-100"},
+		{"within days is yellow", "2026-09-07", "bg-yellow-100"},
+		{"further out is blue", "2026-11-01", "bg-sky-100"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1702,7 +1703,7 @@ func TestLabelsAreLegibleOnACard(t *testing.T) {
 		t.Error("the yellow label did not get dark text")
 	}
 	// A label with no colour has to be more than grey on grey.
-	if !strings.Contains(body, "ring-1 ring-gray-400") {
+	if !strings.Contains(body, "ring-1 ring-slate-400") {
 		t.Error("an uncoloured label has no outline, so it disappears into the card")
 	}
 	if strings.Contains(body, "ZgotmplZ") {
@@ -2530,7 +2531,7 @@ func TestSLAThroughTheWeb(t *testing.T) {
 			e := seeded(t)
 			open(e)
 			want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK,
-				"bi-stopwatch", "4h left", "bg-emerald-50", "Answer by")
+				"bi-stopwatch", "4h left", "bg-emerald-100", "Answer by")
 		})
 
 		t.Run("an hour from the deadline", func(t *testing.T) {
@@ -2543,7 +2544,7 @@ func TestSLAThroughTheWeb(t *testing.T) {
 			e := seeded(t, WithClock(func() time.Time { return today.Add(48 * time.Hour) }))
 			open(e)
 			want(t, e.do(http.MethodGet, "/b/demo", nil), http.StatusOK,
-				"44h over", "bg-red-100", "The response time ran out on")
+				"44h over", "bg-rose-100", "The response time ran out on")
 		})
 
 		t.Run("the clock does not run in a column that stops it", func(t *testing.T) {
@@ -2648,4 +2649,87 @@ func TestSubtaskRowComesFromTheServer(t *testing.T) {
 			t.Errorf("%s does not have the Add Subtask button after its container (container %d, button %d)", name, i, j)
 		}
 	}
+}
+
+// What makes the board installable, and what happens when it is installed and
+// the server is not there. All three are at the root on purpose: a service
+// worker controls only what is under the path it came from, and a manifest's
+// scope defaults to its own directory, so from /assets/ both would cover the
+// assets and nothing else.
+func TestTheBoardCanBeInstalled(t *testing.T) {
+	e := seeded(t)
+
+	t.Run("the manifest", func(t *testing.T) {
+		rr := e.do(http.MethodGet, "/manifest.webmanifest", nil)
+		want(t, rr, http.StatusOK)
+		if got := rr.Header().Get("Content-Type"); got != "application/manifest+json" {
+			t.Errorf("Content-Type = %q", got)
+		}
+		if got := rr.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("Cache-Control = %q, want no-cache; a stale manifest is an app that will not update", got)
+		}
+		var m struct {
+			Name     string `json:"name"`
+			StartURL string `json:"start_url"`
+			Scope    string `json:"scope"`
+			Display  string `json:"display"`
+			Theme    string `json:"theme_color"`
+			Icons    []struct {
+				Src, Sizes, Type, Purpose string
+			} `json:"icons"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &m); err != nil {
+			t.Fatalf("the manifest is not JSON: %v", err)
+		}
+		if m.Scope != "/" || m.StartURL != "/" || m.Display != "standalone" {
+			t.Errorf("manifest = %+v, want the whole origin in standalone", m)
+		}
+		var maskable bool
+		for _, i := range m.Icons {
+			if i.Purpose == "maskable" {
+				maskable = true
+			}
+			if !strings.HasPrefix(i.Src, "/") {
+				t.Errorf("icon %q is not an absolute path, so it resolves against the manifest", i.Src)
+			}
+			if rr := e.do(http.MethodGet, i.Src, nil); rr.Code != http.StatusOK {
+				t.Errorf("icon %s: %d", i.Src, rr.Code)
+			}
+		}
+		if !maskable {
+			t.Error("no maskable icon, so Android draws the square inside its own shape")
+		}
+	})
+
+	t.Run("the service worker", func(t *testing.T) {
+		rr := e.do(http.MethodGet, "/sw.js", nil)
+		want(t, rr, http.StatusOK, "addEventListener", "/offline")
+		if got := rr.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/javascript") {
+			t.Errorf("Content-Type = %q; a worker served as anything else is refused", got)
+		}
+		if got := rr.Header().Get("Cache-Control"); got != "no-cache" {
+			t.Errorf("Cache-Control = %q, want no-cache", got)
+		}
+		// It must not cache the board itself: a cached column is yesterday's
+		// work with nothing on the page saying so.
+		if body := rr.Body.String(); strings.Contains(body, "cache.addAll") {
+			t.Error("the worker caches more than the offline page")
+		}
+	})
+
+	t.Run("the offline page", func(t *testing.T) {
+		want(t, e.do(http.MethodGet, "/offline", nil), http.StatusOK, "No connection", "Try again")
+	})
+
+	t.Run("every page says where the manifest is", func(t *testing.T) {
+		for _, path := range []string{"/b/demo", "/b/demo/settings", "/offline"} {
+			body := e.do(http.MethodGet, path, nil).Body.String()
+			for _, s := range []string{`rel="manifest" href="/manifest.webmanifest"`,
+				`name="theme-color"`, `rel="apple-touch-icon"`} {
+				if !strings.Contains(body, s) {
+					t.Errorf("%s is missing %q", path, s)
+				}
+			}
+		}
+	})
 }

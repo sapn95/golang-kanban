@@ -62,6 +62,13 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   `BACKUP_S3_BUCKET` set, the server writes the same file on a timer and keeps
   the last `BACKUP_KEEP` of them; see
   [docs/adr/0012](docs/adr/0012-snapshots-are-the-portable-format.md).
+- Installable. A web app manifest and a service worker put the board on a home
+  screen and run it without browser chrome. The worker caches the shell and
+  nothing else, because every card comes from the server and a cached column is
+  yesterday's work with nothing on the page saying so; with no network it draws
+  an offline page in the board's own words instead of the browser's. Installing
+  needs HTTPS, so it is the tunnel or the reverse proxy that offers it, not a
+  plain LAN port.
 - Dark mode.
 - Cross-site writes are refused, security headers are set, and request bodies
   are capped; see [docs/adr/0006](docs/adr/0006-cross-site-writes.md).

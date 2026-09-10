@@ -1,23 +1,23 @@
 {{define "content"}}
 <form method="get" action="/b/{{.Board.Slug}}" class="flex items-center gap-2 mb-6" role="search">
   <div class="relative flex-1">
-    <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+    <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
     <!-- A label as well as the placeholder: a placeholder is gone the moment
          somebody types, and a screen reader announcing an empty field is the
          one case where it is needed most. -->
     <input type="search" name="q" value="{{.Query}}" autocomplete="off" aria-label="Search this board"
       placeholder="Search, or label:bug assignee:me due:overdue is:archived"
-      class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+      class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
   </div>
-  <button type="submit" class="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm">Search</button>
+  <button type="submit" class="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm">Search</button>
   {{if .Searching}}
-  <a href="/b/{{.Board.Slug}}" class="px-4 py-2.5 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm">Clear</a>
+  <a href="/b/{{.Board.Slug}}" class="px-4 py-2.5 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-sm">Clear</a>
   {{end}}
 </form>
 
 {{if .Searching}}
-<div class="mb-4 text-sm text-gray-600 dark:text-gray-300">
-  {{len .Results}} matching <span class="text-gray-400 dark:text-gray-500">·</span>
+<div class="mb-4 text-sm text-slate-600 dark:text-slate-300">
+  {{len .Results}} matching <span class="text-slate-400 dark:text-slate-500">·</span>
   <span class="font-mono text-xs">{{.Query}}</span>
 </div>
 {{if .Results}}
@@ -25,62 +25,80 @@
   {{range .Results}}{{template "card" .}}{{end}}
 </div>
 {{else}}
-<div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-10 text-center">
-  <p class="text-gray-500 dark:text-gray-400">Nothing matches that.</p>
-  <p class="text-sm text-gray-400 dark:text-gray-500 mt-2">
+<div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none p-10 text-center">
+  <p class="text-slate-500 dark:text-slate-400">Nothing matches that.</p>
+  <p class="text-sm text-slate-400 dark:text-slate-500 mt-2">
     Archived cards are only searched with <span class="font-mono">is:archived</span>.
   </p>
 </div>
 {{end}}
 {{else}}
-<div class="flex justify-center items-center gap-3 mb-8">
-  <button type="button" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition-all duration-200 transform hover:scale-105" onclick="showModal('addCardModal')">
-    <i class="bi bi-plus mr-2"></i>Add New Card
-  </button>
-  <a href="/b/{{.Board.Slug}}/archive"
-     class="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm">
-    <i class="bi bi-archive"></i>Archive
+<!-- One row of controls rather than four buttons in the middle of the page. The
+     three that are about looking at the board are quiet and icon-first; the one
+     that adds work is the only filled button, and on a phone it leaves this row
+     for the corner where a thumb is. -->
+<div class="flex items-center gap-2 mb-5">
+  <a href="/b/{{.Board.Slug}}/archive" title="Archive"
+     class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">
+    <i class="bi bi-archive"></i><span class="hidden sm:inline">Archive</span>
   </a>
-  <a href="/b/{{.Board.Slug}}/settings"
-     class="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm">
-    <i class="bi bi-sliders"></i>Settings
+  <a href="/b/{{.Board.Slug}}/settings" title="Settings"
+     class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">
+    <i class="bi bi-sliders"></i><span class="hidden sm:inline">Settings</span>
   </a>
   <!-- The button says what it will do, not what is on screen. -->
   <form method="post" action="/b/{{.Board.Slug}}/layout">
     <input type="hidden" name="layout" value="{{if .Rows}}columns{{else}}rows{{end}}">
     <button type="submit"
-      class="inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm"
+      class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
       title="{{if .Rows}}Draw the columns side by side{{else}}Stack the columns as rows{{end}}">
-      <i class="bi bi-{{if .Rows}}layout-three-columns{{else}}list-task{{end}}"></i>{{if .Rows}}Columns{{else}}Rows{{end}}
+      <i class="bi bi-{{if .Rows}}layout-three-columns{{else}}list-task{{end}}"></i><span class="hidden sm:inline">{{if .Rows}}Columns{{else}}Rows{{end}}</span>
     </button>
   </form>
+  <button type="button" class="add-card ml-auto inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm transition-colors duration-200"
+          onclick="showModal('addCardModal')" aria-label="Add a card">
+    <i class="bi bi-plus-lg"></i><span class="hidden sm:inline">Card</span>
+  </button>
 </div>
 
+<!-- Which column the swipe is on, and a way to jump. Anchors, so the browser
+     scrolls and nothing here runs. -->
+<nav class="column-tabs" aria-label="Columns">
+  {{range .Columns}}
+  <a href="#cards-{{.Column.ID}}"
+     class="flex-1 min-w-0 inline-flex items-center justify-center gap-1.5 h-10 px-2 rounded-lg border border-slate-300 dark:border-slate-700
+            text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+    <span class="truncate">{{.Column.Name}}</span>
+    <span class="tabular-nums font-medium text-slate-400 dark:text-slate-500">{{if .Column.WIPLimit}}{{.Count}}/{{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
+  </a>
+  {{end}}
+</nav>
+
 <div id="selectionBar"
-     class="hidden sticky top-0 z-20 mb-4 flex-wrap items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-4 py-3 shadow">
-  <span class="text-sm font-medium text-blue-900 dark:text-blue-100"><span id="selectionCount">0</span> selected</span>
+     class="hidden sticky top-0 z-20 mb-4 flex-wrap items-center gap-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950 px-4 py-3 shadow">
+  <span class="text-sm font-medium text-indigo-900 dark:text-indigo-100"><span id="selectionCount">0</span> selected</span>
   <form class="flex flex-wrap items-center gap-2" hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
     <input type="hidden" name="action" value="move">
-    <select name="target" class="px-2 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+    <select name="target" class="px-2 py-1.5 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
       {{range .Columns}}<option value="{{.Column.ID}}">{{.Column.Name}}</option>{{end}}
     </select>
-    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white">Move</button>
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white">Move</button>
   </form>
   {{if .User.Email}}
   <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
     <input type="hidden" name="action" value="assign">
     <input type="hidden" name="target" value="@me">
-    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100">Assign to me</button>
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-800 dark:text-slate-100">Assign to me</button>
   </form>
   {{end}}
   <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
     <input type="hidden" name="action" value="assign">
     <input type="hidden" name="target" value="">
-    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100">Unassign</button>
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-800 dark:text-slate-100">Unassign</button>
   </form>
   <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none">
     <input type="hidden" name="action" value="archive">
-    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100">Archive</button>
+    <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-800 dark:text-slate-100">Archive</button>
   </form>
   <form hx-post="/b/{{.Board.Slug}}/cards/bulk" hx-swap="none"
         hx-confirm="Delete the selected cards for good? Archiving is the reversible one.">
@@ -88,7 +106,7 @@
     <button type="submit" class="px-3 py-1.5 text-sm rounded-lg bg-red-600 hover:bg-red-700 text-white">Delete</button>
   </form>
   <button type="button" id="clearSelection"
-          class="ml-auto px-3 py-1.5 text-sm rounded-lg text-blue-900 dark:text-blue-100 hover:bg-blue-100 dark:hover:bg-blue-900">Clear</button>
+          class="ml-auto px-3 py-1.5 text-sm rounded-lg text-indigo-900 dark:text-indigo-100 hover:bg-indigo-100 dark:hover:bg-indigo-900">Clear</button>
 </div>
 
 <!-- On a phone one column fills the screen and the scroller snaps to it, so a
@@ -96,14 +114,18 @@
      flex from squeezing three columns into one screen width. -->
 <div class="kanban-scroller{{if .Rows}} rows{{end}}">
   {{range .Columns}}
-  <div class="kanban-column bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 sm:p-6">
+  <div class="kanban-column bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none p-4 sm:p-5">
     {{template "columnhead" .}}
     <div id="cards-{{.Column.ID}}" data-column="{{.Column.ID}}" class="kanban-cards">
       {{range .Cards}}{{template "card" .}}{{end}}
+      <!-- Inside the drop area, not under it: the area keeps a minimum height so
+           there is something to drop onto, and a message below that left the
+           empty column with a hole above its own explanation. It carries no
+           data-id, so the order a drop posts never mentions it. -->
+      {{if not .Cards}}
+      <p class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-6 text-center text-sm text-slate-400 dark:text-slate-500 pointer-events-none">Nothing here yet</p>
+      {{end}}
     </div>
-    {{if not .Cards}}
-    <p class="text-center text-sm text-gray-400 dark:text-gray-500 py-6 pointer-events-none">Nothing here yet</p>
-    {{end}}
   </div>
   {{end}}
 </div>
@@ -113,10 +135,10 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <form id="addCardForm" hx-post="/b/{{.Board.Slug}}/cards" hx-swap="none" onsubmit="return prepareSubtasks(this)">
-        <div class="p-6 border-b border-gray-200 dark:border-gray-600">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-700">
           <div class="flex justify-between items-center">
-            <h5 class="text-xl font-bold text-gray-900 dark:text-white">Add New Card</h5>
-            <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" onclick="hideModal('addCardModal')">
+            <h5 class="text-xl font-bold text-slate-900 dark:text-white">Add New Card</h5>
+            <button type="button" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300" onclick="hideModal('addCardModal')">
               <i class="bi bi-x text-2xl"></i>
             </button>
           </div>
@@ -127,9 +149,9 @@
                whichever came last. -->
           {{template "card_fields" .EmptyCard}}
         </div>
-        <div class="p-6 border-t border-gray-200 dark:border-gray-600 flex justify-end space-x-3">
-          <button type="button" class="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-lg" onclick="hideModal('addCardModal')">Cancel</button>
-          <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Add Card</button>
+        <div class="p-6 border-t border-slate-200 dark:border-slate-700 flex justify-end space-x-3">
+          <button type="button" class="px-4 py-2 text-slate-700 dark:text-slate-300 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 rounded-lg" onclick="hideModal('addCardModal')">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg">Add Card</button>
         </div>
       </form>
     </div>
