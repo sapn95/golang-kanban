@@ -246,7 +246,8 @@
     }
     if (target.classList.contains('subtasks-container')) {
       var last = target.lastElementChild;
-      if (last) { last.querySelector('.subtask-text').focus(); }
+      var box = last && last.querySelector('.subtask-text');
+      if (box) { box.focus(); }
     }
     if (target.id === 'editCardModalContent') {
       showModal('editCardModal');
