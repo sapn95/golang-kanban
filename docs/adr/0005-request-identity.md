@@ -40,6 +40,26 @@ Handlers do not branch on the mode. They call `identity.FromContext`, which
 returns the zero `User` when nobody is identified, so the anonymous case needs
 no special path.
 
+### Identity is not authorization
+
+None of the three modes refuses anybody. They say who a caller is; a caller who
+is nobody is served anyway, with every read and write the board has. That is the
+right default for a board on a LAN, and it is a hole wherever the port is
+reachable by a second route — a NodePort beside a tunnel, a published port
+beside a proxy — because the assertion only arrives on the route that mints it.
+A deployment reading "we run access mode" as "the board is behind a gate" is
+reading something the app never claimed.
+
+`AUTH_REQUIRED=true` makes it claim it: a request with no identity gets a `403`
+instead of the page. It needs `proxy` or `access`, since nobody is ever
+identified in `none`, and `FromEnv` refuses that combination on start rather
+than at the first request, where it would look like an outage.
+
+`/healthz` and `/readyz` stay open whatever it says. A kubelet has no assertion
+to present, and a liveness probe that gets a `403` restarts a healthy container
+in a loop. They answer nothing about a board, which is what makes them safe to
+leave out.
+
 The verifier is written against the standard library. The token shape is fixed
 and narrow, and a dependency that parses attacker-controlled input is one that
 has to be watched for as long as the project lives.
@@ -65,6 +85,11 @@ A failed verification logs and continues anonymously rather than returning
 left open overnight, into a hard failure on a board that is already behind
 Access. The request still reaches an app that knows nobody is signed in, which
 is the same state as `none`.
+
+With `AUTH_REQUIRED=true` that is the trade the deployment has chosen: the same
+rotation now refuses the page rather than drawing it signed out. The failure is
+loud instead of quiet, which is the point of turning it on, and it is why the
+flag is off by default rather than on.
 
 `access` mode makes a network call for the key set. It is cached for an hour,
 so it is one request per hour per process, and a failure to refresh degrades

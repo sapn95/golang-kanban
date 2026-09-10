@@ -373,3 +373,71 @@ func TestATokenWithoutAnExpiryIsRefused(t *testing.T) {
 		t.Errorf("error = %v, want it to mention the missing expiry", err)
 	}
 }
+
+// A mode identifies a caller. Required is what refuses one who is not
+// identified at all, which is the request that reaches a LAN port beside the
+// tunnel rather than through it.
+func TestMiddlewareRefusesAnonymousWhenRequired(t *testing.T) {
+	s := newSigner(t, "k1")
+	v := verifierFor(certServer(t, nil, s))
+	good := s.token(t, "RS256", nil)
+
+	cfg := identity.Config{Mode: identity.ModeAccess, Verifier: v, Required: true}
+	served := false
+	h := identity.Middleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		served = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	call := func(t *testing.T, path, assertion string) *httptest.ResponseRecorder {
+		t.Helper()
+		served = false
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if assertion != "" {
+			req.Header.Set(identity.AccessAssertionHeader, assertion)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("no assertion at all is refused", func(t *testing.T) {
+		rec := call(t, "/b/demo", "")
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+		}
+		if served {
+			t.Error("the handler ran for a request with no identity")
+		}
+	})
+
+	t.Run("an assertion that does not verify is refused too", func(t *testing.T) {
+		if rec := call(t, "/b/demo", "nonsense"); rec.Code != http.StatusForbidden {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+		}
+	})
+
+	t.Run("a signed request is served", func(t *testing.T) {
+		if rec := call(t, "/b/demo", good); rec.Code != http.StatusOK || !served {
+			t.Errorf("status = %d, served = %v, want 200 and the handler to run", rec.Code, served)
+		}
+	})
+
+	for path := range identity.ProbePaths {
+		t.Run("the probe "+path+" stays open", func(t *testing.T) {
+			if rec := call(t, path, ""); rec.Code != http.StatusOK || !served {
+				t.Errorf("status = %d, served = %v, want the probe answered", rec.Code, served)
+			}
+		})
+	}
+
+	t.Run("without Required an anonymous request is still served", func(t *testing.T) {
+		open := identity.Middleware(identity.Config{Mode: identity.ModeAccess, Verifier: v})(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+		rec := httptest.NewRecorder()
+		open.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/b/demo", nil))
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want the default to serve anonymously", rec.Code)
+		}
+	})
+}

@@ -44,6 +44,7 @@ Who is making the request. See [docs/adr/0005](adr/0005-request-identity.md) for
 | `AUTH_HEADER` | `X-Forwarded-Email` | the header read in proxy mode |
 | `ACCESS_TEAM_DOMAIN` | *(unset)* | e.g. team.cloudflareaccess.com |
 | `ACCESS_AUD` | *(unset)* | the Access application's AUD tag |
+| `AUTH_REQUIRED` | `false` | true: a request with no identity is refused rather than served |
 
 Who has a picture instead of initials, as address=github-login pairs. Unset means initials and no outbound request; [docs/adr/0008](adr/0008-avatars-are-proxied.md) has why the server fetches the picture rather than the browser.
 

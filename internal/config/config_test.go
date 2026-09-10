@@ -184,6 +184,28 @@ func TestAuthMode(t *testing.T) {
 			wantErr: "AUTH_MODE",
 		},
 		{
+			// Nobody is ever identified in none mode, so this combination
+			// would refuse every request including the one that came to look
+			// at the configuration.
+			name:    "requiring an identity with no way to establish one is refused",
+			env:     map[string]string{"AUTH_REQUIRED": "true"},
+			wantErr: "AUTH_REQUIRED",
+		},
+		{
+			name: "requiring an identity is allowed behind a proxy",
+			env:  map[string]string{"AUTH_MODE": "proxy", "AUTH_REQUIRED": "true"},
+			check: func(t *testing.T, c Config) {
+				if !c.AuthRequired {
+					t.Error("AuthRequired = false, want the flag read")
+				}
+			},
+		},
+		{
+			name:    "a value that is not a boolean is refused",
+			env:     map[string]string{"AUTH_REQUIRED": "maybe"},
+			wantErr: "AUTH_REQUIRED",
+		},
+		{
 			name: "access derives the issuer and certs URL",
 			env: map[string]string{
 				"AUTH_MODE": "access", "ACCESS_TEAM_DOMAIN": "t.cloudflareaccess.com", "ACCESS_AUD": "abc",
