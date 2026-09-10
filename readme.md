@@ -161,6 +161,7 @@ AUTH_MODE=none             # none | proxy | access
 AUTH_HEADER=X-Forwarded-Email  # AUTH_MODE=proxy only
 ACCESS_TEAM_DOMAIN=        # AUTH_MODE=access only, e.g. team.cloudflareaccess.com
 ACCESS_AUD=                # AUTH_MODE=access only, the application's AUD tag
+AUTH_REQUIRED=false        # true: refuse a request that arrives with no identity
 
 # Who has a picture instead of initials, as address=github-login pairs. Unset
 # means initials and no outbound request. A GitHub noreply address carries the
@@ -182,6 +183,16 @@ AWS_SESSION_TOKEN=         # only for temporary credentials
 ```
 
 `kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban doctor` reports the configuration, below; `kanban version` prints the version; `kanban export` and `kanban import` are further down. `/healthz` says the process is up, `/readyz` says the database answers, and `/version` says which build is answering — which is how you find out whether a deploy actually landed, without fetching a page and looking for markup only the new version renders.
+
+`AUTH_MODE` says how a caller is recognised. It does not say that a caller has
+to be anybody: a request that arrives without the header or the assertion is
+served anonymously, with every write the board has. That is fine where the port
+is only reachable through the proxy, and it is a hole where it is not, which is
+any deployment that also publishes a LAN port beside the tunnel. `AUTH_REQUIRED=true`
+closes it: anything with no identity gets a `403`, except `/healthz` and
+`/readyz`, which a kubelet has to be able to reach. It needs `AUTH_MODE=proxy`
+or `access`, and the trade is that a key rotation the app cannot follow now
+refuses the page rather than drawing it signed out.
 
 ### When it does not come up
 

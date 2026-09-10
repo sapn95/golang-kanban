@@ -2,17 +2,19 @@ package config
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // probe is what a field is set to when the test wants to see whether FromEnv
 // reads the variable its tag names. One per kind, and each one has to differ
-// from that field's default.
-func probe(f reflect.StructField) string {
+// from that field's default, which is why a bool takes the other side of its
+// own default rather than a fixed "false".
+func probe(f reflect.StructField, def reflect.Value) string {
 	switch f.Type.Kind() {
 	case reflect.Bool:
-		return "false" // AUTO_MIGRATE defaults to true
+		return strconv.FormatBool(!def.Bool())
 	case reflect.Int, reflect.Int64:
 		if f.Type.Name() == "Duration" {
 			return "90m"
@@ -45,7 +47,7 @@ func TestEveryEnvTagIsRead(t *testing.T) {
 		}
 		tagged++
 		t.Run(name, func(t *testing.T) {
-			value := probe(field)
+			value := probe(field, defv.Field(i))
 			got, _ := FromEnv(func(key string) string {
 				if key == name {
 					return value

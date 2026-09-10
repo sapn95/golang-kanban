@@ -192,10 +192,18 @@ func (d *doctor) schema(ctx context.Context, st store.Store) {
 }
 
 func (d *doctor) identity(ctx context.Context) {
+	// A mode says who a caller is; it does not say that a caller has to be
+	// anybody. The line says both, because "we run access mode" was read here
+	// as "the board is behind a gate" while a request that arrived without an
+	// assertion was still being served every write the board has.
+	anon := "a request with no identity is served anonymously and can change every board"
+	if d.cfg.AuthRequired {
+		anon = "AUTH_REQUIRED: a request with no identity is refused"
+	}
 	switch d.cfg.AuthMode {
 	case config.AuthProxy:
-		d.add(statusOK, "identity", fmt.Sprintf("proxy mode, reading %s; the port must not be reachable except through the proxy that sets it",
-			d.cfg.AuthHeader))
+		d.add(statusOK, "identity", fmt.Sprintf("proxy mode, reading %s; the port must not be reachable except through the proxy that sets it. %s",
+			d.cfg.AuthHeader, anon))
 	case config.AuthAccess:
 		start := d.clock()
 		keys, err := accessKeys(ctx, doctorHTTP, d.cfg.AccessCertsURL(), d.timeout)
@@ -208,8 +216,8 @@ func (d *doctor) identity(ctx context.Context) {
 				d.cfg.AccessCertsURL()))
 			return
 		}
-		d.add(statusOK, "identity", fmt.Sprintf("access mode, %s from %s in %s, audience %s",
-			plural(keys, "signing key"), d.cfg.AccessTeamDomain, d.clock().Sub(start).Round(time.Millisecond), d.cfg.AccessAudience))
+		d.add(statusOK, "identity", fmt.Sprintf("access mode, %s from %s in %s, audience %s. %s",
+			plural(keys, "signing key"), d.cfg.AccessTeamDomain, d.clock().Sub(start).Round(time.Millisecond), d.cfg.AccessAudience, anon))
 	default:
 		d.add(statusWarn, "identity", "AUTH_MODE=none: every request is anonymous, so whoever reaches the port can read and change every board")
 	}

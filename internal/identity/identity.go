@@ -183,7 +183,26 @@ type Config struct {
 	// rejecting here would turn a key rotation into an outage on a board
 	// that is already behind Access.
 	OnError func(err error)
+	// Required refuses a request that arrives with no identity instead of
+	// serving it anonymously.
+	//
+	// Identifying a caller and letting an unidentified one through are two
+	// different things, and only this closes the second. A proxy or an Access
+	// tunnel in front of the board sets a header or an assertion, and anything
+	// that reaches the port another way sets neither: on a LAN NodePort, or a
+	// port published beside the tunnel, that is a caller with every write the
+	// board has. Off by default, because a board with no second way in is not
+	// made safer by it and a deployment that turns it on has to know that a key
+	// rotation now refuses the page rather than drawing it signed out.
+	//
+	// ProbePaths stay open whatever this says.
+	Required bool
 }
+
+// ProbePaths are served without an identity even when one is required: a
+// kubelet has no assertion to present, and a liveness probe that gets a 403
+// restarts a healthy container in a loop.
+var ProbePaths = map[string]bool{"/healthz": true, "/readyz": true}
 
 // The header Cloudflare Access sets on every request it forwards.
 const AccessAssertionHeader = "Cf-Access-Jwt-Assertion"
@@ -215,7 +234,15 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 					}
 				}
 			}
-			if !u.Anonymous() {
+			if u.Anonymous() {
+				if cfg.Required && !ProbePaths[r.URL.Path] {
+					// 403 rather than 401: there is no scheme a browser could
+					// satisfy by asking again, and whatever should have signed
+					// this request in was not in front of it.
+					http.Error(w, "This board is only reachable through the sign-in in front of it.", http.StatusForbidden)
+					return
+				}
+			} else {
 				r = r.WithContext(NewContext(r.Context(), u))
 			}
 			next.ServeHTTP(w, r)

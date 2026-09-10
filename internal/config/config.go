@@ -53,6 +53,7 @@ type Config struct {
 	AuthHeader       string `env:"AUTH_HEADER"`        // the header read in proxy mode
 	AccessTeamDomain string `env:"ACCESS_TEAM_DOMAIN"` // e.g. team.cloudflareaccess.com
 	AccessAudience   string `env:"ACCESS_AUD"`         // the Access application's AUD tag
+	AuthRequired     bool   `env:"AUTH_REQUIRED"`      // true: a request with no identity is refused rather than served
 
 	// Who has a picture instead of initials, as address=github-login pairs. Unset
 	// means initials and no outbound request; docs/adr/0008 has why the server
@@ -150,6 +151,11 @@ func FromEnv(get Lookup) (Config, error) {
 		return c, fmt.Errorf("AUTO_MIGRATE: %w", err)
 	}
 	c.AutoMigrate = auto
+	required, err := strconv.ParseBool(env("AUTH_REQUIRED", "false"))
+	if err != nil {
+		return c, fmt.Errorf("AUTH_REQUIRED: %w", err)
+	}
+	c.AuthRequired = required
 	interval, err := time.ParseDuration(env("BACKUP_INTERVAL", "24h"))
 	if err != nil {
 		return c, fmt.Errorf("BACKUP_INTERVAL: %w (a number needs a unit, as in 24h or 30m)", err)
@@ -254,6 +260,12 @@ func (c Config) Validate() error {
 	}
 	if c.AuthMode == AuthProxy && c.AuthHeader == "" {
 		return fmt.Errorf("AUTH_HEADER: required when AUTH_MODE is %q", AuthProxy)
+	}
+	// Nothing can be identified in none mode, so requiring an identity there
+	// would refuse every request including the operator's. Refused on start
+	// rather than at the first request, where it would look like an outage.
+	if c.AuthRequired && c.AuthMode == AuthNone {
+		return fmt.Errorf("AUTH_REQUIRED: needs AUTH_MODE %q or %q; in %q nobody is ever identified", AuthProxy, AuthAccess, AuthNone)
 	}
 	if c.ListenAddr == "" {
 		if _, err := strconv.Atoi(c.ServerPort); err != nil {
