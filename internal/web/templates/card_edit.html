@@ -1,3 +1,13 @@
+{{/* One line of a checklist. Rendered for a subtask a card already has, and
+     served on its own from /subtask-row for one somebody is adding. */}}
+{{define "subtaskrow"}}
+<div class="subtask-row flex items-center space-x-2 mb-2">
+  <input type="checkbox" class="subtask-complete w-4 h-4 text-blue-600 rounded focus:ring-blue-500"{{if .Done}} checked{{end}}>
+  <input type="text" value="{{.Title}}" class="subtask-text flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm" placeholder="Subtask">
+  <button type="button" class="remove-subtask-btn text-red-500 hover:text-red-700 p-1" title="Remove"><i class="bi bi-x text-lg"></i></button>
+</div>
+{{end}}
+
 {{define "card_fields"}}
 <!-- Two columns once there is room: what the card is on the left, where it
      lives and what it is tagged with on the right. Below 1024px the grid is
@@ -75,15 +85,13 @@
 <div class="mb-4">
   <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Subtasks</label>
   <div class="subtasks-container space-y-2">
-    {{range .Card.Subtasks}}
-    <div class="subtask-row flex items-center space-x-2 mb-2">
-      <input type="checkbox" class="subtask-complete w-4 h-4 text-blue-600 rounded focus:ring-blue-500"{{if .Done}} checked{{end}}>
-      <input type="text" value="{{.Title}}" class="subtask-text flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
-      <button type="button" class="remove-subtask-btn text-red-500 hover:text-red-700 p-1" title="Remove"><i class="bi bi-x text-lg"></i></button>
-    </div>
-    {{end}}
+    {{range .Card.Subtasks}}{{template "subtaskrow" .}}{{end}}
   </div>
-  <button type="button" class="mt-2 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm add-subtask-btn">
+  <!-- The empty row comes from the server, so the markup of a checklist line
+       exists once. It used to be built by a string of HTML in app.js, which
+       drifted from this one every time a class changed here. -->
+  <button type="button" class="mt-2 bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm"
+          hx-get="/subtask-row" hx-target="previous .subtasks-container" hx-swap="beforeend">
     <i class="bi bi-plus mr-1"></i>Add Subtask
   </button>
   <input type="hidden" name="subtasks" class="subtasks-hidden">
