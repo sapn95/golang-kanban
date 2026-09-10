@@ -184,7 +184,10 @@
   // keeps its width and revealing it shifts nothing. On a phone the label rows
   // put it on a line of its own, where reserving the space leaves a visibly
   // empty line in every row, so there it is taken out of the layout instead.
-  var IDLE = ['hidden', 'sm:inline-block', 'sm:invisible'];
+  // invisible, not hidden: the button keeps its place in the row, so showing it
+  // moves nothing and it can never end up drawn over what was standing where it
+  // wanted to be. hidden plus a breakpoint did both.
+  var IDLE = ['invisible'];
 
   function initRowSaves() {
     var saves = document.querySelectorAll('.row-save');

@@ -53,57 +53,55 @@
 <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Columns</h2>
 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none divide-y divide-slate-100 dark:divide-slate-800 mb-3">
   {{range .Columns}}
-  <!-- A phone gets three stacked lines, one row from sm up: the name, the
-       limit with its Save, then what the column holds and what can be done to
-       it. The trailing group wraps and its select may go narrower than its
-       longest option, because a row that can do neither runs off the side of
-       the screen and takes the delete button with it.
+  <!-- Two lines, not one row of seven controls. The first is what the column
+       is and the form that saves it; the second is what can be done to it. They
+       were one wrapping row, and a row that wraps under pressure put the Save
+       on top of the card count and ran the delete off the side of a phone.
 
-       The name field is 18rem in every row rather than whatever that row had
-       left over. What follows it is a select in one row and two arrows in the
-       next, so taking the rest gave every field a different width, and three
-       widths for three fields of the same kind read as a mistake. It still
-       shrinks when the row runs out of room.
+       Each line is its own flex container with its own space, so nothing here
+       can land on anything else, and both wrap downwards on a narrow screen
+       rather than sideways.
 
        Mind the prose in here: the stylesheet is compiled by scanning these
        files for anything that looks like a class name, so writing a bare
        utility name in a comment compiles a rule nothing uses. -->
-  <div class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+  <div class="p-4 flex flex-col gap-3">
     <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}"
-      class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
+      class="flex flex-wrap items-center gap-x-4 gap-y-3">
       <input type="text" name="name" value="{{.Column.Name}}" required maxlength="100" aria-label="Column name"
-        class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm sm:w-72">
+        class="w-full sm:w-auto sm:flex-1 sm:min-w-40 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm">
+      <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0">
+        WIP limit
+        <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
+          value="{{if .Column.WIPLimit}}{{.Column.WIPLimit}}{{end}}"
+          class="w-20 px-2 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
+      </label>
+      <!-- An unchecked box posts nothing at all, which is why the handler reads
+           this one by presence and not by value. -->
+      <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0"
+             title="The response-time clock does not run while a card sits here">
+        <input type="checkbox" name="stops_clock" value="1"{{if .Column.StopsClock}} checked{{end}}
+          class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-indigo-600">
+        Clock stops
+      </label>
       <!-- row-save: one Save per row is six of them on a page with three
-           columns and three labels, all shouting at once. The class lets
-           app.js keep a row's Save out of sight until that row has been
-           changed. It is rendered visible, so a browser running no script has
-           the button it needs. -->
-      <div class="w-full flex items-center gap-3 sm:w-auto">
-        <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0">
-          WIP limit
-          <input type="number" name="wip_limit" min="0" step="1" placeholder="none"
-            value="{{if .Column.WIPLimit}}{{.Column.WIPLimit}}{{end}}"
-            class="w-20 px-2 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm tabular-nums">
-        </label>
-        <!-- An unchecked box posts nothing at all, which is why the handler reads
-             this one by presence and not by value. -->
-        <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 shrink-0"
-               title="The response-time clock does not run while a card sits here">
-          <input type="checkbox" name="stops_clock" value="1"{{if .Column.StopsClock}} checked{{end}}
-            class="w-4 h-4 rounded border-slate-300 dark:border-slate-600 accent-indigo-600">
-          Clock stops
-        </label>
-        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white sm:ml-0">Save</button>
-      </div>
+           columns and three labels, all shouting at once. app.js keeps a row's
+           Save invisible until that row has been changed, and invisible rather
+           than removed so the space stays reserved and nothing else moves into
+           it. It is rendered visible, so a browser running no script has the
+           button it needs. -->
+      <button type="submit" class="row-save shrink-0 px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white">Save</button>
     </form>
-    <div class="w-full flex flex-wrap items-center gap-2 min-w-0 sm:w-auto sm:gap-3">
-      <span class="text-xs text-slate-500 dark:text-slate-400 shrink-0 tabular-nums">
+
+    <div class="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+      <span class="shrink-0 tabular-nums">
         {{if .Cards}}{{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}empty{{end}}
       </span>
       {{if not .First}}
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move" class="shrink-0">
         <input type="hidden" name="direction" value="up">
-        <button type="submit" title="Move left" class="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700">
+        <button type="submit" title="Move left" aria-label="Move left"
+          class="p-2 rounded-lg hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
           <i class="bi bi-arrow-left-short text-lg"></i>
         </button>
       </form>
@@ -111,7 +109,8 @@
       {{if not .Last}}
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move" class="shrink-0">
         <input type="hidden" name="direction" value="down">
-        <button type="submit" title="Move right" class="p-2 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700">
+        <button type="submit" title="Move right" aria-label="Move right"
+          class="p-2 rounded-lg hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
           <i class="bi bi-arrow-right-short text-lg"></i>
         </button>
       </form>
@@ -121,17 +120,17 @@
            afterwards. "Delete them too" is in the list rather than the
            default, so losing them is always something someone chose. -->
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/delete"
-            class="flex flex-1 items-center justify-end gap-2 min-w-0 sm:flex-none"
+            class="w-full sm:w-auto sm:ml-auto flex items-center gap-2 min-w-0"
             onsubmit="return confirm('Delete this column?')">
         {{if .Cards}}
         <select name="move_to" aria-label="Where its cards go"
-          class="flex-1 min-w-0 px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white sm:flex-none">
+          class="flex-1 min-w-0 sm:flex-none px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
           {{range .Others}}<option value="{{.ID}}">move cards to {{.Name}}</option>{{end}}
           <option value="">delete the cards too</option>
         </select>
         {{end}}
-        <button type="submit" title="Delete this column"
-          class="shrink-0 p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg">
+        <button type="submit" title="Delete this column" aria-label="Delete this column"
+          class="shrink-0 p-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-500/15 rounded-lg">
           <i class="bi bi-trash text-sm"></i>
         </button>
       </form>
@@ -180,10 +179,10 @@
        app.css dims them through :has(), and a browser without :has() shows them
        at full strength, which is untidy rather than broken. -->
   <div class="flex flex-wrap items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
-    <div class="flex-1 min-w-0">
-      <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-100">Response time</h3>
-      <p class="text-xs text-slate-500 dark:text-slate-400">Counted in office hours, so Friday evening is not overdue on Saturday.</p>
-    </div>
+    <p class="flex-1 min-w-0 text-sm text-slate-500 dark:text-slate-400">
+      Counted in office hours, so a card that arrives on Friday evening is not
+      overdue on Saturday.
+    </p>
     <label class="sla-switch flex items-center gap-2 cursor-pointer shrink-0">
       <input type="checkbox" name="on" value="1" class="sr-only"{{if .On}} checked{{end}}>
       <span class="track" aria-hidden="true"></span>
@@ -255,28 +254,27 @@
 <h2 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Labels</h2>
 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none divide-y divide-slate-100 dark:divide-slate-800">
   {{range .Labels}}
-  <!-- Same shape as a column row: the name on its own line, then the colours
-       with the Save that writes them, then how many cards carry the label. -->
-  <div class="p-4 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+  <!-- Same two lines as a column row: what the label is and the form that saves
+       it, then what it is on and what can be done to it. -->
+  <div class="p-4 flex flex-col gap-3">
     <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}"
-      class="w-full flex flex-col items-start gap-3 min-w-0 sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
+      class="flex flex-wrap items-center gap-x-4 gap-y-3">
       <input type="text" name="name" value="{{.Label.Name}}" required maxlength="100" aria-label="Label name"
-        class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm sm:w-72">
-      <div class="w-full flex flex-wrap items-center gap-3 sm:w-auto sm:flex-nowrap">
-        {{template "swatches" .}}
-        <button type="submit" class="row-save ml-auto px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white sm:ml-0">Save</button>
-      </div>
+        class="w-full sm:w-auto sm:flex-1 sm:min-w-40 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm">
+      {{template "swatches" .}}
+      <button type="submit" class="row-save shrink-0 px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white">Save</button>
     </form>
-    <div class="w-full flex items-center gap-3 min-w-0 sm:w-auto">
-      <span class="text-xs text-slate-500 dark:text-slate-400 shrink-0">
+
+    <div class="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+      <span class="shrink-0">
         {{if .Cards}}on {{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}unused{{end}}
       </span>
       <!-- A second form rather than a second button in the first: a form inside
            a form is not valid HTML and the browser drops the inner one. -->
-      <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}/delete" class="ml-auto shrink-0 sm:ml-0"
+      <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}/delete" class="ml-auto shrink-0"
             onsubmit="return confirm('Delete this label? It comes off every card that carries it.')">
-        <button type="submit" title="Delete this label"
-          class="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900 rounded-lg">
+        <button type="submit" title="Delete this label" aria-label="Delete this label"
+          class="p-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-500/15 rounded-lg">
           <i class="bi bi-trash text-sm"></i>
         </button>
       </form>
