@@ -615,6 +615,10 @@ func (s *Store) ListArchivedCards(ctx context.Context, boardID model.ID) ([]mode
 		ORDER BY c.archived_at DESC, c.id`, boardID)
 }
 
+func (s *Store) TouchCard(ctx context.Context, id model.ID, at time.Time) error {
+	return affected(s.db.ExecContext(ctx, `UPDATE cards SET updated_at = ? WHERE id = ?`, timeArg(at), id))
+}
+
 func (s *Store) SetCardArchived(ctx context.Context, id model.ID, at time.Time) error {
 	var arg any
 	if !at.IsZero() {

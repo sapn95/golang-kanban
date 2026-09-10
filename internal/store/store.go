@@ -68,6 +68,11 @@ type Store interface {
 	// UpdateCard replaces Title, Description, DueDate, Labels, Subtasks and
 	// UpdatedAt. It never changes ColumnID or Position.
 	UpdateCard(ctx context.Context, c *model.Card) error
+	// TouchCard stamps UpdatedAt and leaves the rest of the card alone. A
+	// comment is a touch on the card it belongs to, and reading the card back
+	// to write one field would hand an edit saved in between straight back to
+	// the version the comment started from.
+	TouchCard(ctx context.Context, id model.ID, at time.Time) error
 	DeleteCard(ctx context.Context, id model.ID) error
 	// SetCardArchived takes a card off the board, or puts it back when at is
 	// zero. Everything else about the card is left alone, so restoring it

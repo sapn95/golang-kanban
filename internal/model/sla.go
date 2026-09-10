@@ -259,10 +259,13 @@ func (c Clock) Location() *time.Location {
 // Enabled reports whether this clock measures anything; see SLA.Enabled.
 func (c Clock) Enabled() bool { return c.SLA.Enabled() }
 
-// maxDays bounds every walk over the calendar. Each step is one day, and
-// MaxResponseHours office hours cannot span more than a few years of them, so
-// this is a stop against a bug rather than part of the arithmetic.
-const maxDays = 4000
+// maxSteps bounds the two walks over the calendar. A step is one office day,
+// an office day is a whole number of minutes long, and the promise is capped
+// at MaxResponseHours, so Deadline reaches its answer inside this many steps
+// even for the shortest office day the form accepts. Between takes the same
+// bound, which is why a card carrying a timestamp from another century reports
+// the office time of the years it walked rather than walking all of them.
+const maxSteps = MaxResponseHours * 60
 
 // window is the office hours of t's own calendar day, whether or not that day
 // is an office day. The end is exclusive.
@@ -277,10 +280,17 @@ func (c Clock) window(t time.Time) (start, end time.Time) {
 
 // next is the first office instant at or after t. t itself when the clock is
 // already running.
+//
+// A set with any day in it is reached inside a week, so the walk is over the
+// day t lands on and the seven that follow. A set with none has no office
+// instant to find, and t is the honest answer to that.
 func (c Clock) next(t time.Time) time.Time {
 	loc := c.Location()
 	t = t.In(loc)
-	for range maxDays {
+	if !c.SLA.Days.Any() {
+		return t
+	}
+	for range 8 {
 		if c.SLA.Days.Has(t.Weekday()) {
 			start, end := c.window(t)
 			if t.Before(start) {
@@ -304,11 +314,17 @@ func (c Clock) Deadline(from time.Time) time.Time {
 	}
 	left := c.SLA.Window()
 	t := c.next(from)
-	for range maxDays {
+	for range maxSteps {
 		_, end := c.window(t)
 		room := end.Sub(t)
 		if room >= left {
 			return t.Add(left)
+		}
+		if room <= 0 {
+			// Enabled has Start before End, so an office day holds something.
+			// Only a zone whose offset jumped the whole window gets here, and
+			// a walk that cannot move on stops where it is.
+			return t
 		}
 		left -= room
 		// end is one past its own day, so this lands on the next office day.
@@ -324,11 +340,14 @@ func (c Clock) Between(a, b time.Time) time.Duration {
 	}
 	var total time.Duration
 	t := c.next(a)
-	for range maxDays {
+	for range maxSteps {
 		if !t.Before(b) {
 			return total
 		}
 		_, end := c.window(t)
+		if !end.After(t) {
+			return total
+		}
 		stop := end
 		if stop.After(b) {
 			stop = b

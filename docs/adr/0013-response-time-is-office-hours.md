@@ -40,8 +40,8 @@ and evaluated on read.
   clock off, which is what a board has until somebody sets one.
 - `model.Clock` is the promise with its `*time.Location` resolved once. It walks
   one calendar day at a time in that zone, so daylight saving moves the wall
-  clock and leaves the office hours where they are: 08:00 to 17:00 is eight hours
-  in March and eight hours in November.
+  clock and leaves the office hours where they are: 08:00 to 17:00 is nine hours
+  in March and nine hours in November.
 - An `<input type="time">` has no 24:00, so an `End` of `"00:00"` is the midnight
   that ends the day, 1440 minutes in, and a desk staffed around the clock is
   00:00 to 00:00. `model.ParseClock(s, endOfDay bool)` is where that is decided,

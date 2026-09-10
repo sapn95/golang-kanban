@@ -705,10 +705,13 @@ func (k *Kanban) AddComment(ctx context.Context, cardID model.ID, author, body s
 	if err := k.store.CreateComment(ctx, c); err != nil {
 		return nil, err
 	}
-	if card, err := k.store.GetCard(ctx, cardID); err == nil {
-		card.UpdatedAt = c.CreatedAt
-		_ = k.store.UpdateCard(ctx, card)
-	}
+	// A comment is a touch on the card: the response-time clock reads
+	// UpdatedAt, and an answer in the thread is an answer. One field rather
+	// than a read and a whole-row write, so a comment posted while somebody
+	// was editing the card cannot put the old title back. The comment is
+	// written either way; a card that will not take a timestamp is the store
+	// having a bad day, not a reason to lose what somebody typed.
+	_ = k.store.TouchCard(ctx, cardID, c.CreatedAt)
 	return c, nil
 }
 
