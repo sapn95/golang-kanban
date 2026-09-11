@@ -245,6 +245,9 @@ func Export(ctx context.Context, s store.Store) (*Snapshot, error) {
 	return snap, nil
 }
 
+// exportCard turns one card into its snapshot shape, reading its comments only
+// when the board has any, so a board without comments is one query and not one
+// per card.
 func exportCard(ctx context.Context, s store.Store, c model.Card, hasComments bool) (Card, error) {
 	out := Card{
 		ID:          string(c.ID),

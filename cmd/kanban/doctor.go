@@ -87,6 +87,8 @@ func doctorCmd(ctx context.Context, args []string, getenv config.Lookup, stdout,
 	return d.report(stdout)
 }
 
+// clock is the time the report is stamped with, injectable so a test's output
+// does not change every time it runs.
 func (d *doctor) clock() time.Time {
 	if d.now != nil {
 		return d.now()
@@ -94,10 +96,13 @@ func (d *doctor) clock() time.Time {
 	return time.Now()
 }
 
+// add records one check. Every check runs whatever the ones before it found, so
+// one report shows everything that is wrong rather than the first thing.
 func (d *doctor) add(s status, name, detail string) {
 	d.checks = append(d.checks, check{name: name, status: s, detail: detail})
 }
 
+// run performs every check in order and fills in the report.
 func (d *doctor) run(ctx context.Context) {
 	if d.cfgErr != nil {
 		d.add(statusFail, "configuration", d.cfgErr.Error())
@@ -192,6 +197,9 @@ func (d *doctor) schema(ctx context.Context, st store.Store) {
 	d.add(statusOK, "schema", detail)
 }
 
+// identity reports how a caller is recognised, and in access mode actually
+// fetches the signing keys: a team domain that cannot be reached is the failure
+// this is worth running for.
 func (d *doctor) identity(ctx context.Context) {
 	// A mode says who a caller is; it does not say that a caller has to be
 	// anybody. The line says both, because "we run access mode" was read here
@@ -254,6 +262,8 @@ func accessKeys(ctx context.Context, client *http.Client, url string, timeout ti
 	return len(doc.Keys), nil
 }
 
+// avatars reports how many pictures are configured. The count, not the
+// addresses: a doctor report is pasted into issues.
 func (d *doctor) avatars() {
 	if len(d.cfg.Avatars) == 0 {
 		d.add(statusOff, "avatars", "AVATARS is unset: the board draws initials and makes no outbound request")
@@ -275,6 +285,8 @@ func (d *doctor) viewers() {
 		" shown in the app bar; this is a copy of the sign-in's list and enforces nothing")
 }
 
+// backup reports the target, the schedule and what is already there, so
+// "backups are configured" and "backups are happening" are two answers.
 func (d *doctor) backup(ctx context.Context) {
 	target, err := backupTarget(d.cfg)
 	if err != nil {
@@ -326,6 +338,8 @@ func (d *doctor) backup(ctx context.Context) {
 	d.add(statusOK, "backup", detail)
 }
 
+// describeSchedule writes the interval and the retention the way somebody would
+// say it.
 func (d *doctor) describeSchedule() string {
 	if !d.cfg.BackupScheduled() {
 		return "BACKUP_INTERVAL is 0, so serve takes no snapshots"

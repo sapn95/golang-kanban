@@ -84,6 +84,7 @@ func (d DaySet) Names() []string {
 	return out
 }
 
+// dayName is a weekday as the three lowercase letters a form posts.
 func dayName(w time.Weekday) string { return strings.ToLower(w.String()[:3]) }
 
 // ErrBadDay is returned by ParseDays for a name that is not a weekday.

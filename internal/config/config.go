@@ -338,6 +338,10 @@ func (c Config) BackupScheduled() bool {
 	return c.BackupInterval > 0 && (c.BackupDir != "" || c.BackupS3Bucket != "")
 }
 
+// validateBackup refuses a backup setup that cannot work: two targets at once,
+// a bucket with no region or no credentials, an interval under a minute.
+// Refused on start, where it is a message, rather than at the first run, where
+// it is a backup that silently never happened.
 func (c Config) validateBackup() error {
 	if c.BackupDir != "" && c.BackupS3Bucket != "" {
 		return fmt.Errorf("BACKUP_DIR and BACKUP_S3_BUCKET: set one, not both; two targets would need two retention policies and there is one BACKUP_KEEP")

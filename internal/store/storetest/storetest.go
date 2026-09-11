@@ -48,13 +48,19 @@ func Run(t *testing.T, newStore New) {
 
 var seq int
 
+// newID makes an id for a fixture. Prefixed and counted rather than random, so
+// a failing assertion names something a person can find in the output.
 func newID(prefix string) model.ID {
 	seq++
 	return model.ID(fmt.Sprintf("%s-%03d", prefix, seq))
 }
 
+// now is truncated to microseconds, which is the resolution the coarsest of the
+// three backends keeps. Comparing at nanoseconds would fail on Postgres alone.
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
 
+// mustBoard creates a board with the named columns, failing the test rather
+// than returning an error every caller would have to check.
 func mustBoard(t *testing.T, s store.Store, slug string, columns ...string) *model.Board {
 	t.Helper()
 	b := &model.Board{ID: newID("b"), Slug: slug, Name: "Board " + slug, CreatedAt: now(), UpdatedAt: now()}
@@ -67,6 +73,7 @@ func mustBoard(t *testing.T, s store.Store, slug string, columns ...string) *mod
 	return b
 }
 
+// mustCard creates a card in a column, the same way.
 func mustCard(t *testing.T, s store.Store, b *model.Board, col model.ID, title string) *model.Card {
 	t.Helper()
 	c := &model.Card{ID: newID("k"), BoardID: b.ID, ColumnID: col, Title: title, CreatedAt: now(), UpdatedAt: now()}
@@ -76,6 +83,8 @@ func mustCard(t *testing.T, s store.Store, b *model.Board, col model.ID, title s
 	return c
 }
 
+// wantErr asserts which error came back, by identity and not by message: the
+// three backends word theirs differently and the contract is the sentinel.
 func wantErr(t *testing.T, what string, err, want error) {
 	t.Helper()
 	if !errors.Is(err, want) {
@@ -83,6 +92,8 @@ func wantErr(t *testing.T, what string, err, want error) {
 	}
 }
 
+// columnCards returns one column's card titles in order, which is what most
+// assertions about ordering actually compare.
 func columnCards(t *testing.T, s store.Store, b *model.Board, col model.ID) []string {
 	t.Helper()
 	cards, err := s.ListCards(context.Background(), b.ID)
@@ -104,6 +115,7 @@ func columnCards(t *testing.T, s store.Store, b *model.Board, col model.ID) []st
 	return titles
 }
 
+// equalStrings compares two lists of titles.
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -116,12 +128,15 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
+// testPing checks the backend answers at all.
 func testPing(t *testing.T, s store.Store) {
 	if err := s.Ping(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }
 
+// testMigrateTwice checks a second migration is a no-op, which is what lets
+// AUTO_MIGRATE run on every start.
 func testMigrateTwice(t *testing.T, s store.Store) {
 	if err := s.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
@@ -135,6 +150,8 @@ func testMigrateTwice(t *testing.T, s store.Store) {
 	}
 }
 
+// testBoards covers creating, reading, renaming and deleting a board, and the
+// conflict on a duplicate slug.
 func testBoards(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "alpha", "To Do", "Doing", "Done")
@@ -194,6 +211,8 @@ func testBoards(t *testing.T, s store.Store) {
 	wantErr(t, "DeleteBoard unknown", s.DeleteBoard(ctx, b.ID), store.ErrNotFound)
 }
 
+// testColumns covers appending, renaming, reordering, and where a deleted
+// column's cards go.
 func testColumns(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "cols", "A", "B", "C")
@@ -257,6 +276,8 @@ func testColumns(t *testing.T, s store.Store) {
 	wantErr(t, "DeleteColumn unknown", s.DeleteColumn(ctx, a, ""), store.ErrNotFound)
 }
 
+// testCards covers a card's whole life, including that an update never moves it
+// between columns.
 func testCards(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "cards", "A", "B")
@@ -351,6 +372,8 @@ func testCards(t *testing.T, s store.Store) {
 	}
 }
 
+// testReorderCards covers ordering inside a column and moving a card in from
+// another one.
 func testReorderCards(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "reorder", "A", "B")
@@ -407,6 +430,8 @@ func testReorderCards(t *testing.T, s store.Store) {
 	}
 }
 
+// testLabels covers creating, renaming and deleting a label, and that deleting
+// one takes it off every card carrying it.
 func testLabels(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "labels", "A")
@@ -452,6 +477,8 @@ func testLabels(t *testing.T, s store.Store) {
 	wantErr(t, "DeleteLabel unknown", s.DeleteLabel(ctx, l.ID), store.ErrNotFound)
 }
 
+// testTimestamps covers what each write stamps, and that TouchCard stamps only
+// the one field.
 func testTimestamps(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	created := time.Date(2025, 1, 2, 3, 4, 5, 123456000, time.UTC)
@@ -478,6 +505,8 @@ func testTimestamps(t *testing.T, s store.Store) {
 	}
 }
 
+// testListOrdering covers the order every list comes back in, which pages rely
+// on and no page sorts again.
 func testListOrdering(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "order", "A", "B")
@@ -502,6 +531,8 @@ func testListOrdering(t *testing.T, s store.Store) {
 	}
 }
 
+// testDeleteCascade covers what goes with a deleted board and a deleted card,
+// so no backend leaves an orphan the others clean up.
 func testDeleteCascade(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "cascade", "A")
@@ -524,6 +555,7 @@ func testDeleteCascade(t *testing.T, s store.Store) {
 	mustBoard(t, s, "cascade", "A")
 }
 
+// testAssignee covers setting and clearing an assignee.
 func testAssignee(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "assignee", "A")
@@ -587,6 +619,7 @@ func testAssignee(t *testing.T, s store.Store) {
 	}
 }
 
+// mustComment posts a comment at a given time, for the ordering assertions.
 func mustComment(t *testing.T, s store.Store, card model.ID, author, body string, at time.Time) *model.Comment {
 	t.Helper()
 	c := &model.Comment{ID: newID("m"), CardID: card, Author: author, Body: body, CreatedAt: at}
@@ -596,6 +629,7 @@ func mustComment(t *testing.T, s store.Store, card model.ID, author, body string
 	return c
 }
 
+// testComments covers posting, listing, counting and deleting comments.
 func testComments(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "comments", "A")
@@ -673,6 +707,7 @@ func testComments(t *testing.T, s store.Store) {
 	}
 }
 
+// testArchive covers taking a card off a board and putting it back where it was.
 func testArchive(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "archive", "A", "B")
@@ -913,6 +948,7 @@ func testSLA(t *testing.T, s store.Store) {
 	}
 }
 
+// testLayout covers storing a board's layout and its response time.
 func testLayout(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "layout", "A")

@@ -13,6 +13,7 @@ import (
 // that a label and a column named on a card belong to that card's own board, so
 // a card route needs no board in the path to be safe.
 
+// listCards answers GET /boards/{board}/cards with the live cards.
 func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -37,6 +38,8 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusOK, toCards(cards))
 }
 
+// listArchived answers GET /boards/{board}/archive, which is the same board
+// read the other way round.
 func (s *Server) listArchived(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -50,6 +53,8 @@ func (s *Server) listArchived(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusOK, toCards(cards))
 }
 
+// createCard answers POST /boards/{board}/cards, appending to the column named
+// in the body.
 func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -81,6 +86,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusCreated, toCard(*c))
 }
 
+// getCard answers GET /cards/{card}, with its labels and subtasks.
 func (s *Server) getCard(w http.ResponseWriter, r *http.Request) {
 	c, err := s.svc.Card(r.Context(), model.ID(r.PathValue("card")))
 	if err != nil {
@@ -130,6 +136,8 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusOK, toCard(*c))
 }
 
+// setAssignee answers PUT /cards/{card}/assignee. An empty address unassigns,
+// and @me needs a request that carries a person.
 func (s *Server) setAssignee(w http.ResponseWriter, r *http.Request) {
 	var in assigneeInput
 	if !s.decode(w, r, &in) {
@@ -161,6 +169,7 @@ func (s *Server) toggleLabel(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusOK, toCard(*c))
 }
 
+// archiveCard takes a card off the board, keeping its column and position.
 func (s *Server) archiveCard(w http.ResponseWriter, r *http.Request) {
 	if err := s.svc.ArchiveCard(r.Context(), model.ID(r.PathValue("card"))); err != nil {
 		s.fail(w, r, err)
@@ -169,6 +178,7 @@ func (s *Server) archiveCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// restoreCard puts an archived card back where it was.
 func (s *Server) restoreCard(w http.ResponseWriter, r *http.Request) {
 	if err := s.svc.RestoreCard(r.Context(), model.ID(r.PathValue("card"))); err != nil {
 		s.fail(w, r, err)
@@ -177,6 +187,7 @@ func (s *Server) restoreCard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// deleteCard removes a card for good. Archiving is the reversible one.
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 	if err := s.svc.DeleteCard(r.Context(), model.ID(r.PathValue("card"))); err != nil {
 		s.fail(w, r, err)

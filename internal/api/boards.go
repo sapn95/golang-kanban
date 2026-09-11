@@ -12,6 +12,7 @@ import (
 // take an id and do not check which board it belongs to, and this is where that
 // is checked, so an id from another board is a 404 and not a write.
 
+// listBoards answers GET /boards with every board and its columns and labels.
 func (s *Server) listBoards(w http.ResponseWriter, r *http.Request) {
 	boards, err := s.svc.Boards(r.Context())
 	if err != nil {
@@ -21,6 +22,8 @@ func (s *Server) listBoards(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusOK, toBoards(boards))
 }
 
+// createBoard answers POST /boards. The slug is optional: without one the
+// service makes it from the name.
 func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 	var in boardInput
 	if !s.decode(w, r, &in) {
@@ -35,6 +38,7 @@ func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusCreated, toBoard(*b))
 }
 
+// getBoard answers GET /boards/{board}.
 func (s *Server) getBoard(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -70,6 +74,8 @@ func (s *Server) renameBoard(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusOK, toBoard(*renamed))
 }
 
+// deleteBoard answers DELETE /boards/{board}, taking its cards, columns, labels
+// and comments with it.
 func (s *Server) deleteBoard(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -82,6 +88,7 @@ func (s *Server) deleteBoard(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// setLayout answers PUT /boards/{board}/layout with columns or rows.
 func (s *Server) setLayout(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -124,6 +131,7 @@ func (s *Server) setSLA(w http.ResponseWriter, r *http.Request) {
 
 // --- columns ------------------------------------------------------------------
 
+// createColumn answers POST /boards/{board}/columns, appending at the end.
 func (s *Server) createColumn(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -141,6 +149,8 @@ func (s *Server) createColumn(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusCreated, toColumn(*c))
 }
 
+// updateColumn answers PATCH on one column. Absent fields are left alone, which
+// is what makes it a PATCH rather than a PUT.
 func (s *Server) updateColumn(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -203,6 +213,7 @@ func (s *Server) reorderColumns(w http.ResponseWriter, r *http.Request) {
 
 // --- labels -------------------------------------------------------------------
 
+// createLabel answers POST /boards/{board}/labels.
 func (s *Server) createLabel(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -220,6 +231,7 @@ func (s *Server) createLabel(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusCreated, toLabel(*l))
 }
 
+// updateLabel answers PATCH on one label, leaving absent fields alone.
 func (s *Server) updateLabel(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -260,6 +272,8 @@ func (s *Server) deleteLabel(w http.ResponseWriter, r *http.Request) {
 
 // --- the two id checks --------------------------------------------------------
 
+// columnOf reads the column named in the path and checks it is on this board. A
+// column of another board is a 404 here rather than a write to somebody else's.
 func (s *Server) columnOf(w http.ResponseWriter, r *http.Request, b *model.Board) (model.ID, bool) {
 	id := model.ID(r.PathValue("column"))
 	if b.Column(id) == nil {
@@ -269,6 +283,7 @@ func (s *Server) columnOf(w http.ResponseWriter, r *http.Request, b *model.Board
 	return id, true
 }
 
+// labelOf does the same for a label.
 func (s *Server) labelOf(w http.ResponseWriter, r *http.Request, b *model.Board) (model.ID, bool) {
 	id := model.ID(r.PathValue("label"))
 	if b.Label(id) == nil {

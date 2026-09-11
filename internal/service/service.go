@@ -59,8 +59,12 @@ type ValidationError struct {
 	Message string
 }
 
+// Error prints the field and what is wrong with it, which is what a form shows
+// beside the input and what the JSON API puts in its body.
 func (e *ValidationError) Error() string { return e.Field + ": " + e.Message }
 
+// invalid builds a ValidationError. Short because it is written on nearly every
+// guard below.
 func invalid(field, msg string) error { return &ValidationError{Field: field, Message: msg} }
 
 // Kanban is the application service.
@@ -114,6 +118,9 @@ func Slugify(name string) string {
 	return s
 }
 
+// checkText enforces the two rules every text field here has: it must not be
+// empty when it is required, and it must not be longer than the column holding
+// it. Checked before the store, so the message names the field.
 func checkText(field, value string, max int, required bool) error {
 	if required && strings.TrimSpace(value) == "" {
 		return invalid(field, "must not be empty")
@@ -126,14 +133,17 @@ func checkText(field, value string, max int, required bool) error {
 
 // --- boards -----------------------------------------------------------------
 
+// Boards returns every board, for the list and the switcher.
 func (k *Kanban) Boards(ctx context.Context) ([]model.Board, error) {
 	return k.store.ListBoards(ctx)
 }
 
+// Board returns one board by slug, which is what a URL carries.
 func (k *Kanban) Board(ctx context.Context, slug string) (*model.Board, error) {
 	return k.store.GetBoard(ctx, slug)
 }
 
+// BoardByID returns one board by id, which is what a card carries.
 func (k *Kanban) BoardByID(ctx context.Context, id model.ID) (*model.Board, error) {
 	return k.store.GetBoardByID(ctx, id)
 }
@@ -269,12 +279,16 @@ func (k *Kanban) SetBoardSLA(ctx context.Context, id model.ID, sla model.SLA) er
 	return k.store.UpdateBoard(ctx, b)
 }
 
+// DeleteBoard removes a board and everything on it. Nothing brings it back, so
+// the confirmation belongs to whatever is calling.
 func (k *Kanban) DeleteBoard(ctx context.Context, id model.ID) error {
 	return k.store.DeleteBoard(ctx, id)
 }
 
 // --- columns ----------------------------------------------------------------
 
+// AddColumn appends a column to a board, after checking its name and that a
+// negative WIP limit is not a limit.
 func (k *Kanban) AddColumn(ctx context.Context, boardID model.ID, name string, wipLimit int, stopsClock bool) (*model.Column, error) {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
@@ -290,6 +304,9 @@ func (k *Kanban) AddColumn(ctx context.Context, boardID model.ID, name string, w
 	return c, nil
 }
 
+// UpdateColumn renames a column and sets its limit and whether it stops the
+// response clock. Lowering a limit below what the column already holds is
+// allowed: the cards are there, and refusing would leave nowhere to put them.
 func (k *Kanban) UpdateColumn(ctx context.Context, id model.ID, name string, wipLimit int, stopsClock bool) error {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
@@ -324,6 +341,8 @@ func (k *Kanban) RemoveColumn(ctx context.Context, boardID, id, moveCardsTo mode
 	return k.store.DeleteColumn(ctx, id, moveCardsTo)
 }
 
+// ReorderColumns sets a board's column order. The store checks that the order
+// names each column once, because only it can see the whole set.
 func (k *Kanban) ReorderColumns(ctx context.Context, boardID model.ID, order []model.ID) error {
 	return k.store.ReorderColumns(ctx, boardID, order)
 }
@@ -343,6 +362,8 @@ type CardInput struct {
 	Subtasks []model.Subtask // IDs may be empty for new ones
 }
 
+// applyInput copies a form onto a card, checking every field as it goes. Shared
+// by create and update so a card cannot be made in a state an edit would refuse.
 func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 	title := strings.TrimSpace(in.Title)
 	if err := checkText("title", title, MaxTitle, true); err != nil {
@@ -392,6 +413,7 @@ func (k *Kanban) Cards(ctx context.Context, boardID model.ID) ([]model.Card, err
 	return k.store.ListCards(ctx, boardID)
 }
 
+// Card returns one card by id.
 func (k *Kanban) Card(ctx context.Context, id model.ID) (*model.Card, error) {
 	return k.store.GetCard(ctx, id)
 }
@@ -549,6 +571,8 @@ func (k *Kanban) ToggleSubtask(ctx context.Context, id, subtaskID model.ID) (*mo
 	return c, nil
 }
 
+// ToggleCardLabel puts a label on a card or takes it off, refusing a label the
+// card's board does not have.
 func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*model.Card, error) {
 	c, err := k.store.GetCard(ctx, id)
 	if err != nil {
@@ -672,6 +696,7 @@ func (k *Kanban) ArchivedCards(ctx context.Context, boardID model.ID) ([]model.C
 	return k.store.ListArchivedCards(ctx, boardID)
 }
 
+// DeleteCard removes a card for good. Archiving is the reversible one.
 func (k *Kanban) DeleteCard(ctx context.Context, id model.ID) error {
 	return k.store.DeleteCard(ctx, id)
 }
@@ -786,6 +811,7 @@ func checkColor(color string) (string, error) {
 	return strings.ToLower(color), nil
 }
 
+// CreateLabel adds a label to a board, checking its name and its colour.
 func (k *Kanban) CreateLabel(ctx context.Context, boardID model.ID, name, color string) (*model.Label, error) {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
@@ -802,6 +828,7 @@ func (k *Kanban) CreateLabel(ctx context.Context, boardID model.ID, name, color 
 	return l, nil
 }
 
+// UpdateLabel renames a label or recolours it, on every card at once.
 func (k *Kanban) UpdateLabel(ctx context.Context, id model.ID, name, color string) error {
 	name = strings.TrimSpace(name)
 	if err := checkText("name", name, MaxName, true); err != nil {
@@ -814,6 +841,7 @@ func (k *Kanban) UpdateLabel(ctx context.Context, id model.ID, name, color strin
 	return k.store.UpdateLabel(ctx, &model.Label{ID: id, Name: name, Color: color})
 }
 
+// DeleteLabel removes a label from its board and from every card carrying it.
 func (k *Kanban) DeleteLabel(ctx context.Context, id model.ID) error {
 	return k.store.DeleteLabel(ctx, id)
 }

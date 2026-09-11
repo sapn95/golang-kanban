@@ -60,6 +60,9 @@ func RunMigrations(ctx context.Context, db *sql.DB, migrations []Migration) ([]i
 	return done, nil
 }
 
+// appliedVersions reads the versions already recorded in schema_migrations. A
+// missing table is not an error here: a database that has never been migrated
+// has applied nothing, which is the answer.
 func appliedVersions(ctx context.Context, db *sql.DB) (map[int]bool, error) {
 	rows, err := db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
@@ -77,6 +80,8 @@ func appliedVersions(ctx context.Context, db *sql.DB) (map[int]bool, error) {
 	return applied, rows.Err()
 }
 
+// applyOne runs one migration and records it in the same transaction, so a
+// schema change and the note saying it happened cannot come apart.
 func applyOne(ctx context.Context, db *sql.DB, m Migration) (err error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

@@ -34,6 +34,7 @@ type Schedule struct {
 	Now func() time.Time
 }
 
+// now is the clock the schedule runs on, injectable so a test does not wait.
 func (s *Schedule) now() time.Time {
 	if s.Now != nil {
 		return s.Now().UTC()
@@ -41,6 +42,8 @@ func (s *Schedule) now() time.Time {
 	return time.Now().UTC()
 }
 
+// log is the logger, defaulting to one that discards: a schedule nobody
+// configured should not write to stderr.
 func (s *Schedule) log() *slog.Logger {
 	if s.Log != nil {
 		return s.Log

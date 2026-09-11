@@ -55,6 +55,8 @@ var denied = map[string]bool{
 	"Indian/Comoro": true, "Indian/Mayotte": true,
 }
 
+// main writes zones.go from the tzdata the toolchain ships, so the zone list on
+// the settings page is the one the binary can actually load.
 func main() {
 	out, err := exec.Command("go", "env", "GOROOT").Output()
 	if err != nil {

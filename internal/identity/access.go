@@ -58,6 +58,8 @@ const missTTL = 30 * time.Second
 // ErrNoKey is returned when the token names a key the endpoint does not serve.
 var ErrNoKey = errors.New("identity: signing key not found")
 
+// now is the clock the token's expiry is checked against, injectable so a test
+// can age a token without waiting.
 func (v *AccessVerifier) now() time.Time {
 	if v.Now != nil {
 		return v.Now()
@@ -65,6 +67,8 @@ func (v *AccessVerifier) now() time.Time {
 	return time.Now()
 }
 
+// client fetches the signing keys, defaulting to one with a timeout so a slow
+// key set cannot hold a request open.
 func (v *AccessVerifier) client() *http.Client {
 	if v.HTTP != nil {
 		return v.HTTP
@@ -72,6 +76,9 @@ func (v *AccessVerifier) client() *http.Client {
 	return &http.Client{Timeout: 10 * time.Second}
 }
 
+// ttl is how long a fetched key set is kept. Long enough that a busy board is
+// not fetching keys, short enough that a rotation is picked up without a
+// restart.
 func (v *AccessVerifier) ttl() time.Duration {
 	if v.KeyTTL > 0 {
 		return v.KeyTTL
@@ -139,6 +146,9 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	return k, nil
 }
 
+// fetch reads the team's public keys and caches them. Cloudflare publishes two
+// at a time so a rotation overlaps, which is why the result is a map and not a
+// key.
 func (v *AccessVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.CertsURL, nil)
 	if err != nil {
@@ -207,6 +217,8 @@ type accessClaims struct {
 
 type audience []string
 
+// UnmarshalJSON accepts an audience as either a string or a list of them. The
+// JWT spec allows both and Cloudflare sends the list.
 func (a *audience) UnmarshalJSON(b []byte) error {
 	var one string
 	if err := json.Unmarshal(b, &one); err == nil {
@@ -221,6 +233,8 @@ func (a *audience) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// has reports whether the audience names this application. Without the check a
+// token minted for any other application on the same team would be accepted.
 func (a audience) has(want string) bool {
 	for _, v := range a {
 		if v == want {

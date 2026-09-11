@@ -48,6 +48,7 @@ func (r Report) String() string {
 	return out
 }
 
+// plural writes a count with its noun for the one-line report an import prints.
 func plural(n int, word string) string {
 	if n == 1 {
 		return "1 " + word
@@ -219,6 +220,9 @@ func checkAbsent(ctx context.Context, s store.Store, snap *Snapshot) error {
 	return nil
 }
 
+// importBoard writes one board and everything on it. With Replace it removes
+// what is there first; without it the caller has already checked the board is
+// absent, so this never merges into a live one.
 func importBoard(ctx context.Context, s store.Store, b Board, opts Options, rep *Report) error {
 	if opts.Replace {
 		n, err := deleteExisting(ctx, s, b)
