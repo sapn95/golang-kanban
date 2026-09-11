@@ -10,7 +10,7 @@
 -->
 <Container version="2">
   <Name>kanban</Name>
-  <Repository>ghcr.io/sapn95/golang-kanban:2.7.0</Repository>
+  <Repository>ghcr.io/sapn95/golang-kanban:2.8.0</Repository>
   <Registry>https://github.com/sapn95/golang-kanban/pkgs/container/golang-kanban</Registry>
   <Project>https://github.com/sapn95/golang-kanban</Project>
   <Support>https://github.com/sapn95/golang-kanban/issues</Support>
