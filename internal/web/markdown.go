@@ -426,6 +426,11 @@ func writeCodeSpan(b *strings.Builder, s string) int {
 	return ticks + end + ticks
 }
 
+// maxLinkSpan is how far past a [ or ( this looks for the closing half. Long
+// enough for any link a person writes and short enough that a description made
+// of open brackets costs a pass rather than a pass per bracket.
+const maxLinkSpan = 2048
+
 // writeLink renders [text](url) and returns how many bytes it consumed, 0 when
 // what follows the bracket is not a link after all.
 func writeLink(b *strings.Builder, s string) int {
@@ -573,6 +578,13 @@ func splitDest(dest string) (url, title string) {
 func balanced(s string, open, close byte) (inside, after string, ok bool) {
 	if len(s) == 0 || s[0] != open {
 		return "", s, false
+	}
+	// Bounded, because an unclosed bracket makes this read to the end of the
+	// description and the caller tries again at the next character: 20,000 open
+	// brackets is 200 million comparisons for one card, on every render. A link
+	// whose text runs past this is not a link anybody wrote.
+	if len(s) > maxLinkSpan {
+		s = s[:maxLinkSpan]
 	}
 	depth := 0
 	for i := 0; i < len(s); i++ {

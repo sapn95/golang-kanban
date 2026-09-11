@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"kanban/internal/service"
 )
@@ -303,5 +304,42 @@ func TestThePagesRenderTheDescriptionAsMarkdown(t *testing.T) {
 	}
 	if archive := e.do("GET", "/b/demo/archive", nil).Body.String(); !strings.Contains(archive, "<strong>plug</strong>") {
 		t.Errorf("the archive does not render the description:\n%s", archive)
+	}
+}
+
+// An unclosed bracket used to make the scan read to the end of the description
+// and the caller try again at the next character: 20,000 of them is 200 million
+// comparisons for one card, on every render.
+func TestUnclosedBracketsAreBounded(t *testing.T) {
+	src := strings.Repeat("[", 20000)
+	done := make(chan string, 1)
+	go func() { done <- string(renderMarkdown(src)) }()
+	select {
+	case out := <-done:
+		if !strings.Contains(out, "[") {
+			t.Errorf("the brackets were not printed as themselves: %.80s", out)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("rendering 20,000 open brackets took longer than two seconds")
+	}
+}
+
+// And a link longer than the bound is not a link, rather than a panic or a
+// truncated href.
+func TestLinkLongerThanTheBoundIsNotALink(t *testing.T) {
+	// A relative destination, so the bare-URL autolinker has nothing to find
+	// once the link itself is refused; with an http destination it would link
+	// the URL on its own and that is correct, just not what this is asking.
+	long := "[" + strings.Repeat("x", maxLinkSpan+10) + "](/somewhere)"
+	out := string(renderMarkdown(long))
+	if strings.Contains(out, "<a ") {
+		t.Errorf("a link that long was rendered: %.120s", out)
+	}
+	if !strings.Contains(out, "[xxx") {
+		t.Errorf("the bracket was not printed as itself: %.80s", out)
+	}
+	// A real link still is one.
+	if !strings.Contains(string(renderMarkdown("[text](https://example.com)")), `href="https://example.com"`) {
+		t.Error("an ordinary link stopped working")
 	}
 }

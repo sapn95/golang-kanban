@@ -231,7 +231,15 @@ func (s *Server) deleteColumn(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.svc.RemoveColumn(r.Context(), b.ID, col.ID, model.ID(r.FormValue("move_to"))); err != nil {
+	// Parsed explicitly, because an empty move_to means "delete the cards with
+	// the column" and FormValue answers "" for a body it could not parse as
+	// well as for a field that says so. A body of `move_to=%ZZ` would have
+	// deleted a column's cards on the strength of a percent sign.
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	if err := s.svc.RemoveColumn(r.Context(), b.ID, col.ID, model.ID(r.PostFormValue("move_to"))); err != nil {
 		s.settingsFailure(w, r, err)
 		return
 	}

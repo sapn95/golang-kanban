@@ -1137,3 +1137,70 @@ func TestBulkRespectsTheLimits(t *testing.T) {
 		}
 	})
 }
+
+// A checklist line's id is one this service issued for that card, or nothing at
+// all. Anything else travels through a line format that cannot carry it.
+func TestSubtaskIDsAreNotTheCallersToChoose(t *testing.T) {
+	ctx := context.Background()
+	k := New(memory.New())
+	b, err := k.CreateBoard(ctx, "Checklists", "checklists", []string{"To Do"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("a chosen id on a new card is refused", func(t *testing.T) {
+		// "0" is the done flag in the line format, so a subtask with that id
+		// came back from the next save as an unticked line called "1|Task".
+		_, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{
+			Title: "Card", Subtasks: []model.Subtask{{ID: "0", Title: "Task", Done: true}}})
+		if !isValidation(err, "subtask") {
+			t.Errorf("err = %v, want a validation error naming subtask", err)
+		}
+	})
+
+	t.Run("two lines with one id are refused", func(t *testing.T) {
+		// The SQL backends refuse this on the primary key and the in-memory one
+		// does not, so it was a checklist that behaved differently per backend.
+		_, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{
+			Title: "Card", Subtasks: []model.Subtask{{ID: "same", Title: "one"}, {ID: "same", Title: "two"}}})
+		if !isValidation(err, "subtask") {
+			t.Errorf("err = %v, want a validation error naming subtask", err)
+		}
+	})
+
+	t.Run("a newline in a title is refused", func(t *testing.T) {
+		// The board posts one line per subtask, so a title with a break in it
+		// could not come back the way it went in.
+		_, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{
+			Title: "Card", Subtasks: []model.Subtask{{Title: "First\nSecond"}}})
+		if !isValidation(err, "subtask") {
+			t.Errorf("err = %v, want a validation error naming subtask", err)
+		}
+	})
+
+	t.Run("but a line the card already has keeps its id", func(t *testing.T) {
+		c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{
+			Title: "Card", Subtasks: []model.Subtask{{Title: "one"}, {Title: "two"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		keep := c.Subtasks[0].ID
+		u, err := k.UpdateCard(ctx, c.ID, CardInput{Title: "Card", Subtasks: []model.Subtask{
+			{ID: keep, Title: "one, edited"}, {Title: "a new one"},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if u.Subtasks[0].ID != keep {
+			t.Errorf("the kept line was given a new id")
+		}
+		if u.Subtasks[1].ID == "" || u.Subtasks[1].ID == keep {
+			t.Errorf("the new line got %q", u.Subtasks[1].ID)
+		}
+		// And an id from another card is still refused on an update.
+		if _, err := k.UpdateCard(ctx, c.ID, CardInput{Title: "Card",
+			Subtasks: []model.Subtask{{ID: "borrowed", Title: "one"}}}); !isValidation(err, "subtask") {
+			t.Errorf("err = %v, want a validation error", err)
+		}
+	})
+}

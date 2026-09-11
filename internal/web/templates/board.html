@@ -79,14 +79,7 @@
 <!-- Which column the swipe is on, and a way to jump. Anchors, so the browser
      scrolls and nothing here runs. -->
 <nav class="column-tabs" aria-label="Columns">
-  {{range .Columns}}
-  <a href="#cards-{{.Column.ID}}"
-     class="flex-1 min-w-0 inline-flex items-center justify-center gap-1.5 h-10 px-2 rounded-lg border border-slate-300 dark:border-slate-700
-            text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-    <span class="truncate">{{.Column.Name}}</span>
-    <span class="tabular-nums font-medium text-slate-400 dark:text-slate-500">{{if .Column.WIPLimit}}{{.Count}}/{{.Column.WIPLimit}}{{else}}{{.Count}}{{end}}</span>
-  </a>
-  {{end}}
+  {{range .Columns}}{{template "columntab" .}}{{end}}
 </nav>
 
 <div id="selectionBar"
