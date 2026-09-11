@@ -67,12 +67,21 @@ func (s *Server) crossSite(next http.Handler) http.Handler {
 			return
 		}
 		switch r.Header.Get("Sec-Fetch-Site") {
-		case "same-origin", "same-site", "none":
+		case "same-origin", "none":
 			// none is a user-initiated navigation: typing the URL, a
 			// bookmark. There is no other page involved.
-		case "":
-			// No Fetch Metadata at all. Fall back to Origin, which every
-			// browser sends on a cross-origin POST.
+		case "same-site", "":
+			// same-site is a DIFFERENT origin on the same registrable domain.
+			// A board at kanban.example.com and anything at any other name
+			// under example.com are same-site, so accepting it on its own
+			// meant a page on a sibling host could post here with the reader's
+			// cookies attached. This board is published beside its siblings on
+			// purpose, which is what turns that from a hypothetical into the
+			// arrangement it actually runs in.
+			//
+			// The empty case is a browser that sends no Fetch Metadata at all.
+			// Both fall through to Origin, which every browser sends on a
+			// cross-origin write.
 			if o := r.Header.Get("Origin"); o != "" {
 				u, err := url.Parse(o)
 				if err != nil || u.Host != r.Host {

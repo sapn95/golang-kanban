@@ -68,6 +68,13 @@ type Store interface {
 	// UpdateCard replaces Title, Description, DueDate, Labels, Subtasks and
 	// UpdatedAt. It never changes ColumnID or Position.
 	UpdateCard(ctx context.Context, c *model.Card) error
+	// SetSubtaskDone ticks or unticks one checklist line and stamps the card's
+	// UpdatedAt, writing nothing else. Reading a card back to flip one boolean
+	// and writing the whole thing would hand an edit that landed in between
+	// straight back to the version the tick started from, which is the same
+	// mistake TouchCard exists to avoid. ErrNotFound when the card has no such
+	// subtask.
+	SetSubtaskDone(ctx context.Context, cardID, subtaskID model.ID, done bool, at time.Time) error
 	// TouchCard stamps UpdatedAt and leaves the rest of the card alone. A
 	// comment is a touch on the card it belongs to, and reading the card back
 	// to write one field would hand an edit saved in between straight back to

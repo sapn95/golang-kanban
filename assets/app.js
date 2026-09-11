@@ -227,7 +227,11 @@
     container.querySelectorAll('.subtask-row').forEach(function (row) {
       var text = row.querySelector('.subtask-text').value.trim();
       if (text !== '') {
-        lines.push((row.querySelector('.subtask-complete').checked ? '1' : '0') + '|' + text);
+        // id first, so a line keeps its identity across a save: without it every
+        // save minted new ids and a tick from another tab hit a line that was
+        // no longer there. A row somebody has just typed carries an empty id.
+        lines.push((row.dataset.id || '') + '|' +
+          (row.querySelector('.subtask-complete').checked ? '1' : '0') + '|' + text);
       }
     });
     hidden.value = lines.join('\n');
@@ -238,7 +242,16 @@
   function initHtmxHooks() {
   document.body.addEventListener('htmx:afterSwap', function (evt) {
     var target = evt.detail.target;
-    if (!target || !target.id) { return; }
+    if (!target) { return; }
+    // Before the id guard: a checklist container has a class and no id, so
+    // asking for an id first meant this never ran and a new row arrived with
+    // the cursor still on the button that asked for it.
+    if (target.classList.contains('subtasks-container')) {
+      var row = target.lastElementChild;
+      var field = row && row.querySelector('.subtask-text');
+      if (field) { field.focus(); }
+    }
+    if (!target.id) { return; }
     if (target.id.indexOf('cards-') === 0) {
       hideModal('addCardModal');
       var form = document.getElementById('addCardForm');
@@ -246,11 +259,6 @@
         form.reset();
         form.querySelector('.subtasks-container').innerHTML = '';
       }
-    }
-    if (target.classList.contains('subtasks-container')) {
-      var last = target.lastElementChild;
-      var box = last && last.querySelector('.subtask-text');
-      if (box) { box.focus(); }
     }
     if (target.id === 'editCardModalContent') {
       showModal('editCardModal');

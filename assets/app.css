@@ -369,11 +369,18 @@ html.dark { color-scheme: dark; background-color: #020617; }
    The backdrop is a pseudo-element OF THE SUMMARY, so a click anywhere on the
    page lands on the summary and toggles the details shut. No script, no
    listener, and it cannot be left behind: when the details closes, so does the
-   thing drawing it. The panel sits above it on z-40, this below on z-30. */
+   thing drawing it. The panel sits above it on z-40, this below on z-30.
+
+   inset is negative and not 0, and that is the whole of why this works. The app
+   bar carries backdrop-blur, and an element with a backdrop-filter is the
+   containing block for everything fixed inside it: `inset: 0` drew a backdrop
+   the size of the header, so a click on a card below it hit the card and the
+   menu stayed open. Measured, not assumed. Nothing clips it, so overshooting
+   the viewport in every direction covers the page from inside the header. */
 .unfold-pop[open] > summary::before {
   content: "";
   position: fixed;
-  inset: 0;
+  inset: -200vmax;
   z-index: 30;
 }
 

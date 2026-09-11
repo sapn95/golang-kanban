@@ -113,6 +113,15 @@ func (s *Store) tx(ctx context.Context, fn func(tx *sql.Tx) error) (err error) {
 		return err
 	}
 	defer func() {
+		// A panic never reaches the assignment below, so err is still nil when
+		// this runs and the rollback would be skipped: the transaction and its
+		// connection would be left open for whoever recovers. Caught here and
+		// re-raised, so the panic still reaches the recover in the middleware
+		// and still becomes a 500.
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
 		if err != nil {
 			_ = tx.Rollback()
 		}
@@ -140,7 +149,8 @@ func affected(res sql.Result, err error) error {
 	return nil
 }
 
-// ids reads a column of ids out of a result set.
+// ids turns model ids into the strings the driver binds, for the array
+// arguments the bulk reads pass.
 func ids(in []model.ID) []string {
 	out := make([]string, len(in))
 	for i, id := range in {
@@ -242,8 +252,8 @@ func (s *Store) ListBoards(ctx context.Context) ([]model.Board, error) {
 	return out, nil
 }
 
-// getBoard reads a board with its columns and labels inside a caller's
-// transaction, so a read that is part of a write sees the write.
+// getBoard reads a board with its columns and labels. Shared by the two public
+// lookups, which differ only in the WHERE clause and the argument they pass.
 func (s *Store) getBoard(ctx context.Context, where string, arg any) (*model.Board, error) {
 	b, err := scanBoard(s.db.QueryRowContext(ctx, `SELECT `+boardColumns+` FROM boards WHERE `+where, arg))
 	if err != nil {
@@ -310,8 +320,14 @@ func (s *Store) DeleteBoard(ctx context.Context, id model.ID) error {
 
 // --- columns ----------------------------------------------------------------
 
-// CreateColumn appends a column at the end of its board, reading the last
-// position inside the transaction so two at once cannot land on the same one.
+// CreateColumn appends a column at the end of its board.
+//
+// The position comes from MAX(position) + 1 read in the same transaction, which
+// is not a guarantee that two creates at once get different positions: under
+// read committed both can see the same maximum. Two columns sharing a position
+// sort by id after it, which is a cosmetic wrong order and not a lost column,
+// and the board that would need more than that is one where two people add a
+// column in the same second.
 func (s *Store) CreateColumn(ctx context.Context, c *model.Column) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) + 1 FROM columns WHERE board_id = $1`, c.BoardID).Scan(&c.Position); err != nil {
@@ -528,6 +544,20 @@ func (s *Store) ListArchivedCards(ctx context.Context, boardID model.ID) ([]mode
 		ORDER BY c.archived_at DESC, c.id`, boardID)
 }
 
+// SetSubtaskDone flips one subtask's done column and stamps its card, in one
+// transaction and without reading the card first, so a tick cannot carry back a
+// stale copy of everything else on it.
+func (s *Store) SetSubtaskDone(ctx context.Context, cardID, subtaskID model.ID, done bool, at time.Time) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		if err := affected(tx.ExecContext(ctx,
+			`UPDATE subtasks SET done = $1 WHERE id = $2 AND card_id = $3`, done, subtaskID, cardID)); err != nil {
+			return err
+		}
+		return affected(tx.ExecContext(ctx,
+			`UPDATE cards SET updated_at = $1 WHERE id = $2`, at.UTC(), cardID))
+	})
+}
+
 // TouchCard writes UpdatedAt and nothing else, so a comment cannot hand back an
 // edit that landed while it was being written.
 func (s *Store) TouchCard(ctx context.Context, id model.ID, at time.Time) error {
@@ -591,9 +621,9 @@ func writeCardChildren(ctx context.Context, tx *sql.Tx, c *model.Card) error {
 	return nil
 }
 
-// uniqueIDs reports whether a list names each id once. An order naming one
-// twice would leave another card unplaced, and the check is cheaper than the
-// write it prevents.
+// uniqueIDs returns the ids once each, sorted. Sorted so a card carrying the
+// same labels in a different order writes the same rows, which keeps an
+// update from looking like a change when nothing changed.
 func uniqueIDs(in []model.ID) []model.ID {
 	seen := map[model.ID]bool{}
 	var out []model.ID

@@ -9,8 +9,13 @@
 // The distinction between proxy and access is not cosmetic. A header can be
 // set by anything that can reach the port, so proxy mode is only sound when
 // the app is unreachable except through the proxy. The Access assertion is a
-// JWT signed by Cloudflare, so it is safe even if the port is exposed. Prefer
-// access wherever it is available.
+// JWT signed by Cloudflare, so a caller cannot forge one even on an exposed
+// port. Prefer access wherever it is available.
+//
+// Neither mode refuses a caller on its own. Both establish who somebody is when
+// they say, and a request arriving with no header and no assertion is served
+// anonymously with every write the board has. Config.Required is what closes
+// that, and a port reachable any other way needs it.
 package identity
 
 import (

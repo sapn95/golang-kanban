@@ -377,6 +377,25 @@ func (s *Store) ListArchivedCards(_ context.Context, boardID model.ID) ([]model.
 	return out, nil
 }
 
+// SetSubtaskDone ticks one checklist line and stamps the card, touching nothing
+// else, so two people ticking different lines cannot undo each other.
+func (s *Store) SetSubtaskDone(_ context.Context, cardID, subtaskID model.ID, done bool, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.cards[cardID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	for i := range c.Subtasks {
+		if c.Subtasks[i].ID == subtaskID {
+			c.Subtasks[i].Done = done
+			c.UpdatedAt = at.UTC()
+			return nil
+		}
+	}
+	return store.ErrNotFound
+}
+
 // TouchCard stamps a card's UpdatedAt and touches nothing else, so a comment
 // cannot hand back an edit that landed while it was being written.
 func (s *Store) TouchCard(_ context.Context, id model.ID, at time.Time) error {
