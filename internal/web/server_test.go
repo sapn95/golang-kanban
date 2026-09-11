@@ -2869,11 +2869,16 @@ func TestViewerRoster(t *testing.T) {
 		}
 	})
 
-	t.Run("a roster with nobody signed in still lists them", func(t *testing.T) {
+	// A board in proxy mode without AUTH_REQUIRED still draws a page for a
+	// caller it could not identify. The roster is a list of people's addresses
+	// and that caller does not get it.
+	t.Run("nobody signed in, no roster", func(t *testing.T) {
 		e := seeded(t, WithViewers(roster))
 		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
-		if !strings.Contains(body, "Ada Lovelace") {
-			t.Error("the roster is not shown to an anonymous reader")
+		for _, leaked := range []string{"Ada Lovelace", "ada@example.com", "Who can see this board"} {
+			if strings.Contains(body, leaked) {
+				t.Errorf("an unidentified caller was shown %q", leaked)
+			}
 		}
 	})
 }
