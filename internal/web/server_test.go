@@ -2882,3 +2882,92 @@ func TestViewerRoster(t *testing.T) {
 		}
 	})
 }
+
+// A board was the one thing that could be made here and never removed.
+func TestDeleteBoard(t *testing.T) {
+	newEnv := func(t *testing.T) *env {
+		t.Helper()
+		e := seeded(t)
+		if _, err := e.svc.CreateBoard(context.Background(), "Scratch", "scratch", nil); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+
+	t.Run("the name typed back deletes it", func(t *testing.T) {
+		e := newEnv(t)
+		rr := e.do(http.MethodPost, "/b/scratch/delete", form("confirm", "Scratch"))
+		if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/boards" {
+			t.Fatalf("got %d to %q, want 303 to /boards", rr.Code, rr.Header().Get("Location"))
+		}
+		boards, err := e.svc.Boards(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range boards {
+			if b.Slug == "scratch" {
+				t.Error("the board is still there")
+			}
+		}
+	})
+
+	t.Run("case is forgiven, a wrong name is not", func(t *testing.T) {
+		e := newEnv(t)
+		if rr := e.do(http.MethodPost, "/b/scratch/delete", form("confirm", "  scRATCH ")); rr.Code != http.StatusSeeOther {
+			t.Errorf("got %d for the name in another case, want 303", rr.Code)
+		}
+		e = newEnv(t)
+		rr := e.do(http.MethodPost, "/b/scratch/delete", form("confirm", "Scratchh"))
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("got %d for a wrong name, want 400", rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "type its name exactly") {
+			t.Error("the page does not say why nothing happened")
+		}
+		if _, err := e.svc.Board(context.Background(), "scratch"); err != nil {
+			t.Errorf("the board went anyway: %v", err)
+		}
+	})
+
+	t.Run("an empty confirmation is not a match either", func(t *testing.T) {
+		e := newEnv(t)
+		if rr := e.do(http.MethodPost, "/b/scratch/delete", form("confirm", "")); rr.Code != http.StatusBadRequest {
+			t.Errorf("got %d for an empty confirmation, want 400", rr.Code)
+		}
+		if _, err := e.svc.Board(context.Background(), "scratch"); err != nil {
+			t.Errorf("the board went anyway: %v", err)
+		}
+	})
+
+	t.Run("the cards go with it", func(t *testing.T) {
+		e := newEnv(t)
+		b, err := e.svc.Board(context.Background(), "scratch")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.svc.CreateCard(context.Background(), b.ID, b.Columns[0].ID,
+			service.CardInput{Title: "goes with the board"}); err != nil {
+			t.Fatal(err)
+		}
+		if rr := e.do(http.MethodPost, "/b/scratch/delete", form("confirm", "Scratch")); rr.Code != http.StatusSeeOther {
+			t.Fatalf("got %d, want 303", rr.Code)
+		}
+		if _, err := e.svc.Cards(context.Background(), b.ID); err == nil {
+			// A store that answers for a deleted board would leave orphans.
+			if cards, _ := e.svc.Cards(context.Background(), b.ID); len(cards) != 0 {
+				t.Errorf("%d card(s) outlived the board", len(cards))
+			}
+		}
+	})
+
+	t.Run("the list offers a bin for every board", func(t *testing.T) {
+		e := newEnv(t)
+		body := e.do(http.MethodGet, "/boards", nil).Body.String()
+		if n := strings.Count(body, "/delete"); n != 2 {
+			t.Errorf("%d delete forms on a page with 2 boards", n)
+		}
+		if !strings.Contains(body, "There is no undo") {
+			t.Error("the confirmation does not say the board is gone for good")
+		}
+	})
+}

@@ -12,6 +12,8 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
 - Boards with as many columns as you like, each with an optional WIP limit.
   Columns and labels are edited from the board's own settings page: add,
   rename, reorder, set a limit, and choose where a deleted column's cards go.
+  A board is deleted from the board list, by typing its name: it takes its
+  cards, columns, labels and comments with it, and nothing brings those back.
 - Cards with description, due date, labels and a subtask checklist. The card
   face shows checklist progress, and grades a due date rather than only
   marking it late. A double click opens the card for editing, and a double
@@ -106,13 +108,13 @@ The image is built for linux/amd64 and linux/arm64 with a provenance
 attestation, so it runs on a laptop and on a Raspberry Pi from the same tag.
 
 ``` bash
-docker pull ghcr.io/sapn95/golang-kanban:2.7.0
+docker pull ghcr.io/sapn95/golang-kanban:2.8.0
 
 # SQLite: one volume, no database to set up
-docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.7.0
+docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.8.0
 
 # PostgreSQL
-docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.7.0
+docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.8.0
 ```
 
 ### On Unraid
@@ -296,7 +298,7 @@ With a target set, the server writes the same document on a timer and prunes to
 ``` bash
 docker run -p 17808:17808 -v kanban:/data \
   -e STORAGE=sqlite -e BACKUP_DIR=/data/snapshots -e BACKUP_INTERVAL=6h \
-  ghcr.io/sapn95/golang-kanban:2.7.0
+  ghcr.io/sapn95/golang-kanban:2.8.0
 ```
 
 For a bucket, set `BACKUP_S3_BUCKET`, a region and the two AWS keys;

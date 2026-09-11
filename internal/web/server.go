@@ -137,6 +137,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /b/{board}/columns/{id}", s.updateColumn)
 	mux.HandleFunc("POST /b/{board}/columns/{id}/delete", s.deleteColumn)
 	mux.HandleFunc("POST /b/{board}/columns/{id}/move", s.moveColumn)
+	mux.HandleFunc("POST /b/{board}/delete", s.deleteBoard)
 	mux.HandleFunc("POST /b/{board}/layout", s.setLayout)
 	mux.HandleFunc("POST /b/{board}/sla", s.setSLA)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", staticHandler(http.FileServerFS(assets.FS()))))
@@ -851,6 +852,41 @@ func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
+}
+
+// deleteBoard removes a board and everything on it.
+//
+// The only thing in this application with no way back: a card can be archived
+// and restored, a column's cards can be moved out from under it, and a board
+// takes its cards, its columns, its labels and its comments with it. So the
+// name has to be typed, which is the one guard that cannot be satisfied by a
+// misplaced click, and the board being deleted is named in the confirmation so
+// the name being typed is the one in front of you.
+func (s *Server) deleteBoard(w http.ResponseWriter, r *http.Request) {
+	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(r.FormValue("confirm")), b.Name) {
+		boards, lerr := s.svc.Boards(r.Context())
+		if lerr != nil {
+			s.fail(w, r, lerr)
+			return
+		}
+		s.render(w, s.pages["boards"], "layout", http.StatusBadRequest, boardsPage{
+			Title: "Boards", User: identity.FromContext(r.Context()), Boards: boards,
+			Error: "To delete " + b.Name + ", type its name exactly.",
+		})
+		return
+	}
+	if err := s.svc.DeleteBoard(r.Context(), b.ID); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// /boards rather than /, because / redirects straight back into the one
+	// board that is left and the person doing this is tidying up.
+	http.Redirect(w, r, "/boards", http.StatusSeeOther)
 }
 
 func (s *Server) board(w http.ResponseWriter, r *http.Request) {
