@@ -9,7 +9,8 @@ type ZoneGroup struct {
 }
 
 // zoneGroups is every IANA zone name this binary can load, by region.
-// Aliases are left out: one place, one name in the list.
+// Most aliases are left out, so a place appears once. A handful with byte
+// identical data survive the generator's deny list; the fix belongs there.
 var zoneGroups = []ZoneGroup{
 	{Region: "Africa", Zones: []string{
 		"Africa/Abidjan",

@@ -60,8 +60,9 @@ func (d DaySet) String() string {
 	for i, w := range days {
 		short[i] = w.String()[:3]
 	}
-	// A run only reads as a range when it is one in the list above, so Saturday
-	// with Sunday is a range and Sunday with Monday is two days.
+	// Three or more, and consecutive in the list above: Mon to Fri is a range,
+	// Sat and Sun is two days written out, and Sun with Mon is not a run at all
+	// because the week does not wrap.
 	if len(days) > 2 && isRun(days) {
 		return short[0] + " to " + short[len(short)-1]
 	}

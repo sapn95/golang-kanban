@@ -230,7 +230,11 @@
         // id first, so a line keeps its identity across a save: without it every
         // save minted new ids and a tick from another tab hit a line that was
         // no longer there. A row somebody has just typed carries an empty id.
-        lines.push((row.dataset.id || '') + '|' +
+        //
+        // data-subtask and not data-id, because data-id on a card is what the
+        // double-click handler looks for: a checklist row carrying one made a
+        // double-click in the gap beside a checkbox ask for /cards/<subtask>/edit.
+        lines.push((row.dataset.subtask || '') + '|' +
           (row.querySelector('.subtask-complete').checked ? '1' : '0') + '|' + text);
       }
     });

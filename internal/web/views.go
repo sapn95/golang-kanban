@@ -62,8 +62,8 @@ type cardView struct {
 	Viewer identity.User
 	Card   model.Card
 	// BoardSlug is in the card so a label chip can link to a search of its own
-	// board. The card face is rendered from six handlers, not only from the
-	// board page, so it cannot reach up to the board being drawn around it.
+	// board. The card face is rendered from several handlers and not only from
+	// the board page, so it cannot reach up to the board being drawn around it.
 	BoardSlug   string
 	Labels      []model.Label  // resolved from the board
 	BoardLabels []model.Label  // every label of the board, for the edit form
@@ -497,7 +497,7 @@ func (s *Server) boardPage(u identity.User, b *model.Board, cards []model.Card, 
 // columnHeads is every column header of b with the counts it has now, marked
 // for an out-of-band swap.
 //
-// Every response that moves, adds or removes a card carries these, so the
+// The responses that change a column's count carry these, so the
 // column the card left is redrawn as well as the one it arrived in without the
 // caller having to say which those were. The counts come from a read rather
 // than from arithmetic on what the last render said, since a header that
@@ -518,5 +518,3 @@ func (s *Server) columnHeads(ctx context.Context, b *model.Board) []fragment {
 	}
 	return frags
 }
-
-// --- rendering and errors -----------------------------------------------------

@@ -192,8 +192,9 @@ func (s *S3) endpoint(key string, query url.Values) (*url.URL, error) {
 	return u, nil
 }
 
-// request builds a signed request for one object, path-style so an endpoint
-// that is not AWS works without DNS for every bucket name.
+// request builds a signed request for one object. The address comes from
+// endpoint, which is virtual-host style against AWS and path-style only when an
+// endpoint is configured, so MinIO and the rest work without DNS per bucket.
 func (s *S3) request(ctx context.Context, method, key string, query url.Values, body []byte) (*http.Request, error) {
 	u, err := s.endpoint(key, query)
 	if err != nil {

@@ -201,9 +201,10 @@ type Config struct {
 		Verify(ctx context.Context, token string) (User, error)
 	}
 	// OnError is called when an assertion is present but does not verify.
-	// The request continues as anonymous; it is not rejected, because
-	// rejecting here would turn a key rotation into an outage on a board
-	// that is already behind Access.
+	// The request continues as anonymous rather than being refused here,
+	// because refusing on a verification error would turn a key rotation into
+	// an outage. Whether an anonymous request is then served at all is
+	// Required's decision, two fields down.
 	OnError func(err error)
 	// Required refuses a request that arrives with no identity instead of
 	// serving it anonymously.

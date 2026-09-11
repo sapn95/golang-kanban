@@ -65,15 +65,16 @@ type Store interface {
 	// CreateCard appends c to c.ColumnID, which must belong to c.BoardID;
 	// c.Position is set on return.
 	CreateCard(ctx context.Context, c *model.Card) error
-	// UpdateCard replaces Title, Description, DueDate, Labels, Subtasks and
-	// UpdatedAt. It never changes ColumnID or Position.
+	// UpdateCard replaces Title, Description, DueDate, Assignee, Labels,
+	// Subtasks and UpdatedAt. It never changes ColumnID or Position.
 	UpdateCard(ctx context.Context, c *model.Card) error
 	// SetSubtaskDone ticks or unticks one checklist line and stamps the card's
 	// UpdatedAt, writing nothing else. Reading a card back to flip one boolean
 	// and writing the whole thing would hand an edit that landed in between
 	// straight back to the version the tick started from, which is the same
-	// mistake TouchCard exists to avoid. ErrNotFound when the card has no such
-	// subtask.
+	// mistake TouchCard exists to avoid. ErrNotFound when there is no such card,
+	// and when the card has no such subtask; the caller has already read the card
+	// to know which way to flip the line, so the two mean the same thing to it.
 	SetSubtaskDone(ctx context.Context, cardID, subtaskID model.ID, done bool, at time.Time) error
 	// TouchCard stamps UpdatedAt and leaves the rest of the card alone. A
 	// comment is a touch on the card it belongs to, and reading the card back

@@ -538,12 +538,6 @@ func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*
 	return c, nil
 }
 
-// ToggleCardLabel puts a label on a card or takes it off, whichever the card
-// is not already. Same reason as SetCardAssignee for not going through
-// UpdateCard.
-//
-// The label has to belong to the card's own board. Nothing else checks that,
-// so a crafted id would otherwise attach another board's label to this one.
 // ToggleSubtask ticks one line of a card's checklist, or unticks it, and hands
 // the card back as it now stands.
 //
@@ -581,8 +575,12 @@ func (k *Kanban) ToggleSubtask(ctx context.Context, id, subtaskID model.ID) (*mo
 	return c, nil
 }
 
-// ToggleCardLabel puts a label on a card or takes it off, refusing a label the
-// card's board does not have.
+// ToggleCardLabel puts one of the board's labels on a card, or takes it off,
+// whichever the card is not already. Same reason as SetCardAssignee for not
+// going through UpdateCard.
+//
+// The label has to belong to the card's own board. Nothing else checks that, so
+// a crafted id would otherwise attach another board's label to this one.
 func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*model.Card, error) {
 	c, err := k.store.GetCard(ctx, id)
 	if err != nil {
@@ -614,7 +612,7 @@ func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*mo
 // typed every time. extra is put in front, for the viewer.
 //
 // It reads the cards the caller already has rather than querying again: the
-// only caller is drawing a board it has just loaded. Comment authors are left
+// callers are usually drawing a board they have just loaded. Comment authors are left
 // out for the same reason — they would cost a query per board view, and
 // someone who has commented is usually someone who has been assigned.
 func People(cards []model.Card, extra ...string) []string {
@@ -943,6 +941,12 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 			// that is where the WIP limit is checked. Dragging these same cards
 			// was refused and the toolbar was not, so a column limited to one
 			// took all five and came back over its own limit.
+			//
+			// One card at a time, which is a read of the board per card and,
+			// when the target has a limit, a read of its cards as well. That is
+			// the price of the check; a selection is at most MaxBulk and a
+			// person waits for one click, so it is a price worth paying rather
+			// than a second implementation of the same rule.
 			err = k.ReorderCards(ctx, boardID, model.ID(target), []model.ID{id})
 		}
 		if err != nil {

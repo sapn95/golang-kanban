@@ -55,10 +55,6 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 	plain(w, http.StatusOK, "ready")
 }
 
-// --- middleware ---------------------------------------------------------------
-
-// staticHandler serves embedded files with a long cache and no directory
-// listings.
 // manifest and serviceWorker serve two files out of the embedded tree at the
 // root rather than under /assets/. Neither carries the digest in its URL, so
 // neither can be cached for a year the way an asset is: a manifest is read once
@@ -75,7 +71,7 @@ func (s *Server) serviceWorker(w http.ResponseWriter, r *http.Request) {
 }
 
 // rootAsset serves one embedded file from the root rather than from /assets/,
-// with no-cache: these three are read once per load and a stale one is a board
+// with no-cache: both are read on a load and a stale one of either is a board
 // that will not install.
 func (s *Server) rootAsset(w http.ResponseWriter, r *http.Request, name, contentType string) {
 	b, err := fs.ReadFile(assets.FS(), name)

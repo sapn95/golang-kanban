@@ -245,9 +245,9 @@ func Export(ctx context.Context, s store.Store) (*Snapshot, error) {
 	return snap, nil
 }
 
-// exportCard turns one card into its snapshot shape, reading its comments only
-// when the board has any, so a board without comments is one query and not one
-// per card.
+// exportCard turns one card into its snapshot shape. Its comments are read only
+// when this card has any, which the caller knows from one count taken across the
+// whole board, so a board nobody commented on costs no reads at all.
 func exportCard(ctx context.Context, s store.Store, c model.Card, hasComments bool) (Card, error) {
 	out := Card{
 		ID:          string(c.ID),
@@ -290,8 +290,9 @@ func exportCard(ctx context.Context, s store.Store, c model.Card, hasComments bo
 }
 
 // Write encodes a snapshot as indented JSON with a trailing newline. Indented,
-// because a snapshot is read and diffed by people as often as it is imported,
-// and gzip on the way to storage takes back most of what the whitespace costs.
+// because a snapshot is read and diffed by people as often as it is imported.
+// Nothing compresses it on the way out, so the whitespace is paid for in full;
+// a board's worth of JSON is small enough that legibility is the better buy.
 func Write(w io.Writer, snap *Snapshot) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

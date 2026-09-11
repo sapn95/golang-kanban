@@ -9,8 +9,10 @@ import (
 // A board is addressed by slug, the way a page is, so a URL a person can read
 // off the address bar is the URL a script uses. Columns and labels are
 // addressed inside their board rather than by id alone: their service methods
-// take an id and do not check which board it belongs to, and this is where that
-// is checked, so an id from another board is a 404 and not a write.
+// mostly take an id without checking which board it belongs to, and this is
+// where that is checked, so an id from another board is a 404 and not a write.
+// RemoveColumn is the one that checks for itself, because where the cards go is
+// a second id that has to be on the same board.
 
 // listBoards answers GET /boards with every board and its columns and labels.
 func (s *Server) listBoards(w http.ResponseWriter, r *http.Request) {

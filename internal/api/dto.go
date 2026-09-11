@@ -186,7 +186,8 @@ type labelInput struct {
 // card on both POST and PUT: a PUT with no description clears the description,
 // the same way the edit form does when the field is emptied.
 type cardInput struct {
-	// ColumnID is where the card goes. Required on create; on update it moves
+	// ColumnID is where the card goes. On create an empty one is the board's
+	// first column; on update it moves
 	// the card, and left out the card stays where it is.
 	ColumnID    string         `json:"column_id"`
 	Title       string         `json:"title"`

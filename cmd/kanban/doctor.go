@@ -96,8 +96,11 @@ func (d *doctor) clock() time.Time {
 	return time.Now()
 }
 
-// add records one check. Every check runs whatever the ones before it found, so
-// one report shows everything that is wrong rather than the first thing.
+// add records one check. A check that fails does not stop the ones after it, so
+// one report shows everything that is wrong rather than the first thing. The
+// exception is the configuration: nothing below it can be checked against a
+// configuration that does not parse, so run stops there and says which checks it
+// did not reach.
 func (d *doctor) add(s status, name, detail string) {
 	d.checks = append(d.checks, check{name: name, status: s, detail: detail})
 }

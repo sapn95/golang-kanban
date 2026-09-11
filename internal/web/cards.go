@@ -175,7 +175,7 @@ var bulkVerbs = map[service.BulkAction]string{
 }
 
 // cardAndBoard reads the card named in the path together with the board it is
-// on. Two thirds of the handlers below need both, and neither is useful alone.
+// on, for the handlers that need the board to redraw its column headers.
 func (s *Server) cardAndBoard(r *http.Request) (*model.Card, *model.Board, error) {
 	c, err := s.svc.Card(r.Context(), model.ID(r.PathValue("id")))
 	if err != nil {
@@ -543,5 +543,3 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 	page.Boards = s.navBoards(r.Context())
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }
-
-// --- settings -----------------------------------------------------------------

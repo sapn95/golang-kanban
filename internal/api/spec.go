@@ -8,9 +8,9 @@ import (
 // The document is hand-written and lives next to the handlers it describes.
 // Nothing generates it, because a generator for Go source is either a
 // dependency with an opinion about how handlers are written or a set of magic
-// comments, and both cost more than one file that two tests hold to the code:
-// one compares the paths against the registrations in api.go in both
-// directions, the other compares every schema's properties against the json
+// comments, and both cost more than one file that the tests beside it hold to
+// the code: one compares the paths against the registrations in api.go in both
+// directions, another compares every schema's properties against the json
 // tags of the type that fills it.
 //
 // It is JSON rather than YAML for the same reason: encoding/json can read it in

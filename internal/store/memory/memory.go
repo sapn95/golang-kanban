@@ -163,10 +163,10 @@ func (s *Store) CreateBoard(_ context.Context, b *model.Board) error {
 		return store.ErrConflict
 	}
 	stored := copyBoard(b)
-	// The SQL backends get these from the column defaults and the CHECK
-	// constraints; here they have to be written, or a board created without a
-	// layout would read back empty and one created with an out-of-range SLA
-	// would keep a value the other two backends refuse.
+	// The SQL backends normalise the same way in Go before their insert; here
+	// it has to happen too, or a board created without a layout would read back
+	// empty and one created with an out-of-range SLA would keep a value the
+	// other two would have cleaned.
 	stored.Layout = model.LayoutOrDefault(stored.Layout)
 	stored.SLA = stored.SLA.Clean()
 	for i := range stored.Columns {
@@ -318,7 +318,8 @@ func (s *Store) ReorderColumns(_ context.Context, boardID model.ID, order []mode
 	return nil
 }
 
-// columnCards returns the live cards of a column ordered by position.
+// columnCards returns a column's cards, archived ones included: the callers
+// that want them outnumber the ones that do not, and ListCards is the filter ordered by position.
 func (s *Store) columnCards(col model.ID) []*model.Card {
 	var out []*model.Card
 	for _, c := range s.cards {

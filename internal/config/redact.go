@@ -61,8 +61,10 @@ type Setting struct {
 	Secret bool
 }
 
-// Settings lists every variable Config reads, in the order the fields are
-// declared, which groups them the way the readme does. `kanban doctor` prints
+// Settings lists every variable a field of Config carries, in the order the
+// fields are declared, which groups them the way the readme does. AWS_REGION is
+// the one FromEnv reads without a field of its own, as a fallback for
+// BACKUP_S3_REGION, and so is not here. `kanban doctor` prints
 // it, and the empty value of a variable that is not set is part of the answer:
 // the usual reason a deployment misbehaves is a name that was spelled wrong
 // somewhere else and never arrived here.
