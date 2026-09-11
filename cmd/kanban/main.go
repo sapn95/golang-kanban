@@ -50,12 +50,15 @@ var (
 // Tests use it to find the port.
 var notifyListening = func(addr net.Addr) {}
 
+// main is the process. Everything it needs comes in as an argument so that run
+// below can be called from a test with its own environment and its own writers.
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	os.Exit(run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
 }
 
+// usage prints the commands and the flags.
 func usage(w io.Writer) {
 	_, _ = io.WriteString(w, `usage: kanban [serve|migrate|export|import|doctor|version|help]
   serve                     run the HTTP server (default)
@@ -70,6 +73,9 @@ Configuration is read from the environment; see docs/architecture.md.
 `)
 }
 
+// run dispatches one command and returns the exit code. The environment, the
+// arguments and both output streams are parameters, which is what makes every
+// command testable without a subprocess.
 func run(ctx context.Context, args []string, getenv config.Lookup, stdout, stderr io.Writer) int {
 	cmd := "serve"
 	if len(args) > 0 {
@@ -126,6 +132,8 @@ func run(ctx context.Context, args []string, getenv config.Lookup, stdout, stder
 	return serve(ctx, cfg, st, log)
 }
 
+// openStore builds the store the configuration names, and is the only place
+// that knows all three backends exist.
 func openStore(cfg config.Config) (store.Store, error) {
 	switch cfg.Storage {
 	case config.StorageMemory:
@@ -138,6 +146,8 @@ func openStore(cfg config.Config) (store.Store, error) {
 	return nil, fmt.Errorf("unknown storage %q", cfg.Storage)
 }
 
+// serve runs the HTTP server until the context is cancelled, then gives
+// in-flight requests a moment to finish before returning.
 func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Logger) int {
 	svc := service.New(st)
 	boards, err := svc.EnsureDefaultBoard(ctx)

@@ -216,6 +216,9 @@ type bulkBody struct {
 
 // --- model to wire ------------------------------------------------------------
 
+// toBoard turns a board into its JSON shape. The model and the wire format are
+// separate on purpose: renaming a field in one is not a breaking change in the
+// other until somebody makes it one here.
 func toBoard(b model.Board) boardBody {
 	return boardBody{
 		ID:        string(b.ID),
@@ -230,6 +233,7 @@ func toBoard(b model.Board) boardBody {
 	}
 }
 
+// toBoards does the same for a list, always an array and never null.
 func toBoards(boards []model.Board) []boardBody {
 	out := make([]boardBody, 0, len(boards))
 	for _, b := range boards {
@@ -238,6 +242,7 @@ func toBoards(boards []model.Board) []boardBody {
 	return out
 }
 
+// toColumn turns a column into its JSON shape.
 func toColumn(c model.Column) columnBody {
 	return columnBody{
 		ID: string(c.ID), Name: c.Name, Position: c.Position,
@@ -262,6 +267,7 @@ func toSLA(s model.SLA) slaBody {
 	}
 }
 
+// toColumns does the same for a list.
 func toColumns(columns []model.Column) []columnBody {
 	out := make([]columnBody, 0, len(columns))
 	for _, c := range columns {
@@ -270,10 +276,12 @@ func toColumns(columns []model.Column) []columnBody {
 	return out
 }
 
+// toLabel turns a label into its JSON shape.
 func toLabel(l model.Label) labelBody {
 	return labelBody{ID: string(l.ID), Name: l.Name, Color: l.Color}
 }
 
+// toLabels does the same for a list.
 func toLabels(labels []model.Label) []labelBody {
 	out := make([]labelBody, 0, len(labels))
 	for _, l := range labels {
@@ -282,6 +290,8 @@ func toLabels(labels []model.Label) []labelBody {
 	return out
 }
 
+// toCard turns a card into its JSON shape, with a due date as a day and the
+// archived stamp only when there is one.
 func toCard(c model.Card) cardBody {
 	body := cardBody{
 		ID:          string(c.ID),
@@ -314,6 +324,7 @@ func toCard(c model.Card) cardBody {
 	return body
 }
 
+// toCards does the same for a list.
 func toCards(cards []model.Card) []cardBody {
 	out := make([]cardBody, 0, len(cards))
 	for _, c := range cards {
@@ -322,6 +333,7 @@ func toCards(cards []model.Card) []cardBody {
 	return out
 }
 
+// toComment turns a comment into its JSON shape.
 func toComment(c model.Comment) commentBody {
 	return commentBody{
 		ID:        string(c.ID),
@@ -332,6 +344,7 @@ func toComment(c model.Comment) commentBody {
 	}
 }
 
+// toComments does the same for a list.
 func toComments(comments []model.Comment) []commentBody {
 	out := make([]commentBody, 0, len(comments))
 	for _, c := range comments {
@@ -342,6 +355,8 @@ func toComments(comments []model.Comment) []commentBody {
 
 // --- wire to service ----------------------------------------------------------
 
+// toService turns a posted card into what the service takes, so the wire format
+// stops at this file.
 func (in cardInput) toService() service.CardInput {
 	labels := make([]model.ID, 0, len(in.Labels))
 	for _, id := range in.Labels {
@@ -391,6 +406,7 @@ func (in slaInput) toModel() (model.SLA, error) {
 	return sla, nil
 }
 
+// toIDs turns posted id strings into model ids.
 func toIDs(ids []string) []model.ID {
 	out := make([]model.ID, 0, len(ids))
 	for _, id := range ids {

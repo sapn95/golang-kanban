@@ -31,10 +31,18 @@ func New() *Store {
 
 var _ store.Store = (*Store)(nil)
 
+// Migrate, Ping and Close have nothing to do here. The schema is a set of maps,
+// the backend is this process, and there is nothing to hand back.
 func (s *Store) Migrate(context.Context) error { return nil }
-func (s *Store) Ping(context.Context) error    { return nil }
-func (s *Store) Close() error                  { return nil }
 
+// Ping always answers: the backend is this process.
+func (s *Store) Ping(context.Context) error { return nil }
+
+// Close has nothing to hand back.
+func (s *Store) Close() error { return nil }
+
+// copyBoard returns a board whose slices the caller shares with nobody. Handing
+// out the stored value would let somebody's append rewrite what is kept.
 func copyBoard(b *model.Board) *model.Board {
 	c := *b
 	c.Columns = append([]model.Column(nil), b.Columns...)
@@ -42,6 +50,7 @@ func copyBoard(b *model.Board) *model.Board {
 	return &c
 }
 
+// copyCard does the same for a card, for the same reason.
 func copyCard(k *model.Card) *model.Card {
 	c := *k
 	c.Labels = append([]model.ID(nil), k.Labels...)
@@ -49,6 +58,8 @@ func copyCard(k *model.Card) *model.Card {
 	return &c
 }
 
+// boardBySlug finds a board by slug. A scan, because the map is keyed by id and
+// a store that loses everything on restart never holds many boards.
 func (s *Store) boardBySlug(slug string) *model.Board {
 	for _, b := range s.boards {
 		if b.Slug == slug {
@@ -58,6 +69,9 @@ func (s *Store) boardBySlug(slug string) *model.Board {
 	return nil
 }
 
+// boardOfColumn finds the board a column is on, and the column. Columns live
+// inside their board rather than in a map of their own, so one lookup answers
+// both questions.
 func (s *Store) boardOfColumn(id model.ID) (*model.Board, *model.Column) {
 	for _, b := range s.boards {
 		if c := b.Column(id); c != nil {
@@ -79,6 +93,7 @@ func (s *Store) dropCard(id model.ID) {
 	}
 }
 
+// boardOfLabel does the same for a label.
 func (s *Store) boardOfLabel(id model.ID) (*model.Board, *model.Label) {
 	for _, b := range s.boards {
 		if l := b.Label(id); l != nil {
@@ -88,14 +103,19 @@ func (s *Store) boardOfLabel(id model.ID) (*model.Board, *model.Label) {
 	return nil, nil
 }
 
+// sortColumns puts a board's columns in position order. Stable, so two columns
+// that somehow share a position keep the order they arrived in.
 func sortColumns(b *model.Board) {
 	sort.SliceStable(b.Columns, func(i, j int) bool { return b.Columns[i].Position < b.Columns[j].Position })
 }
 
+// sortLabels puts a board's labels in name order, which is how every page draws
+// them.
 func sortLabels(b *model.Board) {
 	sort.SliceStable(b.Labels, func(i, j int) bool { return b.Labels[i].Name < b.Labels[j].Name })
 }
 
+// ListBoards returns every board, sorted by name, each one copied.
 func (s *Store) ListBoards(context.Context) ([]model.Board, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -112,6 +132,7 @@ func (s *Store) ListBoards(context.Context) ([]model.Board, error) {
 	return out, nil
 }
 
+// GetBoard returns one board by slug.
 func (s *Store) GetBoard(_ context.Context, slug string) (*model.Board, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -122,6 +143,7 @@ func (s *Store) GetBoard(_ context.Context, slug string) (*model.Board, error) {
 	return copyBoard(b), nil
 }
 
+// GetBoardByID returns one board by id, which is what a card knows about.
 func (s *Store) GetBoardByID(_ context.Context, id model.ID) (*model.Board, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -132,6 +154,8 @@ func (s *Store) GetBoardByID(_ context.Context, id model.ID) (*model.Board, erro
 	return copyBoard(b), nil
 }
 
+// CreateBoard stores a board and numbers its columns 1..n. A slug already taken
+// is a conflict; the store is the only thing that can see the whole set.
 func (s *Store) CreateBoard(_ context.Context, b *model.Board) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -158,6 +182,9 @@ func (s *Store) CreateBoard(_ context.Context, b *model.Board) error {
 	return nil
 }
 
+// UpdateBoard changes a board's own fields and leaves its columns and labels
+// alone: those have their own calls, and folding them in here would make every
+// rename a chance to drop one.
 func (s *Store) UpdateBoard(_ context.Context, b *model.Board) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,6 +201,8 @@ func (s *Store) UpdateBoard(_ context.Context, b *model.Board) error {
 	return nil
 }
 
+// DeleteBoard removes a board with its cards and their comments. Nothing else
+// points at them, so there is no order to get right.
 func (s *Store) DeleteBoard(_ context.Context, id model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -189,6 +218,7 @@ func (s *Store) DeleteBoard(_ context.Context, id model.ID) error {
 	return nil
 }
 
+// CreateColumn appends a column to its board and gives it the next position.
 func (s *Store) CreateColumn(_ context.Context, c *model.Column) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -210,6 +240,7 @@ func (s *Store) CreateColumn(_ context.Context, c *model.Column) error {
 	return nil
 }
 
+// UpdateColumn changes a column's name, limit and whether it stops the clock.
 func (s *Store) UpdateColumn(_ context.Context, c *model.Column) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -221,6 +252,8 @@ func (s *Store) UpdateColumn(_ context.Context, c *model.Column) error {
 	return nil
 }
 
+// DeleteColumn removes a column. Its cards go to moveCardsTo, appended in the
+// order they were in, or go with it when no column is named.
 func (s *Store) DeleteColumn(_ context.Context, id, moveCardsTo model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -259,6 +292,8 @@ func (s *Store) DeleteColumn(_ context.Context, id, moveCardsTo model.ID) error 
 	return nil
 }
 
+// ReorderColumns sets the order of a board's columns. The order has to name
+// every column exactly once, which is checked before anything is written.
 func (s *Store) ReorderColumns(_ context.Context, boardID model.ID, order []model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -300,6 +335,7 @@ func (s *Store) columnCards(col model.ID) []*model.Card {
 	return out
 }
 
+// ListCards returns a board's live cards in column order, then card order.
 func (s *Store) ListCards(_ context.Context, boardID model.ID) ([]model.Card, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -319,6 +355,8 @@ func (s *Store) ListCards(_ context.Context, boardID model.ID) ([]model.Card, er
 	return out, nil
 }
 
+// ListArchivedCards returns the cards taken off a board, newest first: an
+// archive is read from the top.
 func (s *Store) ListArchivedCards(_ context.Context, boardID model.ID) ([]model.Card, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -339,6 +377,8 @@ func (s *Store) ListArchivedCards(_ context.Context, boardID model.ID) ([]model.
 	return out, nil
 }
 
+// TouchCard stamps a card's UpdatedAt and touches nothing else, so a comment
+// cannot hand back an edit that landed while it was being written.
 func (s *Store) TouchCard(_ context.Context, id model.ID, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -350,6 +390,8 @@ func (s *Store) TouchCard(_ context.Context, id model.ID, at time.Time) error {
 	return nil
 }
 
+// SetCardArchived takes a card off the board or puts it back. Its column and its
+// position are kept, so restoring it returns it where it was.
 func (s *Store) SetCardArchived(_ context.Context, id model.ID, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -361,6 +403,7 @@ func (s *Store) SetCardArchived(_ context.Context, id model.ID, at time.Time) er
 	return nil
 }
 
+// GetCard returns one card by id, copied.
 func (s *Store) GetCard(_ context.Context, id model.ID) (*model.Card, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -371,6 +414,8 @@ func (s *Store) GetCard(_ context.Context, id model.ID) (*model.Card, error) {
 	return copyCard(c), nil
 }
 
+// checkLabels refuses a card carrying a label its board does not have. Without
+// it a card could point at a label nothing can draw.
 func (s *Store) checkLabels(b *model.Board, labels []model.ID) error {
 	for _, id := range labels {
 		if b.Label(id) == nil {
@@ -380,6 +425,8 @@ func (s *Store) checkLabels(b *model.Board, labels []model.ID) error {
 	return nil
 }
 
+// normalise sorts a card's labels and numbers its subtasks, so two cards with
+// the same content compare equal however they were built.
 func normalise(c *model.Card) {
 	sort.Slice(c.Labels, func(i, j int) bool { return c.Labels[i] < c.Labels[j] })
 	for i := range c.Subtasks {
@@ -387,6 +434,7 @@ func normalise(c *model.Card) {
 	}
 }
 
+// CreateCard appends a card to its column and gives it the next position.
 func (s *Store) CreateCard(_ context.Context, c *model.Card) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -418,6 +466,8 @@ func (s *Store) CreateCard(_ context.Context, c *model.Card) error {
 	return nil
 }
 
+// UpdateCard replaces a card's content and never its column or position: moving
+// a card is a different call, and doing both here would move one by accident.
 func (s *Store) UpdateCard(_ context.Context, c *model.Card) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -435,6 +485,7 @@ func (s *Store) UpdateCard(_ context.Context, c *model.Card) error {
 	return nil
 }
 
+// DeleteCard removes a card and the comments on it.
 func (s *Store) DeleteCard(_ context.Context, id model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -445,6 +496,8 @@ func (s *Store) DeleteCard(_ context.Context, id model.ID) error {
 	return nil
 }
 
+// ReorderCards sets the order of one column's cards, and moves in any card the
+// order names that was somewhere else.
 func (s *Store) ReorderCards(_ context.Context, boardID, columnID model.ID, order []model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -478,6 +531,8 @@ func (s *Store) ReorderCards(_ context.Context, boardID, columnID model.ID, orde
 	return nil
 }
 
+// ListComments returns a card's comments oldest first, which is how a thread
+// reads.
 func (s *Store) ListComments(_ context.Context, cardID model.ID) ([]model.Comment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -498,6 +553,7 @@ func (s *Store) ListComments(_ context.Context, cardID model.ID) ([]model.Commen
 	return out, nil
 }
 
+// GetComment returns one comment, for the author check before deleting it.
 func (s *Store) GetComment(_ context.Context, id model.ID) (*model.Comment, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -509,6 +565,7 @@ func (s *Store) GetComment(_ context.Context, id model.ID) (*model.Comment, erro
 	return &copied, nil
 }
 
+// CreateComment stores a comment against a card that exists.
 func (s *Store) CreateComment(_ context.Context, c *model.Comment) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -523,6 +580,7 @@ func (s *Store) CreateComment(_ context.Context, c *model.Comment) error {
 	return nil
 }
 
+// DeleteComment removes one comment. Who may is decided above this.
 func (s *Store) DeleteComment(_ context.Context, id model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -533,6 +591,8 @@ func (s *Store) DeleteComment(_ context.Context, id model.ID) error {
 	return nil
 }
 
+// CountComments returns how many comments each card on a board has, so the
+// board can draw the badges without a read per card.
 func (s *Store) CountComments(_ context.Context, boardID model.ID) (map[model.ID]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -545,6 +605,8 @@ func (s *Store) CountComments(_ context.Context, boardID model.ID) (map[model.ID
 	return out, nil
 }
 
+// CreateLabel adds a label to its board. A name already used on that board is a
+// conflict: two labels with one name cannot be told apart on a card.
 func (s *Store) CreateLabel(_ context.Context, l *model.Label) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -565,6 +627,7 @@ func (s *Store) CreateLabel(_ context.Context, l *model.Label) error {
 	return nil
 }
 
+// UpdateLabel renames a label or changes its colour, everywhere at once.
 func (s *Store) UpdateLabel(_ context.Context, l *model.Label) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -582,6 +645,8 @@ func (s *Store) UpdateLabel(_ context.Context, l *model.Label) error {
 	return nil
 }
 
+// DeleteLabel removes a label from its board and from every card carrying it,
+// rather than leaving cards pointing at something that is gone.
 func (s *Store) DeleteLabel(_ context.Context, id model.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

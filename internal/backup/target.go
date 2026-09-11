@@ -73,6 +73,7 @@ type Dir struct{ Path string }
 
 var _ Target = Dir{}
 
+// String names the target for the log and the doctor report.
 func (d Dir) String() string { return "dir " + d.Path }
 
 // Put writes the snapshot beside its neighbours through a temporary file and a
@@ -111,6 +112,8 @@ func (d Dir) Put(_ context.Context, name string, body []byte) error {
 	return nil
 }
 
+// List returns the snapshots already in the directory, newest last, which is
+// the order retention walks them in.
 func (d Dir) List(context.Context) ([]string, error) {
 	entries, err := os.ReadDir(d.Path)
 	if os.IsNotExist(err) {
@@ -134,6 +137,7 @@ func (d Dir) List(context.Context) ([]string, error) {
 	return names, nil
 }
 
+// Delete removes one snapshot, for the retention sweep after a successful write.
 func (d Dir) Delete(_ context.Context, name string) error {
 	if err := os.Remove(d.file(name)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove %s: %w", name, err)

@@ -63,6 +63,8 @@ func (s *S3) String() string {
 	return where
 }
 
+// client is the HTTP client for S3, defaulting to one with a timeout: a backup
+// that hangs forever is a backup that never fails and never happens.
 func (s *S3) client() *http.Client {
 	if s.Client != nil {
 		return s.Client
@@ -70,6 +72,8 @@ func (s *S3) client() *http.Client {
 	return &http.Client{Timeout: 2 * time.Minute}
 }
 
+// now is the clock the signature is dated with, injectable so a test can sign
+// against a known timestamp.
 func (s *S3) now() time.Time {
 	if s.Now != nil {
 		return s.Now().UTC()
@@ -188,6 +192,8 @@ func (s *S3) endpoint(key string, query url.Values) (*url.URL, error) {
 	return u, nil
 }
 
+// request builds a signed request for one object, path-style so an endpoint
+// that is not AWS works without DNS for every bucket name.
 func (s *S3) request(ctx context.Context, method, key string, query url.Values, body []byte) (*http.Request, error) {
 	u, err := s.endpoint(key, query)
 	if err != nil {
@@ -208,6 +214,8 @@ func (s *S3) request(ctx context.Context, method, key string, query url.Values, 
 // went wrong in a short XML document; anything longer is a proxy's error page.
 const maxErrorBody = 2 << 10
 
+// do sends a request and reads the body, turning a non-2xx into an error that
+// carries what S3 said rather than just the status.
 func (s *S3) do(req *http.Request) ([]byte, error) {
 	res, err := s.client().Do(req)
 	if err != nil {
@@ -250,6 +258,9 @@ const (
 	emptyPayload = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 )
 
+// sign adds an AWS Signature Version 4 header. Written out here rather than
+// pulled in with the SDK: this is the only AWS call the process makes, and the
+// SDK is larger than the whole binary.
 func (s *S3) sign(req *http.Request, body []byte) error {
 	if s.AccessKeyID == "" || s.SecretAccessKey == "" {
 		return fmt.Errorf("s3 %s: no credentials", s.Bucket)
@@ -294,6 +305,7 @@ func (s *S3) sign(req *http.Request, body []byte) error {
 	return nil
 }
 
+// hmacSHA256 is one round of the signing key derivation.
 func hmacSHA256(key []byte, data string) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write([]byte(data))

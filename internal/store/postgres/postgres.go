@@ -31,6 +31,8 @@ func sqlFile(name string) string {
 	return string(b)
 }
 
+// migrations is the schema's history, in the order it happened. Each one runs
+// once, in version order, and one already recorded as applied is skipped.
 func migrations() []store.Migration {
 	return []store.Migration{
 		{Version: 1, Name: "init", Up: store.SQL(sqlFile("0001_init.sql"))},
@@ -64,13 +66,18 @@ func Open(dsn string) (*Store, error) {
 // DB exposes the connection for tests and tooling.
 func (s *Store) DB() *sql.DB { return s.db }
 
+// Migrate applies the migrations that have not run yet. Safe on every start,
+// which is what lets AUTO_MIGRATE default to true.
 func (s *Store) Migrate(ctx context.Context) error {
 	_, err := store.RunMigrations(ctx, s.db, migrations())
 	return err
 }
 
+// Ping asks the database whether it is there. /readyz is the only caller.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
-func (s *Store) Close() error                   { return s.db.Close() }
+
+// Close hands the connection pool back.
+func (s *Store) Close() error { return s.db.Close() }
 
 const (
 	pgUniqueViolation     = "23505"
@@ -97,6 +104,9 @@ func mapErr(err error) error {
 	return err
 }
 
+// tx runs fn inside a transaction, committing when it returns nil and rolling
+// back on anything else, panic included. Every write below that touches more
+// than one row goes through it, so a half-written board cannot be left behind.
 func (s *Store) tx(ctx context.Context, fn func(tx *sql.Tx) error) (err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -113,6 +123,9 @@ func (s *Store) tx(ctx context.Context, fn func(tx *sql.Tx) error) (err error) {
 	return tx.Commit()
 }
 
+// affected turns "no rows changed" into ErrNotFound. A write that matched
+// nothing and a write that succeeded look the same to the driver, and the
+// difference is the whole of what a caller wants to know.
 func affected(res sql.Result, err error) error {
 	if err != nil {
 		return mapErr(err)
@@ -127,6 +140,7 @@ func affected(res sql.Result, err error) error {
 	return nil
 }
 
+// ids reads a column of ids out of a result set.
 func ids(in []model.ID) []string {
 	out := make([]string, len(in))
 	for i, id := range in {
@@ -139,6 +153,9 @@ func ids(in []model.ID) []string {
 
 const boardColumns = `id, slug, name, layout, sla_response_hours, sla_days, sla_start, sla_end, sla_zone, created_at, updated_at`
 
+// scanBoard reads one board row. Its columns and labels come from their own
+// queries, so a board is three reads rather than a join returning the board
+// once per column.
 func scanBoard(row interface{ Scan(...any) error }) (*model.Board, error) {
 	var b model.Board
 	var days int
@@ -196,6 +213,7 @@ func (s *Store) fillBoards(ctx context.Context, boards []*model.Board) error {
 	return rows.Err()
 }
 
+// ListBoards returns every board with its columns and labels, in name order.
 func (s *Store) ListBoards(ctx context.Context) ([]model.Board, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+boardColumns+` FROM boards ORDER BY name, slug`)
 	if err != nil {
@@ -224,6 +242,8 @@ func (s *Store) ListBoards(ctx context.Context) ([]model.Board, error) {
 	return out, nil
 }
 
+// getBoard reads a board with its columns and labels inside a caller's
+// transaction, so a read that is part of a write sees the write.
 func (s *Store) getBoard(ctx context.Context, where string, arg any) (*model.Board, error) {
 	b, err := scanBoard(s.db.QueryRowContext(ctx, `SELECT `+boardColumns+` FROM boards WHERE `+where, arg))
 	if err != nil {
@@ -235,14 +255,19 @@ func (s *Store) getBoard(ctx context.Context, where string, arg any) (*model.Boa
 	return b, nil
 }
 
+// GetBoard returns one board by its slug, which is what a URL carries.
 func (s *Store) GetBoard(ctx context.Context, slug string) (*model.Board, error) {
 	return s.getBoard(ctx, `slug = $1`, slug)
 }
 
+// GetBoardByID returns one board by id, which is what a card carries.
 func (s *Store) GetBoardByID(ctx context.Context, id model.ID) (*model.Board, error) {
 	return s.getBoard(ctx, `id = $1`, id)
 }
 
+// CreateBoard writes a board and its columns in one transaction, numbering the
+// columns 1..n. A duplicate slug comes back from the unique index as a
+// conflict rather than as a driver error nobody upstream can read.
 func (s *Store) CreateBoard(ctx context.Context, b *model.Board) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		sla := b.SLA.Clean()
@@ -267,6 +292,8 @@ func (s *Store) CreateBoard(ctx context.Context, b *model.Board) error {
 	})
 }
 
+// UpdateBoard changes a board's own fields. Columns and labels have their own
+// calls, so a rename cannot drop one.
 func (s *Store) UpdateBoard(ctx context.Context, b *model.Board) error {
 	sla := b.SLA.Clean()
 	return affected(s.db.ExecContext(ctx, `UPDATE boards SET name = $1, slug = $2, layout = $3,
@@ -275,12 +302,16 @@ func (s *Store) UpdateBoard(ctx context.Context, b *model.Board) error {
 		sla.ResponseHours, int(sla.Days), sla.Start, sla.End, sla.Zone, b.UpdatedAt.UTC(), b.ID))
 }
 
+// DeleteBoard removes a board. The foreign keys cascade, so its columns,
+// cards, labels and comments go with it in the same statement.
 func (s *Store) DeleteBoard(ctx context.Context, id model.ID) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM boards WHERE id = $1`, id))
 }
 
 // --- columns ----------------------------------------------------------------
 
+// CreateColumn appends a column at the end of its board, reading the last
+// position inside the transaction so two at once cannot land on the same one.
 func (s *Store) CreateColumn(ctx context.Context, c *model.Column) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(position), 0) + 1 FROM columns WHERE board_id = $1`, c.BoardID).Scan(&c.Position); err != nil {
@@ -292,11 +323,16 @@ func (s *Store) CreateColumn(ctx context.Context, c *model.Column) error {
 	})
 }
 
+// UpdateColumn changes a column's name, its limit and whether it stops the
+// response clock.
 func (s *Store) UpdateColumn(ctx context.Context, c *model.Column) error {
 	return affected(s.db.ExecContext(ctx, `UPDATE columns SET name = $1, wip_limit = $2, stops_clock = $3, updated_at = now() WHERE id = $4`,
 		c.Name, c.WIPLimit, c.StopsClock, c.ID))
 }
 
+// DeleteColumn removes a column, moving its cards to another column of the same
+// board or deleting them with it. One transaction, so the cards are never
+// homeless in between.
 func (s *Store) DeleteColumn(ctx context.Context, id, moveCardsTo model.ID) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		var boardID model.ID
@@ -324,6 +360,8 @@ func (s *Store) DeleteColumn(ctx context.Context, id, moveCardsTo model.ID) erro
 	})
 }
 
+// ReorderColumns rewrites the positions of a board's columns. The order has to
+// name every column exactly once, checked before the first write.
 func (s *Store) ReorderColumns(ctx context.Context, boardID model.ID, order []model.ID) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		var exists bool
@@ -373,6 +411,7 @@ func (s *Store) ReorderColumns(ctx context.Context, boardID model.ID, order []mo
 
 const cardColumns = `c.id, c.board_id, c.column_id, c.title, c.description, c.position, c.due_date, c.assignee, c.archived_at, c.created_at, c.updated_at`
 
+// scanCard reads one card row, leaving labels and subtasks to their own queries.
 func scanCard(row interface{ Scan(...any) error }) (*model.Card, error) {
 	var c model.Card
 	var due, archived sql.NullTime
@@ -389,6 +428,8 @@ func scanCard(row interface{ Scan(...any) error }) (*model.Card, error) {
 	return &c, nil
 }
 
+// dueArg turns an empty due date into NULL rather than into an empty string, so
+// "no date" is one value in the column and not two.
 func dueArg(t time.Time) any {
 	if t.IsZero() {
 		return nil
@@ -471,22 +512,30 @@ func (s *Store) listCardsWhere(ctx context.Context, query string, boardID model.
 	return out, nil
 }
 
+// ListCards returns a board's live cards in column order then card order, with
+// their labels and subtasks read in bulk rather than per card.
 func (s *Store) ListCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
 	return s.listCardsWhere(ctx, `SELECT `+cardColumns+` FROM cards c JOIN columns col ON col.id = c.column_id
 		WHERE c.board_id = $1 AND c.archived_at IS NULL
 		ORDER BY col.position, c.position, c.id`, boardID)
 }
 
+// ListArchivedCards returns the cards taken off a board, newest first, because
+// an archive is read from the top.
 func (s *Store) ListArchivedCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
 	return s.listCardsWhere(ctx, `SELECT `+cardColumns+` FROM cards c
 		WHERE c.board_id = $1 AND c.archived_at IS NOT NULL
 		ORDER BY c.archived_at DESC, c.id`, boardID)
 }
 
+// TouchCard writes UpdatedAt and nothing else, so a comment cannot hand back an
+// edit that landed while it was being written.
 func (s *Store) TouchCard(ctx context.Context, id model.ID, at time.Time) error {
 	return affected(s.db.ExecContext(ctx, `UPDATE cards SET updated_at = $1 WHERE id = $2`, at.UTC(), id))
 }
 
+// SetCardArchived sets or clears a card's archived_at. Its column and position
+// are left alone, so restoring it puts it back where it was.
 func (s *Store) SetCardArchived(ctx context.Context, id model.ID, at time.Time) error {
 	var arg any
 	if !at.IsZero() {
@@ -495,6 +544,7 @@ func (s *Store) SetCardArchived(ctx context.Context, id model.ID, at time.Time) 
 	return affected(s.db.ExecContext(ctx, `UPDATE cards SET archived_at = $1 WHERE id = $2`, arg, id))
 }
 
+// GetCard returns one card with its labels and subtasks.
 func (s *Store) GetCard(ctx context.Context, id model.ID) (*model.Card, error) {
 	c, err := scanCard(s.db.QueryRowContext(ctx, `SELECT `+cardColumns+` FROM cards c WHERE c.id = $1`, id))
 	if err != nil {
@@ -541,6 +591,9 @@ func writeCardChildren(ctx context.Context, tx *sql.Tx, c *model.Card) error {
 	return nil
 }
 
+// uniqueIDs reports whether a list names each id once. An order naming one
+// twice would leave another card unplaced, and the check is cheaper than the
+// write it prevents.
 func uniqueIDs(in []model.ID) []model.ID {
 	seen := map[model.ID]bool{}
 	var out []model.ID
@@ -554,6 +607,8 @@ func uniqueIDs(in []model.ID) []model.ID {
 	return out
 }
 
+// CreateCard appends a card to its column, with its labels and subtasks, in one
+// transaction.
 func (s *Store) CreateCard(ctx context.Context, c *model.Card) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		var ok bool
@@ -575,6 +630,8 @@ func (s *Store) CreateCard(ctx context.Context, c *model.Card) error {
 	})
 }
 
+// UpdateCard replaces a card's content and its labels and subtasks, and never
+// its column or position: moving a card is a different call.
 func (s *Store) UpdateCard(ctx context.Context, c *model.Card) error {
 	return s.tx(ctx, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, `UPDATE cards SET title = $1, description = $2, due_date = $3, assignee = $4, updated_at = $5
@@ -585,10 +642,13 @@ func (s *Store) UpdateCard(ctx context.Context, c *model.Card) error {
 	})
 }
 
+// DeleteCard removes a card. Its labels, subtasks and comments cascade.
 func (s *Store) DeleteCard(ctx context.Context, id model.ID) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM cards WHERE id = $1`, id))
 }
 
+// ReorderCards rewrites one column's card positions, and moves in any card the
+// order names that was in another column of the same board.
 func (s *Store) ReorderCards(ctx context.Context, boardID, columnID model.ID, order []model.ID) error {
 	seen := map[model.ID]bool{}
 	for _, id := range order {
@@ -631,6 +691,7 @@ func (s *Store) ReorderCards(ctx context.Context, boardID, columnID model.ID, or
 
 const commentColumns = `id, card_id, author, body, created_at`
 
+// scanComment reads one comment row.
 func scanComment(row interface{ Scan(...any) error }) (*model.Comment, error) {
 	var c model.Comment
 	if err := row.Scan(&c.ID, &c.CardID, &c.Author, &c.Body, &c.CreatedAt); err != nil {
@@ -640,6 +701,8 @@ func scanComment(row interface{ Scan(...any) error }) (*model.Comment, error) {
 	return &c, nil
 }
 
+// ListComments returns a card's comments oldest first, which is how a thread
+// reads.
 func (s *Store) ListComments(ctx context.Context, cardID model.ID) ([]model.Comment, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+commentColumns+` FROM comments
 		WHERE card_id = $1 ORDER BY created_at, id`, cardID)
@@ -658,20 +721,25 @@ func (s *Store) ListComments(ctx context.Context, cardID model.ID) ([]model.Comm
 	return out, rows.Err()
 }
 
+// GetComment returns one comment, for the author check before a delete.
 func (s *Store) GetComment(ctx context.Context, id model.ID) (*model.Comment, error) {
 	return scanComment(s.db.QueryRowContext(ctx, `SELECT `+commentColumns+` FROM comments WHERE id = $1`, id))
 }
 
+// CreateComment writes a comment against a card that exists.
 func (s *Store) CreateComment(ctx context.Context, c *model.Comment) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO comments (id, card_id, author, body, created_at) VALUES ($1, $2, $3, $4, $5)`,
 		c.ID, c.CardID, c.Author, c.Body, c.CreatedAt.UTC())
 	return mapErr(err)
 }
 
+// DeleteComment removes one comment. Who may is decided above this.
 func (s *Store) DeleteComment(ctx context.Context, id model.ID) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM comments WHERE id = $1`, id))
 }
 
+// CountComments returns each card's comment count for a whole board in one
+// query, so drawing the badges is not a read per card.
 func (s *Store) CountComments(ctx context.Context, boardID model.ID) (map[model.ID]int, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT cm.card_id, COUNT(*) FROM comments cm
 		JOIN cards c ON c.id = cm.card_id WHERE c.board_id = $1 GROUP BY cm.card_id`, boardID)
@@ -693,15 +761,20 @@ func (s *Store) CountComments(ctx context.Context, boardID model.ID) (map[model.
 
 // --- labels -----------------------------------------------------------------
 
+// CreateLabel adds a label to a board. A name already used on that board comes
+// back as a conflict: two labels with one name cannot be told apart on a card.
 func (s *Store) CreateLabel(ctx context.Context, l *model.Label) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO labels (id, board_id, name, color) VALUES ($1, $2, $3, $4)`, l.ID, l.BoardID, l.Name, l.Color)
 	return mapErr(err)
 }
 
+// UpdateLabel renames a label or changes its colour, on every card at once.
 func (s *Store) UpdateLabel(ctx context.Context, l *model.Label) error {
 	return affected(s.db.ExecContext(ctx, `UPDATE labels SET name = $1, color = $2 WHERE id = $3`, l.Name, l.Color, l.ID))
 }
 
+// DeleteLabel removes a label and the rows tying it to cards, so no card is
+// left pointing at something that is gone.
 func (s *Store) DeleteLabel(ctx context.Context, id model.ID) error {
 	return affected(s.db.ExecContext(ctx, `DELETE FROM labels WHERE id = $1`, id))
 }

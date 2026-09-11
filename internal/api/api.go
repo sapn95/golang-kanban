@@ -139,7 +139,11 @@ type statusOnly struct {
 	status int
 }
 
-func (s *statusOnly) WriteHeader(status int)      { s.status = status }
+// WriteHeader records the status without writing it, so a handler can be run
+// to find out what it would answer.
+func (s *statusOnly) WriteHeader(status int) { s.status = status }
+
+// Write throws the body away and reports it written.
 func (s *statusOnly) Write(p []byte) (int, error) { return len(p), nil }
 
 // --- reading a request --------------------------------------------------------
@@ -199,6 +203,9 @@ func (s *Server) assignee(w http.ResponseWriter, r *http.Request, want string) (
 
 // --- writing a response -------------------------------------------------------
 
+// write sends one JSON response. The body is marshalled before anything is
+// written, so a value that cannot be encoded is a 500 rather than half a
+// document with a 200 already on it.
 func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, body any) {
 	// Marshalled before anything is written, so a type that cannot be encoded
 	// is a 500 rather than a 200 with half an object in it.
@@ -213,10 +220,13 @@ func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, body 
 	_, _ = w.Write(buf)
 }
 
+// error sends a JSON error with no field attached.
 func (s *Server) error(w http.ResponseWriter, r *http.Request, status int, message string) {
 	s.fieldError(w, r, status, message, "")
 }
 
+// fieldError sends a JSON error naming the field that was wrong, so a client
+// can put the message beside the input rather than at the top of a form.
 func (s *Server) fieldError(w http.ResponseWriter, r *http.Request, status int, message, field string) {
 	buf, err := json.Marshal(errorBody{Error: message, Field: field})
 	if err != nil {
