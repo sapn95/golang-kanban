@@ -46,7 +46,7 @@ Who is making the request. See [docs/adr/0005](adr/0005-request-identity.md) for
 | `ACCESS_AUD` | *(unset)* | the Access application's AUD tag |
 | `AUTH_REQUIRED` | `false` | true: a request with no identity is refused rather than served |
 
-Who the board says may see it, as a mail address list: `Ada Lovelace <ada@example.com>, grace@example.com`. Shown in the app bar and nowhere else. This is a copy of a list kept somewhere else, so one address per person is what reads well, and the sign-in in front of the board is what the copy has to agree with.
+Who the board says may see it, as a mail address list: `Ada Lovelace <ada@example.com>, grace@example.com`. Shown in the app bar and nowhere else. This is a copy of a list kept somewhere else, so one address per person is what reads well, and the sign-in in front of the board is what the copy has to agree with. It is drawn only for a caller the board identified. In `access` mode that means a verified assertion; in `proxy` mode it means a header, which anything that can reach the port can set, so a port reachable any other way wants `AUTH_REQUIRED` as well.
 
 | Variable | Default | Notes |
 |---|---|---|

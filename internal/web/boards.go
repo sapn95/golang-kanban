@@ -1,7 +1,5 @@
 // The board list, one board, and the two writes that change a board itself.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (
@@ -88,6 +86,10 @@ func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 // name has to be typed, which is the one guard that cannot be satisfied by a
 // misplaced click, and the board being deleted is named in the confirmation so
 // the name being typed is the one in front of you.
+//
+// Case and surrounding space are forgiven. It is a name read off a screen, not
+// a password, and the page says "type its name" rather than "exactly" because
+// that is what the comparison below actually asks for.
 func (s *Server) deleteBoard(w http.ResponseWriter, r *http.Request) {
 	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
 	if err != nil {
@@ -102,7 +104,7 @@ func (s *Server) deleteBoard(w http.ResponseWriter, r *http.Request) {
 		}
 		s.render(w, s.pages["boards"], "layout", http.StatusBadRequest, boardsPage{
 			Title: "Boards", User: identity.FromContext(r.Context()), Boards: boards,
-			Error: "To delete " + b.Name + ", type its name exactly.",
+			Error: "To delete " + b.Name + ", type its name.",
 		})
 		return
 	}

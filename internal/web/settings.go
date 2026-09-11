@@ -1,9 +1,7 @@
 // The board's own settings page: its columns, its labels and its response
 // time. Every write here re-renders the page rather than redirecting, so a
 // refusal can say what was wrong beside the field that was wrong.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (

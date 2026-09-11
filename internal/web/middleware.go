@@ -1,8 +1,6 @@
 // The wrappers every request passes through, outermost first: logging,
 // recover, security headers, the cross-site check and the body cap.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (

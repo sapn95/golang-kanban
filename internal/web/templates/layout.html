@@ -84,11 +84,14 @@
          could not answer: the name was a label on a wide screen and nothing at
          all on a phone, and "who can see this" lived in a Cloudflare dashboard.
          details/summary again, so a second popover costs no script.
-         Behind .User.Email on purpose. The roster is a list of people's
-         addresses, and a board in proxy mode without AUTH_REQUIRED still draws
-         a page for a caller it could not identify: that caller would be reading
-         everybody's address off a board it has no business on. Whoever is
-         signed in is on the list and already knows it. -->
+         Behind .User.Email on purpose: the roster is a list of people's
+         addresses and an anonymous reader has no business with it. That is a
+         real gate in access mode, where an address means a verified assertion.
+         In proxy mode it is only as good as the header, which anything that can
+         reach the port can set, so a deployment that publishes the port beside
+         its proxy needs AUTH_REQUIRED whether or not it sets a roster. The
+         config refuses the two settings that cannot work; this one it cannot
+         see, which is why it is written here. -->
     <details class="unfold unfold-pop relative shrink-0">
       <summary class="flex items-center gap-2 cursor-pointer rounded-lg px-1 py-1 text-sm
                       text-slate-600 dark:text-slate-300

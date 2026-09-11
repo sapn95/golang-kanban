@@ -1,8 +1,6 @@
 // The shapes a template is handed. Everything here turns a model into
 // something a page can print, and nothing here touches a request.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (

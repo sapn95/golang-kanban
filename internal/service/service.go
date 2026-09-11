@@ -900,6 +900,15 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 	default:
 		return res, invalid("action", "unknown action")
 	}
+	// Checked once, here, rather than per card: an address too long for the
+	// column is wrong for the whole request, and finding that out on card 137
+	// of 200 would leave the first 136 written. SetCardAssignee and the edit
+	// form check the same thing the same way.
+	if action == BulkAssign {
+		if err := checkText("assignee", strings.TrimSpace(target), MaxAssignee, false); err != nil {
+			return res, err
+		}
+	}
 
 	seen := map[model.ID]bool{}
 	for _, id := range ids {
@@ -930,7 +939,11 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 			c.UpdatedAt = k.now()
 			err = k.store.UpdateCard(ctx, c)
 		case BulkMove:
-			err = k.store.ReorderCards(ctx, boardID, model.ID(target), []model.ID{id})
+			// Through the service method and not straight to the store, because
+			// that is where the WIP limit is checked. Dragging these same cards
+			// was refused and the toolbar was not, so a column limited to one
+			// took all five and came back over its own limit.
+			err = k.ReorderCards(ctx, boardID, model.ID(target), []model.ID{id})
 		}
 		if err != nil {
 			res.Failed[id] = err

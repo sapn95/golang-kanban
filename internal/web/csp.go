@@ -15,6 +15,11 @@ import (
 // is what Chrome is moving to. Both name this one path.
 const cspReportPath = "/csp-report"
 
+// maxReportsPerRequest is how many violations one request may write to the log.
+// A browser batches a few; the number exists because the endpoint takes a
+// megabyte of JSON from anybody who can reach the port.
+const maxReportsPerRequest = 20
+
 // cspReport is one violation, in either of the two shapes a browser sends.
 //
 // report-uri posts `{"csp-report": {...}}` as application/csp-report, with
@@ -87,7 +92,10 @@ func (s *Server) cspViolation(w http.ResponseWriter, r *http.Request) {
 		}
 	default:
 		var env cspReportEnvelope
-		if err := json.Unmarshal(body, &env); err == nil {
+		// A directive is the one field a violation cannot be without, so an
+		// empty envelope logs as unparsed rather than as a line of blanks.
+		if err := json.Unmarshal(body, &env); err == nil &&
+			(env.Report.Effective != "" || env.Report.Directive != "") {
 			reports = append(reports, env.Report)
 		}
 	}
@@ -96,6 +104,15 @@ func (s *Server) cspViolation(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("csp report that did not parse", "bytes", len(body))
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	// A report-to body is an array, and the body cap is a megabyte, so one
+	// request could carry hundreds of thousands of entries and write a log line
+	// for each. A browser sends a handful; past that the interesting thing is
+	// that somebody is not a browser, and one line says it.
+	if len(reports) > maxReportsPerRequest {
+		s.log.Warn("csp report with more entries than a browser sends",
+			"entries", len(reports), "logging", maxReportsPerRequest)
+		reports = reports[:maxReportsPerRequest]
 	}
 	for _, c := range reports {
 		directive := c.Effective

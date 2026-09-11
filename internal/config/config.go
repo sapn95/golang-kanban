@@ -61,6 +61,11 @@ type Config struct {
 	// else. This is a copy of a list kept somewhere else, so one address per
 	// person is what reads well, and the sign-in in front of the board is what
 	// the copy has to agree with.
+	//
+	// It is drawn only for a caller the board identified. In `access` mode that
+	// means a verified assertion; in `proxy` mode it means a header, which
+	// anything that can reach the port can set, so a port reachable any other
+	// way wants `AUTH_REQUIRED` as well.
 	Viewers []Viewer `env:"AUTH_VIEWERS"` // displayed, never enforced: the board admits whoever the sign-in admits
 
 	// Who has a picture instead of initials, as address=github-login pairs. Unset

@@ -26,10 +26,9 @@
                      border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3">
           <span class="w-full text-sm text-rose-800 dark:text-rose-200">
             Delete {{.Name}} with every card, column, label and comment on it. There is no undo.
-            Type <span class="font-semibold">{{.Name}}</span> to confirm.
+            Type <span class="font-semibold">{{.Name}}</span> to confirm; case does not matter.
           </span>
-          <input type="text" name="confirm" required autocomplete="off" maxlength="100"
-            aria-label="Type the board's name to confirm"
+          <input type="text" name="confirm" required autocomplete="off" aria-label="Type the board's name to confirm"
             class="flex-1 min-w-0 px-2 py-2 text-sm rounded-lg border border-rose-300 dark:border-rose-500/40
                    bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
           <button type="submit"

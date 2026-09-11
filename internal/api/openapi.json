@@ -295,7 +295,7 @@
         "operationId": "updateColumn",
         "tags": ["boards"],
         "summary": "Rename a column or change its WIP limit.",
-        "description": "Both fields are written, so send the name as well when changing only the limit. Lowering the limit below the number of cards already in the column is allowed; the limit is checked when a card arrives.",
+        "description": "Absent fields keep the value they have, so a rename need not repeat the limit. Lowering the limit below the number of cards already in the column is allowed; the limit is checked when a card arrives.",
         "requestBody": {
           "required": true,
           "content": {

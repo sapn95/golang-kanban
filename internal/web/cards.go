@@ -1,8 +1,6 @@
 // Everything a card can have done to it from a page: made, edited a field at
 // a time, moved, archived, restored, deleted.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (
@@ -97,7 +95,6 @@ func (s *Server) reorderCards(w http.ResponseWriter, r *http.Request) {
 	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)
 }
 
-// cardAndBoard loads a card and its board for rendering.
 // bulkCards applies one action to a set of selected cards.
 //
 // It answers with HX-Refresh rather than a fragment. A bulk move can empty one
@@ -356,9 +353,6 @@ func (s *Server) setCardDue(w http.ResponseWriter, r *http.Request) {
 	s.quickEdited(w, r, c)
 }
 
-// toggleCardLabel puts one of the board's labels on a card, or takes it off.
-// Which of the two it is comes from the card, not from the request: a button
-// that said "add" would be wrong the moment someone else clicked first.
 // toggleSubtask ticks one checklist line from the board, without the edit form.
 //
 // The checklist was readable on the card and editable only inside a modal, which
@@ -375,8 +369,10 @@ func (s *Server) toggleSubtask(w http.ResponseWriter, r *http.Request) {
 	s.quickEdited(w, r, c)
 }
 
-// toggleCardLabel puts a label on the card or takes it off. The label stays on
-// the board either way; the bin on the settings page is what removes one.
+// toggleCardLabel puts one of the board's labels on a card, or takes it off.
+// Which of the two it is comes from the card, not from the request: a button
+// that said "add" would be wrong the moment somebody else clicked first. The
+// label stays on the board either way; the bin on the settings page removes one.
 func (s *Server) toggleCardLabel(w http.ResponseWriter, r *http.Request) {
 	c, err := s.svc.ToggleCardLabel(r.Context(),
 		model.ID(r.PathValue("id")), model.ID(r.PathValue("label")))
@@ -409,8 +405,13 @@ func (s *Server) quickEdited(w http.ResponseWriter, r *http.Request, c *model.Ca
 }
 
 // deleteCard removes the card for good. The row goes with hx-swap="delete" on
-// the button, and the response body is the column headers, which htmx takes
-// out of it and puts back on the board.
+// the button, and the response body is the column headers, which htmx takes out
+// of it and puts back on the board.
+//
+// Not from the archive, though. The headers are out-of-band swaps aimed at
+// elements that exist on the board page and nowhere else, so sending them to
+// the archive logged one "no target" per column in the console on every delete.
+// The archive draws no counts, so it has nothing to bring up to date.
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 	c, b, err := s.cardAndBoard(r)
 	if err != nil {
@@ -421,7 +422,18 @@ func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if fromArchive(r) {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)
+}
+
+// fromArchive reports whether a write came from the archive page rather than
+// from the board. htmx sends the current URL, which is the only thing that
+// tells the two apart: both post to the same route from the same kind of row.
+func fromArchive(r *http.Request) bool {
+	return strings.HasSuffix(strings.TrimSuffix(r.Header.Get("HX-Current-URL"), "/"), "/archive")
 }
 
 // archiveCard takes a card off the board. The card row is removed from the

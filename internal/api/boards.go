@@ -160,11 +160,24 @@ func (s *Server) updateColumn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in columnInput
+	var in columnPatch
 	if !s.decode(w, r, &in) {
 		return
 	}
-	if err := s.svc.UpdateColumn(r.Context(), id, in.Name, in.WIPLimit, in.StopsClock); err != nil {
+	// What is not in the body keeps the value it has. The column is read back
+	// from the board we already loaded, so this costs nothing.
+	col := b.Column(id)
+	name, limit, stops := col.Name, col.WIPLimit, col.StopsClock
+	if in.Name != nil {
+		name = *in.Name
+	}
+	if in.WIPLimit != nil {
+		limit = *in.WIPLimit
+	}
+	if in.StopsClock != nil {
+		stops = *in.StopsClock
+	}
+	if err := s.svc.UpdateColumn(r.Context(), id, name, limit, stops); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -241,11 +254,21 @@ func (s *Server) updateLabel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var in labelInput
+	var in labelPatch
 	if !s.decode(w, r, &in) {
 		return
 	}
-	if err := s.svc.UpdateLabel(r.Context(), id, in.Name, in.Color); err != nil {
+	// As for a column: an absent field keeps what the label has, so renaming one
+	// does not send its colour back to the default.
+	lab := b.Label(id)
+	name, color := lab.Name, lab.Color
+	if in.Name != nil {
+		name = *in.Name
+	}
+	if in.Color != nil {
+		color = *in.Color
+	}
+	if err := s.svc.UpdateLabel(r.Context(), id, name, color); err != nil {
 		s.fail(w, r, err)
 		return
 	}
