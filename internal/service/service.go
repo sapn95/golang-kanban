@@ -544,11 +544,20 @@ func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*
 //
 // The label has to belong to the card's own board. Nothing else checks that,
 // so a crafted id would otherwise attach another board's label to this one.
-// ToggleSubtask ticks one line of a card's checklist, or unticks it.
+// ToggleSubtask ticks one line of a card's checklist, or unticks it, and hands
+// the card back as it now stands.
 //
 // By id rather than by position: a card's checklist can be reordered or have a
 // line removed in the edit form while somebody else is looking at the board,
 // and a position would then tick whatever had moved into that slot.
+//
+// The write is one field through SetSubtaskDone rather than a read of the card
+// and a write of the whole thing. Two people ticking two different lines at the
+// same time would both read the card, both flip their own line, and the second
+// write would put the first line back; the same is true of a tick landing on
+// top of somebody's rename. The read below is only to find out what the line
+// currently is and to answer with the card, and a card that changed underneath
+// it is a card drawn one tick out of date rather than one silently rolled back.
 //
 // UpdatedAt moves, like every other write to a card. That restarts the response
 // clock, which is right: work on a card is the card being attended to, and a
@@ -563,11 +572,12 @@ func (k *Kanban) ToggleSubtask(ctx context.Context, id, subtaskID model.ID) (*mo
 	if i < 0 {
 		return nil, store.ErrNotFound
 	}
-	c.Subtasks[i].Done = !c.Subtasks[i].Done
-	c.UpdatedAt = k.now()
-	if err := k.store.UpdateCard(ctx, c); err != nil {
+	at := k.now()
+	if err := k.store.SetSubtaskDone(ctx, id, subtaskID, !c.Subtasks[i].Done, at); err != nil {
 		return nil, err
 	}
+	c.Subtasks[i].Done = !c.Subtasks[i].Done
+	c.UpdatedAt = at
 	return c, nil
 }
 

@@ -3033,3 +3033,79 @@ func TestToggleSubtaskFromTheCardFace(t *testing.T) {
 		}
 	})
 }
+
+// same-site is a different origin on the same registrable domain, so it is not
+// on its own a reason to accept a write: a board published beside its siblings
+// would take a post from any of them with the reader's cookies attached.
+func TestSameSiteIsNotEnough(t *testing.T) {
+	for _, tc := range []struct {
+		name, site, origin string
+		want               int
+	}{
+		{"same-origin needs nothing else", "same-origin", "", http.StatusSeeOther},
+		{"a typed URL has no other page in it", "none", "", http.StatusSeeOther},
+		{"same-site with our own origin is us", "same-site", "http://example.com", http.StatusSeeOther},
+		{"same-site from a sibling host is refused", "same-site", "http://other.example.com", http.StatusForbidden},
+		{"no fetch metadata, foreign origin, refused", "", "http://evil.example", http.StatusForbidden},
+		{"cross-site is refused as it was", "cross-site", "", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := seeded(t)
+			req := httptest.NewRequest(http.MethodPost, "/b/demo/layout", form("layout", "rows"))
+			req.Host = "example.com"
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tc.site != "" {
+				req.Header.Set("Sec-Fetch-Site", tc.site)
+			}
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			rr := httptest.NewRecorder()
+			e.h.ServeHTTP(rr, req)
+			if rr.Code != tc.want {
+				t.Errorf("got %d, want %d", rr.Code, tc.want)
+			}
+		})
+	}
+}
+
+// A checklist line keeps its identity across a save. Before the form carried
+// the id, every save minted new ones, so a tick queued on another device came
+// back 404 against a line that had not visibly changed.
+func TestSubtaskIDsSurviveASave(t *testing.T) {
+	e := seeded(t)
+	before := e.card.Subtasks[0].ID
+
+	// What the browser posts now: id|flag|title per line.
+	body := form(
+		"title", e.card.Title,
+		"column", string(e.card.ColumnID),
+		"subtasks", string(before)+"|1|sub one\n"+string(e.card.Subtasks[1].ID)+"|0|sub two\n|0|a third",
+	)
+	// Without htmx an update redirects to the board; the save itself is what
+	// this is about, not what it answers with.
+	if rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID), body); rr.Code != http.StatusSeeOther {
+		t.Fatalf("got %d, want 303", rr.Code)
+	}
+
+	c, err := e.svc.Card(context.Background(), e.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Subtasks) != 3 {
+		t.Fatalf("%d subtasks, want 3", len(c.Subtasks))
+	}
+	if c.Subtasks[0].ID != before {
+		t.Errorf("the first line was given a new id: %q, was %q", c.Subtasks[0].ID, before)
+	}
+	if c.Subtasks[2].ID == "" {
+		t.Error("the line that was just typed got no id")
+	}
+
+	// And the toggle, which is the thing that broke, still finds it.
+	rr := e.do(http.MethodPost,
+		"/cards/"+string(e.card.ID)+"/subtasks/"+string(before)+"/toggle", nil, "HX-Request", "true")
+	if rr.Code != http.StatusOK {
+		t.Errorf("toggling a line that survived a save answered %d", rr.Code)
+	}
+}

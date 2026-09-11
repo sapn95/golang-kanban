@@ -28,6 +28,7 @@ func Run(t *testing.T, newStore New) {
 		"Assignee":      testAssignee,
 		"Archive":       testArchive,
 		"Touch":         testTouch,
+		"SubtaskDone":   testSubtaskDone,
 		"Comments":      testComments,
 		"Layout":        testLayout,
 		"SLA":           testSLA,
@@ -986,4 +987,73 @@ func testLayout(t *testing.T, s store.Store) {
 			t.Errorf("ListBoards returned layout %q, want %q", l.Layout, model.LayoutRows)
 		}
 	}
+}
+
+// testSubtaskDone is the other single-field write, and the reason it exists:
+// two people ticking two different lines of one checklist must not undo each
+// other. Both reads happen before either write, which is the race a read of the
+// card plus a write of the whole card loses.
+func testSubtaskDone(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "subtasks", "To Do")
+	c := &model.Card{
+		ID: newID("card"), BoardID: b.ID, ColumnID: b.Columns[0].ID, Title: "two lines",
+		Subtasks: []model.Subtask{
+			{ID: newID("sub"), Title: "first", Position: 1},
+			{ID: newID("sub"), Title: "second", Position: 2},
+		},
+		CreatedAt: now(), UpdatedAt: now(),
+	}
+	if err := s.CreateCard(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	first, second := c.Subtasks[0].ID, c.Subtasks[1].ID
+
+	// Both sides read the card before either writes, which is what two people
+	// on two phones actually do.
+	if _, err := s.GetCard(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetCard(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	at := now().Add(time.Minute)
+	if err := s.SetSubtaskDone(ctx, c.ID, first, true, at); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSubtaskDone(ctx, c.ID, second, true, at); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range got.Subtasks {
+		if !st.Done {
+			t.Errorf("%q came back unticked; the second write put the first one back", st.Title)
+		}
+	}
+	if got.Title != "two lines" {
+		t.Errorf("Title = %q; a tick rewrote the rest of the card", got.Title)
+	}
+	if !got.UpdatedAt.Equal(at) {
+		t.Errorf("UpdatedAt = %v, want %v", got.UpdatedAt, at)
+	}
+
+	// Unticking is the same call with the other value.
+	if err := s.SetSubtaskDone(ctx, c.ID, first, false, at); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetCard(ctx, c.ID)
+	if got.Subtasks[0].Done {
+		t.Error("unticking did nothing")
+	}
+
+	// A subtask of another card, or none at all, is not found rather than a
+	// write that silently matches nothing.
+	wantErr(t, "a subtask that does not exist",
+		s.SetSubtaskDone(ctx, c.ID, newID("sub"), true, at), store.ErrNotFound)
+	wantErr(t, "a card that does not exist",
+		s.SetSubtaskDone(ctx, newID("card"), first, true, at), store.ErrNotFound)
 }

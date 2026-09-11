@@ -60,9 +60,9 @@ func RunMigrations(ctx context.Context, db *sql.DB, migrations []Migration) ([]i
 	return done, nil
 }
 
-// appliedVersions reads the versions already recorded in schema_migrations. A
-// missing table is not an error here: a database that has never been migrated
-// has applied nothing, which is the answer.
+// appliedVersions reads the versions already recorded in schema_migrations. The
+// caller creates that table before asking, so a missing one is a real error
+// here rather than an empty history.
 func appliedVersions(ctx context.Context, db *sql.DB) (map[int]bool, error) {
 	rows, err := db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {

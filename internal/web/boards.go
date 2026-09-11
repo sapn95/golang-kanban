@@ -54,9 +54,9 @@ func (s *Server) navBoards(ctx context.Context) []model.Board {
 	return boards
 }
 
-// createBoard makes a board from a name and goes to it. A name that is empty
-// or already taken re-renders the list with the reason rather than redirecting,
-// so what was typed is still on the screen.
+// createBoard makes a board from a name and goes to it. A name that is empty or
+// already taken re-renders the list with the reason rather than redirecting, so
+// the message arrives on the page that asked rather than on a fresh one.
 func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 	b, err := s.svc.CreateBoard(r.Context(), r.FormValue("name"), "", nil)
 	if err != nil {
