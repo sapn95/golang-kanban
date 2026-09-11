@@ -158,7 +158,8 @@ func (a *avatars) cached(login string) *avatarEntry {
 }
 
 // download fetches one picture from GitHub and returns its bytes and content
-// type. It is the only outbound request this process makes.
+// type. Requested by the server, so a browser on the board never talks to
+// github.com; see docs/adr/0008.
 func (a *avatars) download(ctx context.Context, login string) ([]byte, string, error) {
 	// Detached from the request, so a viewer who navigates away mid-fetch does
 	// not leave a cancelled error in the cache for everybody else.

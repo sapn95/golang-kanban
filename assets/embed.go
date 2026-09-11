@@ -39,7 +39,8 @@ var version = sync.OnceValue(computeVersion)
 //
 // The files are served with a long max-age and no validator — an embedded file
 // has no modification time, so the browser has nothing to revalidate against
-// and simply keeps what it has for the whole day. That is correct for a file
+// and simply keeps what it has until the max-age runs out, which is a year.
+// That is correct for a file
 // that never changes and wrong for one that changes on every deploy: it left
 // browsers running the previous build's JavaScript against the new build's
 // HTML, with no error anywhere to say so.

@@ -478,8 +478,8 @@ func testLabels(t *testing.T, s store.Store) {
 	wantErr(t, "DeleteLabel unknown", s.DeleteLabel(ctx, l.ID), store.ErrNotFound)
 }
 
-// testTimestamps covers what each write stamps, and that TouchCard stamps only
-// the one field.
+// testTimestamps covers what each write stamps. TouchCard has its own test,
+// because what it must NOT stamp is the point of it.
 func testTimestamps(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	created := time.Date(2025, 1, 2, 3, 4, 5, 123456000, time.UTC)
@@ -506,7 +506,7 @@ func testTimestamps(t *testing.T, s store.Store) {
 	}
 }
 
-// testListOrdering covers the order every list comes back in, which pages rely
+// testListOrdering covers the order ListCards comes back in, which pages rely
 // on and no page sorts again.
 func testListOrdering(t *testing.T, s store.Store) {
 	ctx := context.Background()
@@ -532,8 +532,8 @@ func testListOrdering(t *testing.T, s store.Store) {
 	}
 }
 
-// testDeleteCascade covers what goes with a deleted board and a deleted card,
-// so no backend leaves an orphan the others clean up.
+// testDeleteCascade covers what goes with a deleted board, so no backend leaves
+// an orphan the others clean up.
 func testDeleteCascade(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "cascade", "A")
@@ -927,7 +927,7 @@ func testSLA(t *testing.T, s store.Store) {
 	if !after.Columns[1].StopsClock {
 		t.Error("stops_clock did not survive UpdateColumn")
 	}
-	// CreateColumn is the other way in, and a fresh column runs the clock.
+	// CreateColumn is the other way in, and a column created with StopsClock keeps it.
 	added := &model.Column{ID: newID("c"), BoardID: b.ID, Name: "Waiting", StopsClock: true}
 	if err := s.CreateColumn(ctx, added); err != nil {
 		t.Fatalf("CreateColumn: %v", err)
@@ -949,7 +949,7 @@ func testSLA(t *testing.T, s store.Store) {
 	}
 }
 
-// testLayout covers storing a board's layout and its response time.
+// testLayout covers storing a board's layout. The response time is testSLA.
 func testLayout(t *testing.T, s store.Store) {
 	ctx := context.Background()
 	b := mustBoard(t, s, "layout", "A")

@@ -9,10 +9,10 @@ import (
 )
 
 // cspReportPath is where a browser posts a Content-Security-Policy violation.
-// It appears in the policy itself, twice, because the two ways of asking are at
-// different points in their lives: report-uri is deprecated and is the only one
-// Firefox and Safari implement, and report-to with a Reporting-Endpoints header
-// is what Chrome is moving to. Both name this one path.
+// Named twice on the way out, because the two ways of asking are at different
+// points in their lives: report-uri, in the policy itself, is deprecated and is
+// the only one Firefox and Safari implement; report-to names an endpoint group
+// that a Reporting-Endpoints header then points at this path. Both arrive here.
 const cspReportPath = "/csp-report"
 
 // maxReportsPerRequest is how many violations one request may write to the log.
@@ -83,6 +83,17 @@ func (s *Server) cspViolation(w http.ResponseWriter, r *http.Request) {
 				if e.Type != "" && e.Type != "csp-violation" {
 					continue
 				}
+				// A directive is the one field a violation cannot be without,
+				// so an entry with none is not one. Without this, an array of
+				// empty objects wrote a line of blanks for each.
+				if e.Body.Effective == "" {
+					continue
+				}
+				if len(reports) >= maxReportsPerRequest {
+					s.log.Warn("csp report with more entries than a browser sends",
+						"entries", len(entries), "logging", maxReportsPerRequest)
+					break
+				}
 				reports = append(reports, cspReport{
 					Document: e.Body.Document, Effective: e.Body.Effective,
 					Blocked: e.Body.Blocked, Source: e.Body.Source,
@@ -104,15 +115,6 @@ func (s *Server) cspViolation(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("csp report that did not parse", "bytes", len(body))
 		w.WriteHeader(http.StatusNoContent)
 		return
-	}
-	// A report-to body is an array, and the body cap is a megabyte, so one
-	// request could carry hundreds of thousands of entries and write a log line
-	// for each. A browser sends a handful; past that the interesting thing is
-	// that somebody is not a browser, and one line says it.
-	if len(reports) > maxReportsPerRequest {
-		s.log.Warn("csp report with more entries than a browser sends",
-			"entries", len(reports), "logging", maxReportsPerRequest)
-		reports = reports[:maxReportsPerRequest]
 	}
 	for _, c := range reports {
 		directive := c.Effective

@@ -145,7 +145,9 @@ func (q Query) matchesText(c model.Card, labelNames map[model.ID]string) bool {
 }
 
 // labelContains reports whether any of a card's labels has the term in its
-// name, so label:bug finds "bug" and "bugfix".
+// name. This is the bare-word path: a word somebody typed matches a label it is
+// part of, so "bug" finds a card labelled "bugfix". label:bug is the other path
+// and wants the whole name.
 func (q Query) labelContains(c model.Card, labelNames map[model.ID]string, term string) bool {
 	for _, id := range c.Labels {
 		if strings.Contains(labelNames[id], term) {
@@ -187,8 +189,9 @@ func (q Query) matchesAssignee(c model.Card) bool {
 	}
 }
 
-// matchesDue tests a card against due:, which takes none, overdue, today,
-// week, or a date.
+// matchesDue tests a card against due:, which takes none, overdue, today or
+// week. Anything else was not recognised as a due term at all and is being
+// searched for as text.
 func (q Query) matchesDue(c model.Card, today time.Time) bool {
 	switch q.Due {
 	case "none":

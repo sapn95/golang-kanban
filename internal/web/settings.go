@@ -238,9 +238,11 @@ func (s *Server) deleteColumn(w http.ResponseWriter, r *http.Request) {
 	s.settingsRedirect(w, r, b)
 }
 
-// setSLA writes the board's response-time promise. Zero hours switches it off
-// and leaves the rest of the form as it was, so turning the clock back on does
-// not mean typing the office hours again.
+// setSLA writes the board's response-time promise. The switch is what turns it
+// off, and it leaves the rest of the form as it was, so turning the clock back
+// on does not mean typing the office hours again. Zero hours with the switch on
+// is refused, not read as off: there is one way to turn it off and no way to do
+// it by accident.
 func (s *Server) setSLA(w http.ResponseWriter, r *http.Request) {
 	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
 	if err != nil {

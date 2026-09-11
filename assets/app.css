@@ -378,15 +378,19 @@ html.dark { color-scheme: dark; background-color: #020617; }
    horizontal scroll to it, because a box positioned against the header does
    contribute to the page's scrollable overflow.
 
-   So the size is the viewport's and the origin is the header's top left, which
-   is the viewport's top left: the bar is sticky at the top. Both measured, the
-   wrong ones as well as this one. */
+   So the box is anchored at the bar's top left, which is the viewport's top
+   left because the bar is sticky, and stretched to the bar's own right edge
+   rather than given a width. 100vw was the width for one round and is the
+   viewport INCLUDING the scrollbar gutter, so on a page with a vertical
+   scrollbar it put the gutter's worth of horizontal scroll back: invisible on
+   a Mac with overlay scrollbars, which is where it was measured, and about
+   16px everywhere else. right: 0 has no width to be wrong about. */
 .unfold-pop[open] > summary::before {
   content: "";
   position: fixed;
   top: 0;
+  right: 0;
   left: 0;
-  width: 100vw;
   height: 100vh;
   z-index: 30;
 }
@@ -409,11 +413,14 @@ html.dark { color-scheme: dark; background-color: #020617; }
 .search-form {
   display: flex;
 }
-@media (max-width: 639px) {
+@media (max-width: 639.98px) {
   .search-fold:not([open]) + .search-form {
     display: none;
   }
 }
+/* 639.98 and not 639: at a fractional width between the two, which is what
+   browser zoom produces, neither rule matched and the fold button and the form
+   were both on the page. */
 @media (min-width: 640px) {
   .search-fold {
     display: none;

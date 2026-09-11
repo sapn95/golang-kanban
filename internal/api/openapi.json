@@ -13,34 +13,54 @@
     }
   ],
   "tags": [
-    { "name": "meta", "description": "The entry point and this document." },
-    { "name": "boards", "description": "Boards, their columns and their labels." },
-    { "name": "cards", "description": "Cards, their assignee, labels and archive state." },
-    { "name": "comments", "description": "The thread on a card." }
+    {
+      "name": "meta",
+      "description": "The entry point and this document."
+    },
+    {
+      "name": "boards",
+      "description": "Boards, their columns and their labels."
+    },
+    {
+      "name": "cards",
+      "description": "Cards, their assignee, labels and archive state."
+    },
+    {
+      "name": "comments",
+      "description": "The thread on a card."
+    }
   ],
   "paths": {
     "/api/v1/": {
       "get": {
         "operationId": "index",
-        "tags": ["meta"],
+        "tags": [
+          "meta"
+        ],
         "summary": "The two links that lead everywhere else.",
         "responses": {
           "200": {
             "description": "The entry point.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Index" }
+                "schema": {
+                  "$ref": "#/components/schemas/Index"
+                }
               }
             }
           },
-          "default": { "$ref": "#/components/responses/Error" }
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/openapi.json": {
       "get": {
         "operationId": "openapi",
-        "tags": ["meta"],
+        "tags": [
+          "meta"
+        ],
         "summary": "This document.",
         "description": "Served from the binary, so the spec a deployment answers with is the spec that deployment was built from.",
         "responses": {
@@ -48,18 +68,24 @@
             "description": "The OpenAPI document.",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           },
-          "default": { "$ref": "#/components/responses/Error" }
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards": {
       "get": {
         "operationId": "listBoards",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Every board.",
         "responses": {
           "200": {
@@ -68,23 +94,31 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Board" }
+                  "items": {
+                    "$ref": "#/components/schemas/Board"
+                  }
                 }
               }
             }
           },
-          "default": { "$ref": "#/components/responses/Error" }
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "post": {
         "operationId": "createBoard",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Create a board.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/BoardInput" }
+              "schema": {
+                "$ref": "#/components/schemas/BoardInput"
+              }
             }
           }
         },
@@ -94,34 +128,52 @@
             "headers": {
               "Location": {
                 "description": "Where the new board can be read.",
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Board" }
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
           "409": {
             "description": "A board with that slug exists.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "get": {
         "operationId": "getBoard",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "One board, with its columns and labels.",
         "description": "The cards are a separate call, because a board with a thousand cards on it is not a response anybody wanted from a request for the column names.",
         "responses": {
@@ -129,24 +181,34 @@
             "description": "The board.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Board" }
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "patch": {
         "operationId": "renameBoard",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Change the name, the slug, or both.",
         "description": "A field left out keeps its current value. Changing the slug changes the URL of the board and of its page, and the old one stops working.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/BoardPatch" }
+              "schema": {
+                "$ref": "#/components/schemas/BoardPatch"
+              }
             }
           }
         },
@@ -155,94 +217,158 @@
             "description": "The board as it is now.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Board" }
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "409": {
             "description": "Another board already has that slug.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "delete": {
         "operationId": "deleteBoard",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Delete a board and everything on it.",
         "description": "Columns, labels, cards, comments. There is no undo and no archive for a board.",
         "responses": {
-          "204": { "description": "Gone." },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Gone."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/layout": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "put": {
         "operationId": "setLayout",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Columns side by side, or stacked as rows.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LayoutInput" }
+              "schema": {
+                "$ref": "#/components/schemas/LayoutInput"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Set." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Set."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/sla": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "put": {
         "operationId": "setSLA",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "The board's response-time promise.",
         "description": "The whole promise, every time. response_hours 0 switches it off.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/SLAInput" }
+              "schema": {
+                "$ref": "#/components/schemas/SLAInput"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Set." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Set."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/columns": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "post": {
         "operationId": "createColumn",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Add a column at the end.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ColumnInput" }
+              "schema": {
+                "$ref": "#/components/schemas/ColumnInput"
+              }
             }
           }
         },
@@ -251,70 +377,118 @@
             "description": "The new column.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Column" }
+                "schema": {
+                  "$ref": "#/components/schemas/Column"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/columns/order": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "put": {
         "operationId": "reorderColumns",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Set the order of the columns.",
         "description": "Left to right, and every column of the board exactly once. A list that misses one, repeats one, or names a column of another board is a 400, because a board with two columns in third place is not a board anybody can draw.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/OrderInput" }
+              "schema": {
+                "$ref": "#/components/schemas/OrderInput"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Reordered." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Reordered."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/columns/{column}": {
       "parameters": [
-        { "$ref": "#/components/parameters/board" },
-        { "$ref": "#/components/parameters/column" }
+        {
+          "$ref": "#/components/parameters/board"
+        },
+        {
+          "$ref": "#/components/parameters/column"
+        }
       ],
       "patch": {
         "operationId": "updateColumn",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Rename a column or change its WIP limit.",
         "description": "Absent fields keep the value they have, so a rename need not repeat the limit. Lowering the limit below the number of cards already in the column is allowed; the limit is checked when a card arrives.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/ColumnInput" }
+              "schema": {
+                "$ref": "#/components/schemas/ColumnPatch"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Updated." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Updated."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "delete": {
         "operationId": "deleteColumn",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Delete a column.",
         "description": "The cards in it are deleted with it unless move_to names another column of the same board.",
         "parameters": [
@@ -323,71 +497,101 @@
             "in": "query",
             "required": false,
             "description": "Column id on the same board that inherits the cards.",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "204": { "description": "Gone." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "409": {
-            "description": "The column that would inherit the cards is at its WIP limit.",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
-              }
-            }
+          "204": {
+            "description": "Gone."
           },
-          "default": { "$ref": "#/components/responses/Error" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/columns/{column}/cards/order": {
       "parameters": [
-        { "$ref": "#/components/parameters/board" },
-        { "$ref": "#/components/parameters/column" }
+        {
+          "$ref": "#/components/parameters/board"
+        },
+        {
+          "$ref": "#/components/parameters/column"
+        }
       ],
       "put": {
         "operationId": "reorderCards",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Set the order of one column, moving cards into it as needed.",
         "description": "This is the drag and drop the board page does. A card named in the order that currently sits in another column of the board moves here, so a one-element list moves one card. A card of this column left out of the list keeps its place behind the ones named.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/OrderInput" }
+              "schema": {
+                "$ref": "#/components/schemas/OrderInput"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Ordered." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
+          "204": {
+            "description": "Ordered."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "409": {
             "description": "The column is at its WIP limit.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/labels": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "post": {
         "operationId": "createLabel",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Create a label on the board.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LabelInput" }
+              "schema": {
+                "$ref": "#/components/schemas/LabelInput"
+              }
             }
           }
         },
@@ -396,60 +600,102 @@
             "description": "The new label.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Label" }
+                "schema": {
+                  "$ref": "#/components/schemas/Label"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/labels/{label}": {
       "parameters": [
-        { "$ref": "#/components/parameters/board" },
-        { "$ref": "#/components/parameters/label" }
+        {
+          "$ref": "#/components/parameters/board"
+        },
+        {
+          "$ref": "#/components/parameters/label"
+        }
       ],
       "patch": {
         "operationId": "updateLabel",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Rename a label or recolour it.",
-        "description": "Both fields are written, so send the name as well when changing only the colour.",
+        "description": "Absent fields keep the value they have, so a rename need not repeat the colour.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LabelInput" }
+              "schema": {
+                "$ref": "#/components/schemas/LabelPatch"
+              }
             }
           }
         },
         "responses": {
-          "204": { "description": "Updated." },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Updated."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "delete": {
         "operationId": "deleteLabel",
-        "tags": ["boards"],
+        "tags": [
+          "boards"
+        ],
         "summary": "Delete a label.",
         "description": "It comes off every card that carries it.",
         "responses": {
-          "204": { "description": "Gone." },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Gone."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/cards": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "get": {
         "operationId": "listCards",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "The cards on the board, archived ones excluded.",
         "parameters": [
           {
@@ -457,10 +703,16 @@
             "in": "query",
             "required": false,
             "description": "The same search the board page runs, syntax included. A bare word matches the title, the description or the name of a label the card carries, and every word has to match, so adding one narrows. The filters are label:<name>, which wants the name exactly; assignee:<part of the address> or assignee:none for unassigned; due: with one of none, overdue, today, week; and is:archived, which searches the archive instead of the board. An unrecognised prefix is searched for as text, because a colon in a title is ordinary: is:overdue finds cards that say that, not cards that are late. Use due:overdue for those.",
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "examples": {
-              "text": { "value": "invoice" },
-              "filters": { "value": "label:bug assignee:her@example.com due:overdue" }
+              "text": {
+                "value": "invoice"
+              },
+              "filters": {
+                "value": "label:bug assignee:her@example.com due:overdue"
+              }
             }
           }
         ],
@@ -471,25 +723,35 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Card" }
+                  "items": {
+                    "$ref": "#/components/schemas/Card"
+                  }
                 }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "post": {
         "operationId": "createCard",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "File a card.",
         "description": "column_id is optional and defaults to the first column of the board, so a script that files a card without caring where it lands does not have to read the board first.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/CardInput" }
+              "schema": {
+                "$ref": "#/components/schemas/CardInput"
+              }
             }
           }
         },
@@ -499,43 +761,67 @@
             "headers": {
               "Location": {
                 "description": "Where the new card can be read.",
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Card" }
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "409": {
             "description": "The column is at its WIP limit.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/cards/bulk": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "post": {
         "operationId": "bulkCards",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "One action over a set of cards.",
         "description": "The cards are handled one by one and there is no transaction across the set, so the answer is 200 with a report of what changed and what did not, including when nothing changed. A card someone else deleted a second ago belongs in that report rather than in a status code that hides the other forty-nine.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/BulkInput" }
+              "schema": {
+                "$ref": "#/components/schemas/BulkInput"
+              }
             }
           }
         },
@@ -544,23 +830,41 @@
             "description": "What changed, and why each of the rest did not.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/BulkResult" }
+                "schema": {
+                  "$ref": "#/components/schemas/BulkResult"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/boards/{board}/archive": {
-      "parameters": [{ "$ref": "#/components/parameters/board" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/board"
+        }
+      ],
       "get": {
         "operationId": "listArchived",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "The archived cards of the board, newest first.",
         "responses": {
           "200": {
@@ -569,45 +873,67 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Card" }
+                  "items": {
+                    "$ref": "#/components/schemas/Card"
+                  }
                 }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/cards/{card}": {
-      "parameters": [{ "$ref": "#/components/parameters/card" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/card"
+        }
+      ],
       "get": {
         "operationId": "getCard",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "One card.",
         "responses": {
           "200": {
             "description": "The card.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Card" }
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "put": {
         "operationId": "updateCard",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Replace the card's content, and move it when column_id names another column.",
         "description": "The whole card. A field left out is cleared, the same way the edit form clears a description somebody emptied. Send the subtask ids back to keep the subtasks; a subtask without an id is a new one.\n\nThe move happens first, because a WIP limit can refuse it and a refused move should leave the card as it was rather than save a new title into a card that did not go anywhere.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/CardInput" }
+              "schema": {
+                "$ref": "#/components/schemas/CardInput"
+              }
             }
           }
         },
@@ -616,48 +942,78 @@
             "description": "The card as it is now.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Card" }
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
           "409": {
             "description": "The destination column is at its WIP limit. The card is unchanged.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" }
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "delete": {
         "operationId": "deleteCard",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Delete a card and its comments.",
         "description": "For something that may be wanted back, archive it instead.",
         "responses": {
-          "204": { "description": "Gone." },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Gone."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/cards/{card}/assignee": {
-      "parameters": [{ "$ref": "#/components/parameters/card" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/card"
+        }
+      ],
       "put": {
         "operationId": "setAssignee",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Assign a card, or take it off everybody's list.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/AssigneeInput" }
+              "schema": {
+                "$ref": "#/components/schemas/AssigneeInput"
+              }
             }
           }
         },
@@ -666,26 +1022,44 @@
             "description": "The card as it is now.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Card" }
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/cards/{card}/labels/{label}/toggle": {
       "parameters": [
-        { "$ref": "#/components/parameters/card" },
-        { "$ref": "#/components/parameters/label" }
+        {
+          "$ref": "#/components/parameters/card"
+        },
+        {
+          "$ref": "#/components/parameters/label"
+        }
       ],
       "post": {
         "operationId": "toggleLabel",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Put a label on a card, or take it off.",
         "description": "Whichever the card is not. Which of the two it did is in the card that comes back. An add that answered 409 for a label the card already carries would make a script that wants a label on a card read the card first for no reason.\n\nThe label has to belong to the card's own board; one from another board is a 404.",
         "responses": {
@@ -693,48 +1067,84 @@
             "description": "The card as it is now.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Card" }
+                "schema": {
+                  "$ref": "#/components/schemas/Card"
+                }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/cards/{card}/archive": {
-      "parameters": [{ "$ref": "#/components/parameters/card" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/card"
+        }
+      ],
       "post": {
         "operationId": "archiveCard",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Take a card off the board and keep it.",
         "description": "It leaves the column and shows up under the archive, where it can be restored or deleted.",
         "responses": {
-          "204": { "description": "Archived." },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Archived."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/cards/{card}/restore": {
-      "parameters": [{ "$ref": "#/components/parameters/card" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/card"
+        }
+      ],
       "post": {
         "operationId": "restoreCard",
-        "tags": ["cards"],
+        "tags": [
+          "cards"
+        ],
         "summary": "Put an archived card back where it was.",
         "description": "It returns to the column it was archived from, and the WIP limit of that column is not consulted: a restore is the undo of an archive, and refusing it would leave the card nowhere.",
         "responses": {
-          "204": { "description": "Restored." },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Restored."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/cards/{card}/comments": {
-      "parameters": [{ "$ref": "#/components/parameters/card" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/card"
+        }
+      ],
       "get": {
         "operationId": "listComments",
-        "tags": ["comments"],
+        "tags": [
+          "comments"
+        ],
         "summary": "The thread on a card, oldest first.",
         "responses": {
           "200": {
@@ -743,25 +1153,35 @@
               "application/json": {
                 "schema": {
                   "type": "array",
-                  "items": { "$ref": "#/components/schemas/Comment" }
+                  "items": {
+                    "$ref": "#/components/schemas/Comment"
+                  }
                 }
               }
             }
           },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       },
       "post": {
         "operationId": "addComment",
-        "tags": ["comments"],
+        "tags": [
+          "comments"
+        ],
         "summary": "Write a comment.",
         "description": "The author is whoever is making the request. There is no author field: one that could be sent would let a script sign somebody else's name to a comment nobody can edit afterwards. Where the deployment has no authentication the author is empty.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/CommentInput" }
+              "schema": {
+                "$ref": "#/components/schemas/CommentInput"
+              }
             }
           }
         },
@@ -770,29 +1190,53 @@
             "description": "The new comment.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/Comment" }
+                "schema": {
+                  "$ref": "#/components/schemas/Comment"
+                }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     },
     "/api/v1/comments/{comment}": {
-      "parameters": [{ "$ref": "#/components/parameters/comment" }],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/comment"
+        }
+      ],
       "delete": {
         "operationId": "deleteComment",
-        "tags": ["comments"],
+        "tags": [
+          "comments"
+        ],
         "summary": "Remove your own comment.",
         "description": "Anybody but the author gets a 403. Where the deployment has no authentication the author is the empty address and so is the caller, which matches, and a board with no identity has one user by definition.",
         "responses": {
-          "204": { "description": "Gone." },
-          "403": { "$ref": "#/components/responses/Forbidden" },
-          "404": { "$ref": "#/components/responses/NotFound" },
-          "default": { "$ref": "#/components/responses/Error" }
+          "204": {
+            "description": "Gone."
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
         }
       }
     }
@@ -804,7 +1248,9 @@
         "in": "path",
         "required": true,
         "description": "The board's slug, the same one its page URL uses.",
-        "schema": { "type": "string" },
+        "schema": {
+          "type": "string"
+        },
         "example": "board"
       },
       "column": {
@@ -812,28 +1258,36 @@
         "in": "path",
         "required": true,
         "description": "Column id. It has to be a column of this board; one from another board is a 404.",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "label": {
         "name": "label",
         "in": "path",
         "required": true,
         "description": "Label id. It has to belong to the board in the path, or to the card's board where the path has a card.",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "card": {
         "name": "card",
         "in": "path",
         "required": true,
         "description": "Card id. A card is addressed by id and not through its board, because an id is what a caller has after creating one.",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       },
       "comment": {
         "name": "comment",
         "in": "path",
         "required": true,
         "description": "Comment id.",
-        "schema": { "type": "string" }
+        "schema": {
+          "type": "string"
+        }
       }
     },
     "responses": {
@@ -841,7 +1295,9 @@
         "description": "The request is malformed, a field is unknown, or the service refused a value. field names the offending input where there is one.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -849,7 +1305,9 @@
         "description": "\"@me\" with nobody signed in, or a comment somebody else wrote.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -857,7 +1315,9 @@
         "description": "No such board, column, label, card or comment. A column or label id that exists on another board is also this.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -865,7 +1325,9 @@
         "description": "Content-Type is set to something other than application/json.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       },
@@ -873,7 +1335,9 @@
         "description": "Every failure has this body, including a 404 for an endpoint that does not exist and a 500.",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/Error" }
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
           }
         }
       }
@@ -882,19 +1346,37 @@
       "Index": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["version", "spec", "boards"],
+        "required": [
+          "version",
+          "spec",
+          "boards"
+        ],
         "properties": {
-          "version": { "type": "string", "description": "The version this prefix serves." },
-          "spec": { "type": "string", "description": "Where this document lives." },
-          "boards": { "type": "string", "description": "Where the boards live." }
+          "version": {
+            "type": "string",
+            "description": "The version this prefix serves."
+          },
+          "spec": {
+            "type": "string",
+            "description": "Where this document lives."
+          },
+          "boards": {
+            "type": "string",
+            "description": "Where the boards live."
+          }
         }
       },
       "Error": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["error"],
+        "required": [
+          "error"
+        ],
         "properties": {
-          "error": { "type": "string", "description": "What went wrong, in one sentence." },
+          "error": {
+            "type": "string",
+            "description": "What went wrong, in one sentence."
+          },
           "field": {
             "type": "string",
             "description": "The input the service refused, when it named one. Absent otherwise."
@@ -916,36 +1398,71 @@
           "updated_at"
         ],
         "properties": {
-          "id": { "type": "string" },
-          "slug": { "type": "string", "description": "What the URLs use." },
-          "name": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "description": "What the URLs use."
+          },
+          "name": {
+            "type": "string"
+          },
           "layout": {
             "type": "string",
-            "enum": ["columns", "rows"],
+            "enum": [
+              "columns",
+              "rows"
+            ],
             "description": "How the page draws it. Read as columns where it was never set."
           },
-          "sla": { "$ref": "#/components/schemas/SLA" },
+          "sla": {
+            "$ref": "#/components/schemas/SLA"
+          },
           "columns": {
             "type": "array",
             "description": "In board order, left to right.",
-            "items": { "$ref": "#/components/schemas/Column" }
+            "items": {
+              "$ref": "#/components/schemas/Column"
+            }
           },
           "labels": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Label" }
+            "items": {
+              "$ref": "#/components/schemas/Label"
+            }
           },
-          "created_at": { "type": "string", "format": "date-time" },
-          "updated_at": { "type": "string", "format": "date-time" }
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "Column": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "name", "position", "wip_limit", "stops_clock"],
+        "required": [
+          "id",
+          "name",
+          "position",
+          "wip_limit",
+          "stops_clock"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "position": { "type": "integer", "description": "1 is the first column." },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer",
+            "description": "1 is the first column."
+          },
           "wip_limit": {
             "type": "integer",
             "description": "0 for a column that holds as many cards as you like."
@@ -960,7 +1477,13 @@
         "type": "object",
         "additionalProperties": false,
         "description": "How long a card may sit untouched during office hours.",
-        "required": ["response_hours", "days", "start", "end", "zone"],
+        "required": [
+          "response_hours",
+          "days",
+          "start",
+          "end",
+          "zone"
+        ],
         "properties": {
           "response_hours": {
             "type": "integer",
@@ -969,7 +1492,18 @@
           "days": {
             "type": "array",
             "description": "The office days, Monday first.",
-            "items": { "type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] }
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            }
           },
           "start": {
             "type": "string",
@@ -990,10 +1524,18 @@
       "Label": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "name", "color"],
+        "required": [
+          "id",
+          "name",
+          "color"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
           "color": {
             "type": "string",
             "description": "A hex colour, lower case. Empty for the default the page picks."
@@ -1019,64 +1561,132 @@
           "updated_at"
         ],
         "properties": {
-          "id": { "type": "string" },
-          "board_id": { "type": "string" },
-          "column_id": { "type": "string" },
-          "title": { "type": "string" },
-          "description": { "type": "string", "description": "Markdown, as it was written. The pages render a subset of it; see docs/adr/0010." },
-          "position": { "type": "integer", "description": "1 is the top of the column." },
-          "due_date": { "type": "string", "description": "YYYY-MM-DD, empty for none." },
-          "assignee": { "type": "string", "description": "An address, empty for nobody." },
+          "id": {
+            "type": "string"
+          },
+          "board_id": {
+            "type": "string"
+          },
+          "column_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "Markdown, as it was written. The pages render a subset of it; see docs/adr/0010."
+          },
+          "position": {
+            "type": "integer",
+            "description": "1 is the top of the column."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "YYYY-MM-DD, empty for none."
+          },
+          "assignee": {
+            "type": "string",
+            "description": "An address, empty for nobody."
+          },
           "labels": {
             "type": "array",
             "description": "Label ids. The names and colours are on the board.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "subtasks": {
             "type": "array",
-            "items": { "$ref": "#/components/schemas/Subtask" }
+            "items": {
+              "$ref": "#/components/schemas/Subtask"
+            }
           },
           "archived_at": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
             "description": "null while the card is on the board."
           },
-          "created_at": { "type": "string", "format": "date-time" },
-          "updated_at": { "type": "string", "format": "date-time" }
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "Subtask": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "title", "done", "position"],
+        "required": [
+          "id",
+          "title",
+          "done",
+          "position"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "done": { "type": "boolean" },
-          "position": { "type": "integer", "description": "1 is the first line of the checklist." }
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "position": {
+            "type": "integer",
+            "description": "1 is the first line of the checklist."
+          }
         }
       },
       "Comment": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "card_id", "author", "body", "created_at"],
+        "required": [
+          "id",
+          "card_id",
+          "author",
+          "body",
+          "created_at"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "card_id": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
+          "card_id": {
+            "type": "string"
+          },
           "author": {
             "type": "string",
             "description": "The address the identity layer supplied, empty where the deployment has no authentication."
           },
-          "body": { "type": "string" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "BoardInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
           "slug": {
             "type": "string",
             "maxLength": 64,
@@ -1086,7 +1696,11 @@
           "columns": {
             "type": "array",
             "description": "The columns to create with the board. Left out, the board gets To Do, In Progress and Done.",
-            "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
           }
         }
       },
@@ -1095,9 +1709,19 @@
         "additionalProperties": false,
         "description": "A field left out, or sent as null, keeps its current value. Sending \"\" is a value and the service refuses it.",
         "properties": {
-          "name": { "type": ["string", "null"], "minLength": 1, "maxLength": 100 },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 100
+          },
           "slug": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "maxLength": 64,
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
           }
@@ -1106,17 +1730,31 @@
       "LayoutInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["layout"],
+        "required": [
+          "layout"
+        ],
         "properties": {
-          "layout": { "type": "string", "enum": ["columns", "rows"] }
+          "layout": {
+            "type": "string",
+            "enum": [
+              "columns",
+              "rows"
+            ]
+          }
         }
       },
       "ColumnInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
           "wip_limit": {
             "type": "integer",
             "minimum": 0,
@@ -1142,34 +1780,52 @@
           "days": {
             "type": "array",
             "description": "Day names, long or short: mon or Monday.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
-          "start": { "type": "string", "description": "HH:MM, such as 08:00." },
+          "start": {
+            "type": "string",
+            "description": "HH:MM, such as 08:00."
+          },
           "end": {
             "type": "string",
             "description": "HH:MM. 00:00 is the midnight that ends the day, for a desk that never closes."
           },
-          "zone": { "type": "string", "description": "An IANA name. Empty is UTC." }
+          "zone": {
+            "type": "string",
+            "description": "An IANA name. Empty is UTC."
+          }
         }
       },
       "OrderInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["order"],
+        "required": [
+          "order"
+        ],
         "properties": {
           "order": {
             "type": "array",
             "description": "Ids, in the order they should end up in.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
       "LabelInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
-          "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
           "color": {
             "type": "string",
             "pattern": "^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
@@ -1181,14 +1837,24 @@
         "type": "object",
         "additionalProperties": false,
         "description": "The whole card, on create and on update alike. A field left out of an update clears it.",
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "properties": {
           "column_id": {
             "type": "string",
             "description": "Where the card goes. On create, left out means the first column of the board. On update it moves the card, and left out the card stays where it is."
           },
-          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "description": { "type": "string", "maxLength": 20000, "description": "Markdown." },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 20000,
+            "description": "Markdown."
+          },
           "due_date": {
             "type": "string",
             "pattern": "^(?:\\d{4}-\\d{2}-\\d{2})?$",
@@ -1202,27 +1868,38 @@
           "labels": {
             "type": "array",
             "description": "Label ids, the whole set. They have to belong to the card's board.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "subtasks": {
             "type": "array",
             "maxItems": 100,
             "description": "The whole checklist, in the order it should read. An entry with an empty title is dropped.",
-            "items": { "$ref": "#/components/schemas/SubtaskInput" }
+            "items": {
+              "$ref": "#/components/schemas/SubtaskInput"
+            }
           }
         }
       },
       "SubtaskInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["title"],
+        "required": [
+          "title"
+        ],
         "properties": {
           "id": {
             "type": "string",
             "description": "The id of a subtask that already exists, so ticking one off does not replace it with a new row. Leave it out for a new subtask."
           },
-          "title": { "type": "string", "maxLength": 200 },
-          "done": { "type": "boolean" }
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "done": {
+            "type": "boolean"
+          }
         }
       },
       "AssigneeInput": {
@@ -1239,26 +1916,42 @@
       "CommentInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["body"],
+        "required": [
+          "body"
+        ],
         "properties": {
-          "body": { "type": "string", "minLength": 1, "maxLength": 5000 }
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
         }
       },
       "BulkInput": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["action", "ids"],
+        "required": [
+          "action",
+          "ids"
+        ],
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["delete", "move", "assign", "archive"]
+            "enum": [
+              "delete",
+              "move",
+              "assign",
+              "archive"
+            ]
           },
           "ids": {
             "type": "array",
             "minItems": 1,
             "maxItems": 200,
             "description": "Card ids, all on the board in the path. A repeated id is handled once.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "target": {
             "type": "string",
@@ -1269,17 +1962,77 @@
       "BulkResult": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["changed", "failed"],
+        "required": [
+          "changed",
+          "failed"
+        ],
         "properties": {
           "changed": {
             "type": "array",
             "description": "The cards that changed.",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "failed": {
             "type": "object",
             "description": "Card id to why that card did not change, in the words a single-card request would have answered with.",
-            "additionalProperties": { "type": "string" }
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ColumnPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A field left out, or sent as null, keeps its current value.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "wip_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "0 for no limit."
+          },
+          "stops_clock": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true takes the column out of the response-time promise."
+          }
+        }
+      },
+      "LabelPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "A field left out, or sent as null, keeps its current value.",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))?$",
+            "description": "A hex colour such as #3b82f6, or empty for the default."
           }
         }
       }

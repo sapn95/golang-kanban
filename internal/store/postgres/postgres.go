@@ -73,7 +73,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return err
 }
 
-// Ping asks the database whether it is there. /readyz is the only caller.
+// Ping asks the database whether it is there, for /readyz and for the doctor.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
 // Close hands the connection pool back.

@@ -12,7 +12,7 @@ import (
 // and a full CommonMark implementation is a dependency of some 10'000 lines
 // that has to be trusted with the one string on the board a user controls
 // completely. What is supported is in docs/adr/0010; the short version is
-// paragraphs, `#` to `###`, `-`/`*`/`+` and `1.` lists, `>` quotes, fenced and
+// paragraphs, `#` to `######`, `-`/`*`/`+` and `1.` lists, `>` quotes, fenced and
 // inline code, `**bold**`, `*italic*`, `~~struck~~`, `[text](url)` and a bare
 // http(s) URL. What is not supported is rendered as the characters that were
 // typed, so nothing is ever swallowed.

@@ -80,9 +80,10 @@ func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 
 // deleteBoard removes a board and everything on it.
 //
-// The only thing in this application with no way back: a card can be archived
-// and restored, a column's cards can be moved out from under it, and a board
-// takes its cards, its columns, its labels and its comments with it. So the
+// The largest thing here with no way back. A card can be archived and restored,
+// a column's cards can be moved out from under it, and deleting a card or a
+// label is final but small; a board takes its cards, its columns, its labels
+// and its comments with it. So the
 // name has to be typed, which is the one guard that cannot be satisfied by a
 // misplaced click, and the board being deleted is named in the confirmation so
 // the name being typed is the one in front of you.

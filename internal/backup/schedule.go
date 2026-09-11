@@ -42,8 +42,9 @@ func (s *Schedule) now() time.Time {
 	return time.Now().UTC()
 }
 
-// log is the logger, defaulting to one that discards: a schedule nobody
-// configured should not write to stderr.
+// log is the logger, defaulting to the process default, which writes to
+// stderr. A schedule runs unattended, so a failure that went nowhere would be a
+// backup that quietly stopped happening.
 func (s *Schedule) log() *slog.Logger {
 	if s.Log != nil {
 		return s.Log

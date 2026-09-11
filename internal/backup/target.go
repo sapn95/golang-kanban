@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// Target is where snapshots are kept. It is deliberately three methods:
-// putting one, seeing what is there, and removing one. Retention needs the
+// Target is where snapshots are kept. Three methods do the work, plus a String
+// for the log: putting one, seeing what is there, and removing one. Retention needs the
 // second and the third, and so does the check on start that keeps a restart
 // loop from writing a snapshot per restart.
 //

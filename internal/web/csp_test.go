@@ -79,3 +79,41 @@ func TestPolicyNamesTheReportEndpoint(t *testing.T) {
 		t.Errorf("Reporting-Endpoints = %q, and report-to names nowhere without it", got)
 	}
 }
+
+// An array of empty objects is not a hundred violations, and a megabyte of them
+// is not a hundred thousand log lines.
+func TestCSPReportIgnoresEmptyEntriesAndCapsTheRest(t *testing.T) {
+	t.Run("entries with no directive are not violations", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodPost, cspReportPath, strings.NewReader(`[{},{},{"type":"deprecation"}]`))
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("answered %d, want 204", rr.Code)
+		}
+		if strings.Contains(e.log.String(), "content security policy refused something") {
+			t.Errorf("empty entries were logged as violations:\n%s", e.log.String())
+		}
+	})
+
+	t.Run("a flood is one line and twenty violations", func(t *testing.T) {
+		e := seeded(t)
+		var b strings.Builder
+		b.WriteString("[")
+		for i := range 500 {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"type":"csp-violation","body":{"effectiveDirective":"script-src","blockedURL":"x"}}`)
+		}
+		b.WriteString("]")
+		if rr := e.do(http.MethodPost, cspReportPath, strings.NewReader(b.String())); rr.Code != http.StatusNoContent {
+			t.Fatalf("answered %d, want 204", rr.Code)
+		}
+		log := e.log.String()
+		if n := strings.Count(log, "content security policy refused something"); n != maxReportsPerRequest {
+			t.Errorf("%d violations logged, want %d", n, maxReportsPerRequest)
+		}
+		if !strings.Contains(log, "more entries than a browser sends") {
+			t.Error("nothing said the sender was not a browser")
+		}
+	})
+}

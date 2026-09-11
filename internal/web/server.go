@@ -37,7 +37,7 @@ type Server struct {
 	viewers []identity.User               // empty unless a roster is configured
 	api     http.Handler                  // nil unless the JSON API is mounted
 	pages   map[string]*template.Template // full pages, keyed by name
-	parts   *template.Template            // fragments: card, card_edit
+	parts   *template.Template            // the layout and every fragment a page reuses
 }
 
 // apiPrefix is where WithAPI mounts its handler. It is api.Prefix written out:
@@ -308,5 +308,3 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 // isHTMX reports whether the request came from htmx, which is the difference
 // between answering with a fragment and redirecting to a whole page.
 func isHTMX(r *http.Request) bool { return r.Header.Get("HX-Request") != "" }
-
-// --- handlers -----------------------------------------------------------------

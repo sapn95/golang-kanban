@@ -25,7 +25,8 @@ type jsCount struct {
 	// Total is every line including blanks and comments, so the headline can
 	// be checked against something.
 	Total int
-	// Handlers is inline onclick/onsubmit attributes in the templates. They are
+	// Handlers is the inline event attributes in the templates, onclick and
+	// onsubmit and the four other kinds the pattern below lists. They are
 	// JavaScript and they are not lines, so they are their own number rather
 	// than folded into one that would then mean nothing.
 	Handlers int
