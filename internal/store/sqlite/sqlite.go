@@ -676,6 +676,72 @@ func (s *Store) ListArchivedCards(ctx context.Context, boardID model.ID) ([]mode
 		ORDER BY c.archived_at DESC, c.id`, boardID)
 }
 
+// PatchCard writes the columns the patch names and stamps the card, in one
+// transaction, without reading it first. A quick edit on the card face changes
+// one thing and must not carry back a stale copy of the rest.
+func (s *Store) PatchCard(ctx context.Context, id model.ID, p store.CardPatch, at time.Time) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		sets, args := []string{"updated_at = ?"}, []any{timeArg(at)}
+		if p.Assignee != nil {
+			sets = append(sets, "assignee = ?")
+			args = append(args, *p.Assignee)
+		}
+		if p.DueDate != nil {
+			sets = append(sets, "due_date = ?")
+			args = append(args, dueArg(*p.DueDate))
+		}
+		args = append(args, id)
+		if err := affected(tx.ExecContext(ctx,
+			`UPDATE cards SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)); err != nil {
+			return err
+		}
+		if p.Labels == nil {
+			return nil
+		}
+		// Replaced wholesale, like UpdateCard does: a card carries few enough
+		// labels that naming the difference would be more to get wrong.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM card_labels WHERE card_id = ?`, id); err != nil {
+			return err
+		}
+		for _, l := range uniqueIDs(*p.Labels) {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO card_labels (card_id, label_id) VALUES (?, ?)`, id, l); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// PatchBoard does the same for a board.
+func (s *Store) PatchBoard(ctx context.Context, id model.ID, p store.BoardPatch, at time.Time) error {
+	sets, args := []string{"updated_at = ?"}, []any{timeArg(at)}
+	add := func(col string, v any) {
+		sets = append(sets, col+" = ?")
+		args = append(args, v)
+	}
+	if p.Name != nil {
+		add("name", *p.Name)
+	}
+	if p.Slug != nil {
+		add("slug", *p.Slug)
+	}
+	if p.Layout != nil {
+		add("layout", *p.Layout)
+	}
+	if p.SLA != nil {
+		sla := *p.SLA
+		add("sla_response_hours", sla.ResponseHours)
+		add("sla_days", int(sla.Days))
+		add("sla_start", sla.Start)
+		add("sla_end", sla.End)
+		add("sla_zone", sla.Zone)
+	}
+	args = append(args, id)
+	return affected(s.db.ExecContext(ctx,
+		`UPDATE boards SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...))
+}
+
 // SetSubtaskDone flips one subtask's done column and stamps its card, in one
 // transaction and without reading the card first, so a tick cannot carry back a
 // stale copy of everything else on it.

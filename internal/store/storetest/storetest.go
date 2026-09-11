@@ -29,6 +29,7 @@ func Run(t *testing.T, newStore New) {
 		"Archive":       testArchive,
 		"Touch":         testTouch,
 		"SubtaskDone":   testSubtaskDone,
+		"Patch":         testPatch,
 		"Comments":      testComments,
 		"Layout":        testLayout,
 		"SLA":           testSLA,
@@ -1056,4 +1057,115 @@ func testSubtaskDone(t *testing.T, s store.Store) {
 		s.SetSubtaskDone(ctx, c.ID, newID("sub"), true, at), store.ErrNotFound)
 	wantErr(t, "a card that does not exist",
 		s.SetSubtaskDone(ctx, newID("card"), first, true, at), store.ErrNotFound)
+}
+
+// testPatch is the other half of what SetSubtaskDone exists for: a quick edit
+// changes one thing, so it must write one thing. The quick edits on the card
+// face are the assignee, the due date and a label, and each of them used to
+// read the whole card and write it back.
+func testPatch(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "patch", "To Do")
+	lab := &model.Label{ID: newID("label"), BoardID: b.ID, Name: "bug", Color: "#ef4444"}
+	if err := s.CreateLabel(ctx, lab); err != nil {
+		t.Fatal(err)
+	}
+	c := &model.Card{
+		ID: newID("card"), BoardID: b.ID, ColumnID: b.Columns[0].ID,
+		Title: "as written", Description: "the description",
+		Subtasks:  []model.Subtask{{ID: newID("sub"), Title: "a line", Position: 1}},
+		CreatedAt: now(), UpdatedAt: now(),
+	}
+	if err := s.CreateCard(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Somebody else is holding the card as it was before any of this.
+	stale, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Meanwhile the card is renamed and its line is ticked.
+	at := now().Add(time.Minute)
+	stale.Title = "renamed by somebody else"
+	renamed := *stale
+	renamed.Title = "renamed by somebody else"
+	renamed.UpdatedAt = at
+	if err := s.UpdateCard(ctx, &renamed); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSubtaskDone(ctx, c.ID, c.Subtasks[0].ID, true, at); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now the quick edits land, each naming its own field.
+	who := "somebody@example.com"
+	due := time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)
+	labels := []model.ID{lab.ID}
+	later := at.Add(time.Minute)
+	for _, p := range []store.CardPatch{
+		{Assignee: &who}, {DueDate: &due}, {Labels: &labels},
+	} {
+		if err := s.PatchCard(ctx, c.ID, p, later); err != nil {
+			t.Fatalf("%+v: %v", p, err)
+		}
+	}
+
+	got, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "renamed by somebody else" {
+		t.Errorf("Title = %q; a quick edit put the old one back", got.Title)
+	}
+	if len(got.Subtasks) != 1 || !got.Subtasks[0].Done {
+		t.Errorf("subtasks = %+v; a quick edit unticked a line", got.Subtasks)
+	}
+	if got.Description != "the description" {
+		t.Errorf("Description = %q", got.Description)
+	}
+	if got.Assignee != who || !got.DueDate.Equal(due) || len(got.Labels) != 1 {
+		t.Errorf("the quick edits did not land: %+v", got)
+	}
+	if !got.UpdatedAt.Equal(later) {
+		t.Errorf("UpdatedAt = %v, want %v", got.UpdatedAt, later)
+	}
+
+	// An empty value is a value: it is how a card is unassigned and how a due
+	// date is taken off.
+	none, zero := "", time.Time{}
+	if err := s.PatchCard(ctx, c.ID, store.CardPatch{Assignee: &none, DueDate: &zero}, later); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.GetCard(ctx, c.ID); got.Assignee != "" || !got.DueDate.IsZero() {
+		t.Errorf("clearing did nothing: assignee %q due %v", got.Assignee, got.DueDate)
+	}
+
+	wantErr(t, "a card that is not there", s.PatchCard(ctx, newID("card"), store.CardPatch{Assignee: &who}, later), store.ErrNotFound)
+
+	// And the same for a board: a layout switch must not put back a rename.
+	name := "Renamed board"
+	if err := s.PatchBoard(ctx, b.ID, store.BoardPatch{Name: &name}, later); err != nil {
+		t.Fatal(err)
+	}
+	rows := model.LayoutRows
+	if err := s.PatchBoard(ctx, b.ID, store.BoardPatch{Layout: &rows}, later); err != nil {
+		t.Fatal(err)
+	}
+	gotBoard, err := s.GetBoardByID(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotBoard.Name != name {
+		t.Errorf("Name = %q; the layout switch put the old name back", gotBoard.Name)
+	}
+	if gotBoard.Layout != model.LayoutRows {
+		t.Errorf("Layout = %q", gotBoard.Layout)
+	}
+	if len(gotBoard.Columns) != 1 {
+		t.Errorf("%d columns after two patches, want 1", len(gotBoard.Columns))
+	}
+	wantErr(t, "a board that is not there",
+		s.PatchBoard(ctx, newID("board"), store.BoardPatch{Name: &name}, later), store.ErrNotFound)
 }

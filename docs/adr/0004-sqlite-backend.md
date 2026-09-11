@@ -1,6 +1,6 @@
 # 0004 — SQLite on a pure-Go driver
 
-Status: proposed
+Status: accepted
 Date: 2026-09-06
 
 ## Context

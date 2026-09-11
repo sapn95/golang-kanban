@@ -361,9 +361,9 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, s.parts, "card", http.StatusOK, v)
 }
 
-// setCardAssignee is the quick edit on the card face. It sends one field, so
-// two people reassigning cards on the same board at the same time cannot
-// overwrite each other's titles the way the full form would.
+// setCardAssignee is the quick edit on the card face. It sends one field and
+// the service writes one field, so two people working on the same card at the
+// same time cannot overwrite each other's titles the way the full form would.
 func (s *Server) setCardAssignee(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		plain(w, http.StatusBadRequest, "bad form")

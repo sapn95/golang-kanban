@@ -378,6 +378,58 @@ func (s *Store) ListArchivedCards(_ context.Context, boardID model.ID) ([]model.
 	return out, nil
 }
 
+// PatchCard writes the fields the patch names and stamps the card, leaving
+// everything else as it is, so a quick edit cannot carry back a stale copy of
+// the rest of the card.
+func (s *Store) PatchCard(_ context.Context, id model.ID, p store.CardPatch, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.cards[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if p.Assignee != nil {
+		c.Assignee = *p.Assignee
+	}
+	if p.DueDate != nil {
+		c.DueDate = *p.DueDate
+	}
+	if p.Labels != nil {
+		// Copied, or the caller's slice and the stored one are the same array
+		// and a later append rewrites what is kept.
+		c.Labels = append([]model.ID(nil), (*p.Labels)...)
+	}
+	c.UpdatedAt = at.UTC()
+	return nil
+}
+
+// PatchBoard does the same for a board.
+func (s *Store) PatchBoard(_ context.Context, id model.ID, p store.BoardPatch, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.boards[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if p.Slug != nil && *p.Slug != b.Slug && s.boardBySlug(*p.Slug) != nil {
+		return store.ErrConflict
+	}
+	if p.Name != nil {
+		b.Name = *p.Name
+	}
+	if p.Slug != nil {
+		b.Slug = *p.Slug
+	}
+	if p.Layout != nil {
+		b.Layout = *p.Layout
+	}
+	if p.SLA != nil {
+		b.SLA = *p.SLA
+	}
+	b.UpdatedAt = at.UTC()
+	return nil
+}
+
 // SetSubtaskDone ticks one checklist line and stamps the card, touching nothing
 // else, so two people ticking different lines cannot undo each other.
 func (s *Store) SetSubtaskDone(_ context.Context, cardID, subtaskID model.ID, done bool, at time.Time) error {

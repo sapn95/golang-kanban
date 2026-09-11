@@ -97,12 +97,12 @@ func (s *Server) getCard(w http.ResponseWriter, r *http.Request) {
 }
 
 // updateCard replaces the card's content, and moves it first when the request
-// names another column.
+// names a different column.
 //
-// The order matters and it is the order the edit form uses. A move is a reorder
-// of the destination column and a WIP limit can refuse it, so doing it first
-// means a refused move leaves the card as it was rather than saving a new title
-// into a card that did not go anywhere.
+// The order is: check, move, write. The move has to be before the write because
+// the store's UpdateCard never touches a column, so a move is a reorder and a
+// reorder is what a WIP limit refuses; checking has to be before both, or a
+// refused title leaves the card in the column it was moved to.
 func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	id := model.ID(r.PathValue("card"))
 	var in cardInput
@@ -114,6 +114,16 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Assignee = assignee
+
+	// Checked before anything is written, for the same reason the page handler
+	// does it: the move goes first, so a column that went through followed by a
+	// title that is refused answered 400 with the card already somewhere else.
+	// Round five fixed that in internal/web and did not reach here.
+	svcIn := in.toService()
+	if err := s.svc.CheckCardInput(svcIn); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 
 	if want := model.ID(in.ColumnID); want != "" {
 		current, err := s.svc.Card(r.Context(), id)
@@ -128,7 +138,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	c, err := s.svc.UpdateCard(r.Context(), id, in.toService())
+	c, err := s.svc.UpdateCard(r.Context(), id, svcIn)
 	if err != nil {
 		s.fail(w, r, err)
 		return

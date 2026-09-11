@@ -131,6 +131,18 @@ func (s *Schedule) Once(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("export: %w", err)
 	}
 	snap.Build = s.Build
+	// Checked against the same rules an import applies, before it is written.
+	//
+	// Export reads the boards, then walks them reading cards: a column added
+	// while it is working through an earlier board comes back on a card whose
+	// board was listed without it, and an import refuses that snapshot. The
+	// window is one export, and it is wider the more boards there are. Writing
+	// it anyway and logging "backup written" is the failure that is discovered
+	// on the day it is needed, so a snapshot that cannot be read back is an
+	// error here instead. The next run takes another one.
+	if _, err := Check(snap); err != nil {
+		return "", fmt.Errorf("snapshot would not import: %w", err)
+	}
 	body, err := Bytes(snap)
 	if err != nil {
 		return "", fmt.Errorf("encode: %w", err)
