@@ -1,5 +1,16 @@
 {{define "content"}}
-<form method="get" action="/b/{{.Board.Slug}}" class="flex items-center gap-2 mb-6" role="search">
+<!-- On a phone the search box was the first thing on the page and a card was
+     the fourth: app bar, search, a row of buttons, the column strip, and only
+     then something to read. It folds now, and unfolds already open when a
+     search is what put you here. Above sm: it is the row it always was.
+     details/summary, so folding it costs no script. -->
+<details class="sm:hidden mb-2"{{if .Searching}} open{{end}}>
+  <summary class="unfold inline-flex items-center gap-2 h-11 px-3 rounded-lg cursor-pointer
+                  border border-slate-300 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300">
+    <i class="bi bi-search"></i>{{if .Searching}}<span class="font-mono text-xs">{{.Query}}</span>{{else}}Search{{end}}
+  </summary>
+</details>
+<form method="get" action="/b/{{.Board.Slug}}" class="{{if not .Searching}}hidden sm:flex{{else}}flex{{end}} items-center gap-2 mb-6" role="search">
   <div class="relative flex-1">
     <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
     <!-- A label as well as the placeholder: a placeholder is gone the moment
@@ -37,20 +48,20 @@
      three that are about looking at the board are quiet and icon-first; the one
      that adds work is the only filled button, and on a phone it leaves this row
      for the corner where a thumb is. -->
-<div class="flex items-center gap-2 mb-5">
+<div class="flex items-center gap-2 mb-3 sm:mb-5">
   <a href="/b/{{.Board.Slug}}/archive" title="Archive"
-     class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">
+     class="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">
     <i class="bi bi-archive"></i><span class="hidden sm:inline">Archive</span>
   </a>
   <a href="/b/{{.Board.Slug}}/settings" title="Settings"
-     class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">
+     class="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">
     <i class="bi bi-sliders"></i><span class="hidden sm:inline">Settings</span>
   </a>
   <!-- The button says what it will do, not what is on screen. -->
   <form method="post" action="/b/{{.Board.Slug}}/layout">
     <input type="hidden" name="layout" value="{{if .Rows}}columns{{else}}rows{{end}}">
     <button type="submit"
-      class="inline-flex items-center gap-2 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
+      class="inline-flex items-center justify-center gap-2 h-11 min-w-11 px-3 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
       title="{{if .Rows}}Draw the columns side by side{{else}}Stack the columns as rows{{end}}">
       <i class="bi bi-{{if .Rows}}layout-three-columns{{else}}list-task{{end}}"></i><span class="hidden sm:inline">{{if .Rows}}Columns{{else}}Rows{{end}}</span>
     </button>

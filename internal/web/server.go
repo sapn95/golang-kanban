@@ -119,6 +119,7 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	mux.HandleFunc("POST /cards/{id}/assignee", s.setCardAssignee)
 	mux.HandleFunc("POST /cards/{id}/due", s.setCardDue)
 	mux.HandleFunc("POST /cards/{id}/labels/{label}/toggle", s.toggleCardLabel)
+	mux.HandleFunc("POST /cards/{id}/subtasks/{subtask}/toggle", s.toggleSubtask)
 	mux.HandleFunc("POST /cards/{id}/delete", s.deleteCard)
 	mux.HandleFunc("POST /cards/{id}/archive", s.archiveCard)
 	mux.HandleFunc("POST /cards/{id}/restore", s.restoreCard)
@@ -1311,6 +1312,22 @@ func (s *Server) setCardDue(w http.ResponseWriter, r *http.Request) {
 // toggleCardLabel puts one of the board's labels on a card, or takes it off.
 // Which of the two it is comes from the card, not from the request: a button
 // that said "add" would be wrong the moment someone else clicked first.
+// toggleSubtask ticks one checklist line from the board, without the edit form.
+//
+// The checklist was readable on the card and editable only inside a modal, which
+// on a phone is a tap, a wait, a scroll, a tick, a save and a close to record
+// something that takes a second to do. It is the same shape as the label chip
+// beside it: post, and take the card back.
+func (s *Server) toggleSubtask(w http.ResponseWriter, r *http.Request) {
+	c, err := s.svc.ToggleSubtask(r.Context(),
+		model.ID(r.PathValue("id")), model.ID(r.PathValue("subtask")))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.quickEdited(w, r, c)
+}
+
 func (s *Server) toggleCardLabel(w http.ResponseWriter, r *http.Request) {
 	c, err := s.svc.ToggleCardLabel(r.Context(),
 		model.ID(r.PathValue("id")), model.ID(r.PathValue("label")))
