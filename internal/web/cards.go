@@ -57,6 +57,17 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/b/"+b.Slug, http.StatusSeeOther)
 		return
 	}
+	// The Add Card button is on the board page whether or not a search is
+	// showing, and a search replaces the columns with a grid of hits. So the
+	// list this card belongs in is not on the screen, and neither are the
+	// headers: retargeting at it would drop the card into nothing and the
+	// person who typed it would watch it vanish. A refresh puts them back on
+	// the board with the card on it.
+	if !hasColumnHeads(r) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	w.Header().Set("HX-Retarget", "#cards-"+string(c.ColumnID))
 	w.Header().Set("HX-Reswap", "beforeend")
 	// A card that was created a microsecond ago has no comments; counting them
@@ -291,11 +302,19 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	}
 	id := model.ID(r.PathValue("id"))
 
-	// The column moves before the fields are written. The store's UpdateCard
-	// deliberately never touches ColumnID, so a move is a reorder, and a
-	// reorder can be refused by a WIP limit. Doing it first means a refused
-	// move leaves the card exactly as it was, rather than saving the new
-	// title into a card that did not go anywhere.
+	// Checked before anything is written. The column moves first, because the
+	// store's UpdateCard deliberately never touches ColumnID, so a move is a
+	// reorder and a reorder is what a WIP limit refuses; doing it first means a
+	// refused move leaves the card exactly as it was. Which left the other
+	// order wrong: a move that worked followed by a title that is refused
+	// answered 400 with the card already in the other column. Both writes hang
+	// on this one answer now.
+	in := cardInput(r)
+	if err := s.svc.CheckCardInput(in); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+
 	moved := false
 	if want := model.ID(r.FormValue("column")); want != "" {
 		cur, err := s.svc.Card(r.Context(), id)
@@ -312,7 +331,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	c, err := s.svc.UpdateCard(r.Context(), id, cardInput(r))
+	c, err := s.svc.UpdateCard(r.Context(), id, in)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -454,26 +473,36 @@ func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if fromArchive(r) {
+	if !hasColumnHeads(r) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)
 }
 
-// fromArchive reports whether a write came from the archive page rather than
-// from the board. htmx sends the current URL, which is the only thing that
-// tells the two apart: both post to the same route from the same kind of row.
+// hasColumnHeads reports whether the page a write came from is drawing the
+// board's column headers, and so has somewhere to put them when they come back
+// out of band.
 //
-// The path, not the whole URL. The archive is searchable, so the page a delete
-// comes from is as often /b/x/archive?q=bug as it is /b/x/archive, and matching
-// the tail of the string missed every one that had been searched.
-func fromArchive(r *http.Request) bool {
+// Two pages do not. The archive is a flat list with no columns, and a board
+// showing search results replaces the columns with a grid of hits. Both post to
+// the same routes from the same kind of row, so the only thing that tells them
+// apart is the URL htmx sends along.
+//
+// Sending a header to a page that has no element for it is one console error
+// per column, on every delete. Harmless, and the kind of noise that trains
+// somebody to stop reading the console.
+func hasColumnHeads(r *http.Request) bool {
 	u, err := url.Parse(r.Header.Get("HX-Current-URL"))
 	if err != nil {
+		// No URL to judge by: send them. A missing target is noise, and a
+		// header that never arrived is a count that stays wrong.
+		return true
+	}
+	if strings.HasSuffix(strings.TrimSuffix(u.Path, "/"), "/archive") {
 		return false
 	}
-	return strings.HasSuffix(strings.TrimSuffix(u.Path, "/"), "/archive")
+	return u.Query().Get("q") == ""
 }
 
 // archiveCard takes a card off the board. The card row is removed from the
@@ -487,6 +516,10 @@ func (s *Server) archiveCard(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.svc.ArchiveCard(r.Context(), c.ID); err != nil {
 		s.fail(w, r, err)
+		return
+	}
+	if !hasColumnHeads(r) {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	s.renderAll(w, s.parts, http.StatusOK, s.columnHeads(r.Context(), b)...)

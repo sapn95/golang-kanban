@@ -512,9 +512,13 @@ func (s *Server) columnHeads(ctx context.Context, b *model.Board) []fragment {
 	for _, c := range cards {
 		n[c.ColumnID]++
 	}
-	frags := make([]fragment, 0, len(b.Columns))
+	// The header and the tab both carry the count, so both come back. The tab
+	// strip is what a phone navigates by and it used to keep whatever number
+	// the page was loaded with, disagreeing with the header until a reload.
+	frags := make([]fragment, 0, 2*len(b.Columns))
 	for _, col := range b.Columns {
-		frags = append(frags, fragment{"columnhead", columnHead(col, n[col.ID], true)})
+		v := columnHead(col, n[col.ID], true)
+		frags = append(frags, fragment{"columnhead", v}, fragment{"columntab", v})
 	}
 	return frags
 }

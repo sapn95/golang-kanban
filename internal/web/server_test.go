@@ -3250,3 +3250,84 @@ func TestArchiveDetectionSurvivesASearch(t *testing.T) {
 		}
 	}
 }
+
+// The board page in search mode has no columns and no column headers, but it
+// does have the Add Card button and the row actions. Answering those with
+// fragments aimed at columns sends them nowhere.
+func TestSearchPageGetsNoColumnFragments(t *testing.T) {
+	const searching = "https://board.example/b/demo?q=first"
+
+	t.Run("a card added from a search comes back as a refresh", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodPost, "/b/demo/cards",
+			form("title", "typed while searching", "column", string(e.board.Columns[0].ID)),
+			"HX-Request", "true", "HX-Current-URL", searching)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("got %d, want 204", rr.Code)
+		}
+		if rr.Header().Get("HX-Refresh") != "true" {
+			t.Error("the page was not asked to reload, so the card went nowhere")
+		}
+		if rr.Header().Get("HX-Retarget") != "" {
+			t.Errorf("HX-Retarget = %q, at a list the search page does not draw", rr.Header().Get("HX-Retarget"))
+		}
+		// And the card really was made.
+		cards, err := e.svc.Cards(context.Background(), e.board.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		for _, c := range cards {
+			found = found || c.Title == "typed while searching"
+		}
+		if !found {
+			t.Error("the card was not created")
+		}
+	})
+
+	for _, action := range []string{"delete", "archive"} {
+		t.Run(action+" from a search sends no headers", func(t *testing.T) {
+			e := seeded(t)
+			rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/"+action, nil,
+				"HX-Request", "true", "HX-Current-URL", searching)
+			if strings.Contains(rr.Body.String(), "hx-swap-oob") {
+				t.Errorf("the search page was sent column headers it has nowhere to put:\n%s", rr.Body.String())
+			}
+		})
+	}
+
+	// From the board proper they still come, because that is what keeps the
+	// counts and the WIP warnings right.
+	t.Run("the board itself still gets them", func(t *testing.T) {
+		e := seeded(t)
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/archive", nil,
+			"HX-Request", "true", "HX-Current-URL", "https://board.example/b/demo")
+		if !strings.Contains(rr.Body.String(), "hx-swap-oob") {
+			t.Error("the board did not get its column headers back")
+		}
+	})
+}
+
+// The column strip a phone navigates by carries the same count as the header,
+// so it comes back with it. It used to keep the number the page was loaded with
+// and disagree with the header until a reload.
+func TestColumnTabsFollowTheCount(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	if !strings.Contains(body, `id="coltab-`) {
+		t.Fatal("the board draws no column tabs")
+	}
+
+	rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/archive", nil,
+		"HX-Request", "true", "HX-Current-URL", "https://board.example/b/demo")
+	out := rr.Body.String()
+	for _, want := range []string{`id="colhead-`, `id="coltab-`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("archiving a card answered without %s:\n%s", want, out)
+		}
+	}
+	if n := strings.Count(out, `hx-swap-oob="true"`); n != 2*len(e.board.Columns) {
+		t.Errorf("%d out-of-band fragments for %d columns, want two each",
+			n, len(e.board.Columns))
+	}
+}

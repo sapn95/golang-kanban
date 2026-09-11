@@ -365,44 +365,51 @@ type CardInput struct {
 // applyInput copies a form onto a card, checking every field as it goes. Shared
 // by create and update so a card cannot be made in a state an edit would refuse.
 func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
-	title := strings.TrimSpace(in.Title)
-	if err := checkText("title", title, MaxTitle, true); err != nil {
-		return err
-	}
-	if err := checkText("description", in.Description, MaxDescription, false); err != nil {
-		return err
-	}
-	if len(in.Subtasks) > MaxSubtasks {
-		return invalid("subtasks", fmt.Sprintf("at most %d subtasks", MaxSubtasks))
-	}
-	assignee := strings.TrimSpace(in.Assignee)
-	if err := checkText("assignee", assignee, MaxAssignee, false); err != nil {
+	if err := checkCardFields(in); err != nil {
 		return err
 	}
 	due := time.Time{}
 	if in.DueDate != "" {
-		d, err := time.Parse("2006-01-02", in.DueDate)
-		if err != nil {
-			return invalid("due_date", "must be YYYY-MM-DD")
-		}
-		due = d
+		due, _ = time.Parse("2006-01-02", in.DueDate) // checked above
+	}
+	// What the card already has, so a line can keep its id and nothing can
+	// invent one. On a card being created this is empty, which is right: there
+	// is no line to keep an id from.
+	had := map[model.ID]bool{}
+	for _, st := range c.Subtasks {
+		had[st.ID] = true
 	}
 	var subtasks []model.Subtask
+	seen := map[model.ID]bool{}
 	for _, st := range in.Subtasks {
 		st.Title = strings.TrimSpace(st.Title)
 		if st.Title == "" {
 			continue
 		}
-		if err := checkText("subtask", st.Title, MaxTitle, true); err != nil {
-			return err
-		}
 		if st.ID == "" {
 			st.ID = k.newID()
+		} else if !had[st.ID] {
+			// An id this card does not already have. A checklist line keeps its
+			// id across a save and gets one when it is new; anything else is an
+			// id somebody chose, and the line format cannot carry every choice:
+			// "0" and "1" are the done flag and "|" is the separator, so such a
+			// line comes back from the next save as a different subtask.
+			return invalid("subtask", "id is not one of this card's")
 		}
+		if seen[st.ID] {
+			// Two lines with one id: the SQL backends refuse it on the primary
+			// key and the in-memory one does not, so a checklist that behaved
+			// differently per backend could be made through the API. Ticking
+			// either would tick the first.
+			return invalid("subtask", "two subtasks share an id")
+		}
+		seen[st.ID] = true
 		st.Position = len(subtasks) + 1
 		subtasks = append(subtasks, st)
 	}
-	c.Title, c.Description, c.DueDate, c.Assignee = title, strings.ReplaceAll(in.Description, "\r\n", "\n"), due, assignee
+	c.Title = strings.TrimSpace(in.Title)
+	c.Description = strings.ReplaceAll(in.Description, "\r\n", "\n")
+	c.DueDate, c.Assignee = due, strings.TrimSpace(in.Assignee)
 	c.Labels = append([]model.ID(nil), in.Labels...)
 	c.Subtasks = subtasks
 	return nil
@@ -461,6 +468,61 @@ func (k *Kanban) CreateCard(ctx context.Context, boardID, columnID model.ID, in 
 		return nil, err
 	}
 	return c, nil
+}
+
+// CheckCardInput reports whether an input's own fields would be accepted,
+// without writing anything and without needing the card.
+//
+// It exists because moving a card and saving its fields are two writes, and the
+// move has to go first: the store's UpdateCard never touches a column, so a move
+// is a reorder, and a reorder is what a WIP limit refuses. A refused move must
+// not leave a new title on a card that did not go anywhere.
+//
+// Which left the other order wrong: a move that worked followed by a title that
+// is refused answered 400 with the card already somewhere else. Checking first
+// makes both writes conditional on the same answer.
+//
+// What it cannot check is the one thing that needs the card: whether a subtask
+// id is one the card already has. That is still decided in applyInput, where
+// the card is in hand.
+func (k *Kanban) CheckCardInput(in CardInput) error { return checkCardFields(in) }
+
+// checkCardFields validates everything about an input that does not depend on
+// the card it is going onto.
+func checkCardFields(in CardInput) error {
+	if err := checkText("title", strings.TrimSpace(in.Title), MaxTitle, true); err != nil {
+		return err
+	}
+	if err := checkText("description", in.Description, MaxDescription, false); err != nil {
+		return err
+	}
+	if len(in.Subtasks) > MaxSubtasks {
+		return invalid("subtasks", fmt.Sprintf("at most %d subtasks", MaxSubtasks))
+	}
+	if err := checkText("assignee", strings.TrimSpace(in.Assignee), MaxAssignee, false); err != nil {
+		return err
+	}
+	if in.DueDate != "" {
+		if _, err := time.Parse("2006-01-02", in.DueDate); err != nil {
+			return invalid("due_date", "must be YYYY-MM-DD")
+		}
+	}
+	for _, st := range in.Subtasks {
+		title := strings.TrimSpace(st.Title)
+		if title == "" {
+			continue
+		}
+		if err := checkText("subtask", title, MaxTitle, true); err != nil {
+			return err
+		}
+		// A title is one line. The board posts its checklist as one line per
+		// subtask, so a newline the JSON API let through would come back from
+		// the edit form as two subtasks, or as one with the break eaten.
+		if strings.ContainsAny(title, "\n\r") {
+			return invalid("subtask", "must be one line")
+		}
+	}
+	return nil
 }
 
 // UpdateCard replaces a card's content; column and position are untouched.

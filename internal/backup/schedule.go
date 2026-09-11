@@ -21,7 +21,10 @@ import (
 type Schedule struct {
 	Store  store.Store
 	Target Target
-	// Every is the gap between snapshots. Zero disables the schedule.
+	// Every is the gap between snapshots. It has to be positive: Run refuses a
+	// schedule without one rather than sitting there taking no snapshots, which
+	// is the failure that looks like it is working. Turning backups off happens
+	// before a Schedule is built at all, by leaving BACKUP_INTERVAL at zero.
 	Every time.Duration
 	// Keep is how many snapshots the target holds; older ones are deleted after
 	// a successful write. Zero or less keeps every snapshot.
