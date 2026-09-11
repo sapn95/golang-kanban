@@ -37,19 +37,36 @@ type User struct {
 	Email string
 	// Name is a display name when the provider supplies one, else empty.
 	Name string
+	// Service names a machine credential when the caller is one rather than
+	// somebody. A Cloudflare Access service token proves possession of a
+	// secret and establishes no person: the assertion arrives with the token's
+	// name in it and no address anywhere.
+	Service string
 }
 
-// Anonymous reports whether the user is unidentified.
-func (u User) Anonymous() bool { return u.Email == "" }
+// Anonymous reports whether the request carries no identity at all.
+//
+// A service token is not anonymous. Something proved which caller it was; it
+// simply was not a person, which is a different question and has its own
+// answer below.
+func (u User) Anonymous() bool { return u.Email == "" && u.Service == "" }
+
+// Person reports whether there is somebody behind the request.
+//
+// Anything that writes a name onto a card asks this rather than Anonymous: a
+// machine has no address to put there, and "@me" has nobody to mean.
+func (u User) Person() bool { return u.Email != "" }
 
 // Display is what to show in the interface: the name the provider gave, else
-// a name read out of the address, else "anonymous".
+// a name read out of the address, else the machine's name, else "anonymous".
 func (u User) Display() string {
 	switch {
 	case u.Name != "":
 		return u.Name
 	case u.Email != "":
 		return nameFromAddress(u.Email)
+	case u.Service != "":
+		return u.Service
 	default:
 		return "anonymous"
 	}

@@ -252,8 +252,11 @@ curl -s "$api/boards/$b/cards?q=label:bug" | jq length
 curl -s $api/openapi.json                          # the whole contract
 ```
 
-There are no tokens: the API grants what the board grants, so whatever protects
-the pages protects it too. `@me` as an assignee resolves to whoever the request
+There are no tokens of its own: the API grants what the board grants, so
+whatever protects the pages protects it too. Where that is Cloudflare Access, a
+service token is a caller with no address: it gets through a board that requires
+an identity, and `@me` is a `403` for it, because there is nobody for `@me` to
+mean. `@me` as an assignee resolves to whoever the request
 is signed in as and is a `403` when nobody is. An unknown field in a body is a
 `400` that names the field, because a script that says `titel` should hear
 about it before the card exists.

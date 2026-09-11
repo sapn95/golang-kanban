@@ -140,7 +140,8 @@ func TestVerifyRejects(t *testing.T) {
 		{"not yet valid", s.token(t, "RS256", map[string]any{"nbf": time.Now().Add(time.Hour).Unix()}), "not valid yet"},
 		{"audience of another app", s.token(t, "RS256", map[string]any{"aud": "someone-elses-app"}), "different application"},
 		{"wrong issuer", s.token(t, "RS256", map[string]any{"iss": "https://evil.example"}), "unexpected issuer"},
-		{"no email claim", s.token(t, "RS256", map[string]any{"email": nil}), "no email"},
+		{"neither an email nor a common name", s.token(t, "RS256", map[string]any{"email": nil}),
+			"neither an email nor a common name"},
 		{"algorithm none", s.token(t, "none", nil), "unexpected algorithm"},
 		{"HMAC substituted", s.token(t, "HS256", nil), "unexpected algorithm"},
 		{"signed by another key", other.token(t, "RS256", nil), "does not verify"},
@@ -451,4 +452,59 @@ func TestMiddlewareRefusesAnonymousWhenRequired(t *testing.T) {
 			t.Errorf("status = %d, want the default to serve anonymously", rec.Code)
 		}
 	})
+}
+
+// A Cloudflare service token is signed the same way a person's assertion is,
+// and carries the token's name in common_name with no address anywhere. Reading
+// that as no identity made every call with one anonymous, which was invisible
+// until Required started refusing anonymous calls.
+func TestAServiceTokenIsACallerWithNoAddress(t *testing.T) {
+	s := newSigner(t, "k1")
+	v := verifierFor(certServer(t, nil, s))
+	// The payload Cloudflare documents for a service token: no email claim at
+	// all rather than an empty one, no nbf and no identity_nonce, sub blank,
+	// and the token's client id in common_name.
+	machine := s.token(t, "RS256", map[string]any{
+		"email": nil, "nbf": nil,
+		"common_name": "88fe4a3c.access", "sub": "", "type": "app",
+		"iat": time.Now().Add(-time.Minute).Unix(),
+	})
+
+	u, err := v.Verify(context.Background(), machine)
+	if err != nil {
+		t.Fatalf("Verify on a service token: %v", err)
+	}
+	if u.Service != "88fe4a3c.access" {
+		t.Errorf("Service = %q, want the token's common name", u.Service)
+	}
+	if u.Email != "" {
+		t.Errorf("Email = %q, want none: a machine has no address", u.Email)
+	}
+	if u.Anonymous() {
+		t.Error("a service token reads as anonymous, so a board that refuses anonymous refuses it")
+	}
+	if u.Person() {
+		t.Error("a service token reads as a person, so @me would write an empty address onto a card")
+	}
+	if got := u.Display(); got != "88fe4a3c.access" {
+		t.Errorf("Display() = %q, want the token's name", got)
+	}
+
+	// And it gets through a board that requires an identity.
+	served := false
+	h := identity.Middleware(identity.Config{Mode: identity.ModeAccess, Verifier: v, Required: true})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			served = true
+			if got := identity.FromContext(r.Context()).Service; got != "88fe4a3c.access" {
+				t.Errorf("the handler sees Service = %q", got)
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+	req := httptest.NewRequest(http.MethodGet, "/b/demo", nil)
+	req.Header.Set(identity.AccessAssertionHeader, machine)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !served {
+		t.Errorf("status = %d, served = %v, want the service token through", rec.Code, served)
+	}
 }

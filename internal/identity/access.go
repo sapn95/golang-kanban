@@ -191,9 +191,16 @@ type jwtHeader struct {
 type accessClaims struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
-	Iss   string `json:"iss"`
-	Exp   int64  `json:"exp"`
-	Nbf   int64  `json:"nbf"`
+	// CommonName is the service token's client id, and the only thing in the
+	// assertion that says which machine is calling. Cloudflare documents the
+	// two payloads side by side: a person's carries email, nbf, identity_nonce
+	// and a real sub, a token's carries none of those, blanks sub and adds
+	// this. Absence of an email is what tells them apart, which is also how
+	// Cloudflare's own Pages plugin does it.
+	CommonName string `json:"common_name"`
+	Iss        string `json:"iss"`
+	Exp        int64  `json:"exp"`
+	Nbf        int64  `json:"nbf"`
 	// aud is a string in some tokens and an array in others.
 	Aud audience `json:"aud"`
 }
@@ -286,7 +293,15 @@ func (v *AccessVerifier) Verify(ctx context.Context, token string) (User, error)
 		return User{}, fmt.Errorf("identity: unexpected issuer %q", c.Iss)
 	}
 	if c.Email == "" {
-		return User{}, errors.New("identity: token carries no email claim")
+		// Cloudflare signs the same kind of assertion for a service token as
+		// for a person, with the token's name in common_name and no address
+		// anywhere in it. Reading that as "no identity" made every call with a
+		// service token anonymous, which was invisible until AUTH_REQUIRED
+		// started refusing anonymous calls and turned it into a 403.
+		if c.CommonName == "" {
+			return User{}, errors.New("identity: token carries neither an email nor a common name")
+		}
+		return User{Service: c.CommonName}, nil
 	}
 	return User{Email: c.Email, Name: c.Name}, nil
 }
