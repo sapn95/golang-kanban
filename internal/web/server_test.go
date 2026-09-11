@@ -2779,3 +2779,52 @@ func TestGettingToAnotherBoard(t *testing.T) {
 		}
 	})
 }
+
+// A service token is a caller and not a person: it gets through a board that
+// requires an identity, and "@me" still has nobody to mean.
+func TestAMachineCallerHasNoAtMe(t *testing.T) {
+	e := seeded(t)
+	machine := func(method, path string, body io.Reader) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, body)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		req = req.WithContext(identity.NewContext(req.Context(),
+			identity.User{Service: "88fe4a3c.access"}))
+		rr := httptest.NewRecorder()
+		e.h.ServeHTTP(rr, req)
+		return rr
+	}
+
+	t.Run("it can read the board", func(t *testing.T) {
+		want(t, machine(http.MethodGet, "/b/demo", nil), http.StatusOK, "First card")
+	})
+
+	t.Run("assigning to @me is refused", func(t *testing.T) {
+		rr := machine(http.MethodPost, "/cards/"+string(e.card.ID)+"/assignee", form("assignee", "@me"))
+		want(t, rr, http.StatusForbidden, "not signed in")
+		c, _ := e.svc.Card(context.Background(), e.card.ID)
+		if c.Assignee != "" {
+			t.Errorf("assignee = %q, want it left alone", c.Assignee)
+		}
+	})
+
+	t.Run("and so is a bulk assign to @me", func(t *testing.T) {
+		body := url.Values{"action": {"assign"}, "target": {"@me"}, "ids": {string(e.card.ID)}}
+		want(t, machine(http.MethodPost, "/b/demo/cards/bulk", strings.NewReader(body.Encode())),
+			http.StatusForbidden, "not signed in")
+	})
+
+	t.Run("a card it writes carries no address", func(t *testing.T) {
+		rr := machine(http.MethodPost, "/b/demo/cards", form("title", "from a cron job"))
+		if rr.Code != http.StatusSeeOther && rr.Code != http.StatusOK {
+			t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+		}
+		cards, _ := e.svc.Cards(context.Background(), e.board.ID)
+		for _, c := range cards {
+			if c.Title == "from a cron job" && c.Assignee != "" {
+				t.Errorf("assignee = %q, want nobody", c.Assignee)
+			}
+		}
+	})
+}

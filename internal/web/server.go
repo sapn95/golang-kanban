@@ -993,7 +993,7 @@ func (s *Server) bulkCards(w http.ResponseWriter, r *http.Request) {
 		// The browser does not know the viewer's address, and asking it to
 		// would mean putting the address in the page for scripts to read.
 		u := identity.FromContext(r.Context())
-		if u.Anonymous() {
+		if !u.Person() {
 			plain(w, http.StatusForbidden, "not signed in")
 			return
 		}
@@ -1218,7 +1218,7 @@ func (s *Server) setCardAssignee(w http.ResponseWriter, r *http.Request) {
 		// The same reason the bulk toolbar uses this: the viewer's own address
 		// is not written into the page, so the button asks for it by name.
 		u := identity.FromContext(r.Context())
-		if u.Anonymous() {
+		if !u.Person() {
 			plain(w, http.StatusForbidden, "not signed in")
 			return
 		}

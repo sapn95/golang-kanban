@@ -55,6 +55,25 @@ instead of the page. It needs `proxy` or `access`, since nobody is ever
 identified in `none`, and `FromEnv` refuses that combination on start rather
 than at the first request, where it would look like an outage.
 
+### A machine is a caller, not a person
+
+Cloudflare signs the same kind of assertion for a service token as for somebody
+who signed in. The difference is what is in it: a person's carries an address,
+a token's carries the token's name in `common_name` and no address anywhere.
+
+Reading "no address" as "no identity" made every call with a service token
+anonymous. That was invisible while anonymous requests were served, and became
+a `403` the day `AUTH_REQUIRED` started refusing them, on the one credential
+that exists so a cron job can move a card without a browser.
+
+So `User` has two questions rather than one. `Anonymous` asks whether anything
+proved who the caller is; a service token is not anonymous. `Person` asks
+whether there is somebody behind the request, and that is what `@me` and
+anything else writing a name onto a card asks, because a machine has no address
+to put there. A card created by a token therefore carries no assignee, and a
+comment it posts shows as Anonymous, which is what those already do for a board
+with no identity at all.
+
 `/healthz` and `/readyz` stay open whatever it says. A kubelet has no assertion
 to present, and a liveness probe that gets a `403` restarts a healthy container
 in a loop. They answer nothing about a board, which is what makes them safe to

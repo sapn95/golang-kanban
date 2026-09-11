@@ -188,7 +188,9 @@ func (s *Server) assignee(w http.ResponseWriter, r *http.Request, want string) (
 		return want, true
 	}
 	u := identity.FromContext(r.Context())
-	if u.Anonymous() {
+	// Person, not Anonymous: a service token is a caller with no address, and
+	// "@me" asks for an address.
+	if !u.Person() {
 		s.error(w, r, http.StatusForbidden, "not signed in, so @me names nobody")
 		return "", false
 	}
