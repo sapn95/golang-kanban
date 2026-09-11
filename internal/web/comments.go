@@ -1,8 +1,6 @@
 // Comments on a card. They cannot be edited, and only their author can take
 // one away, which is the whole of the policy.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (

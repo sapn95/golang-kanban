@@ -2325,16 +2325,8 @@ video {
     display: inline;
   }
 
-  .sm\:flex {
-    display: flex;
-  }
-
   .sm\:contents {
     display: contents;
-  }
-
-  .sm\:hidden {
-    display: none;
   }
 
   .sm\:h-8 {

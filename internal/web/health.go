@@ -1,11 +1,10 @@
 // What answers about the process rather than about a board: the probes, the
 // build, and the three files that make the board installable.
-// Package web serves the HTMX front-end. Handlers parse the request, call
-// one service method and render a template; there is no business logic and
-// no SQL here.
+
 package web
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -81,10 +80,18 @@ func (s *Server) rootAsset(w http.ResponseWriter, r *http.Request, name, content
 		http.NotFound(w, r)
 		return
 	}
+	// The worker names its cache after the build, and it is the one file here
+	// that has to differ between releases: a browser reinstalls a worker only
+	// when the worker's own bytes change, and without this they never did, so
+	// the offline page a browser had cached was the first one it ever saw.
+	body := bytes.ReplaceAll(b, []byte(assetVersionMarker), []byte(assets.Version()))
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
-	_, _ = w.Write(b)
+	_, _ = w.Write(body)
 }
+
+// assetVersionMarker is what sw.js carries where the build's digest goes.
+const assetVersionMarker = "__ASSET_VERSION__"
 
 // offline is what the service worker answers with when a navigation cannot
 // reach the server. It says so in the board's own words rather than leaving the

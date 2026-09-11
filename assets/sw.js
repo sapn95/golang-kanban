@@ -6,7 +6,11 @@
 // every badge comes from the server, so a cached page would be a board showing
 // yesterday's work with no way to tell. Network first, and the only thing the
 // cache ever answers is the offline page.
-const SHELL = 'kanban-shell-v1';
+// The name carries the build's asset digest, filled in by the server. A worker
+// is reinstalled only when its own bytes change, and this file's did not
+// between releases, so the offline page stayed whatever it was the first time
+// it was cached: forever, across every later deploy.
+const SHELL = 'kanban-shell-__ASSET_VERSION__';
 const OFFLINE = '/offline';
 
 self.addEventListener('install', (e) => {

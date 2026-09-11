@@ -1077,3 +1077,63 @@ func TestSetBoardSLAOnABoardThatIsNotThere(t *testing.T) {
 		t.Errorf("SetBoardSLA = %v, want ErrNotFound", err)
 	}
 }
+
+// The selection toolbar goes through the same gates as the drag does. Moving
+// cards by hand was refused at a full column and moving them from the toolbar
+// was not, so the toolbar was the way past a limit the board draws in red.
+func TestBulkRespectsTheLimits(t *testing.T) {
+	ctx := context.Background()
+	k := New(memory.New())
+	b, err := k.CreateBoard(ctx, "Bulk", "bulk", []string{"Inbox", "Doing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := k.UpdateColumn(ctx, b.Columns[1].ID, "Doing", 1, false); err != nil {
+		t.Fatal(err)
+	}
+	var ids []model.ID
+	for i := range 3 {
+		c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: fmt.Sprintf("card %d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, c.ID)
+	}
+
+	t.Run("a move that would go over the limit is refused", func(t *testing.T) {
+		res, err := k.Bulk(ctx, b.ID, BulkMove, ids, string(b.Columns[1].ID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Changed) > 1 {
+			t.Errorf("%d cards moved into a column limited to 1", len(res.Changed))
+		}
+		if len(res.Failed) == 0 {
+			t.Error("nothing was reported as refused")
+		}
+		cards, err := k.Cards(ctx, b.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var in int
+		for _, c := range cards {
+			if c.ColumnID == b.Columns[1].ID {
+				in++
+			}
+		}
+		if in > 1 {
+			t.Errorf("the column holds %d cards, its limit is 1", in)
+		}
+	})
+
+	t.Run("an assignee longer than the column is refused before anything is written", func(t *testing.T) {
+		long := strings.Repeat("a", MaxAssignee+1)
+		res, err := k.Bulk(ctx, b.ID, BulkAssign, ids, long)
+		if err == nil {
+			t.Fatal("a 321-character assignee was accepted")
+		}
+		if len(res.Changed) != 0 {
+			t.Errorf("%d cards were written before the refusal", len(res.Changed))
+		}
+	})
+}

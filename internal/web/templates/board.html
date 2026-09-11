@@ -4,13 +4,17 @@
      then something to read. It folds now, and unfolds already open when a
      search is what put you here. Above sm: it is the row it always was.
      details/summary, so folding it costs no script. -->
-<details class="sm:hidden mb-2"{{if .Searching}} open{{end}}>
-  <summary class="unfold inline-flex items-center gap-2 h-11 px-3 rounded-lg cursor-pointer
+<details class="unfold search-fold mb-2"{{if .Searching}} open{{end}}>
+  <summary class="inline-flex items-center gap-2 h-11 px-3 rounded-lg cursor-pointer
                   border border-slate-300 dark:border-slate-700 text-sm text-slate-600 dark:text-slate-300">
     <i class="bi bi-search"></i>{{if .Searching}}<span class="font-mono text-xs">{{.Query}}</span>{{else}}Search{{end}}
   </summary>
 </details>
-<form method="get" action="/b/{{.Board.Slug}}" class="{{if not .Searching}}hidden sm:flex{{else}}flex{{end}} items-center gap-2 mb-6" role="search">
+<!-- The form is the fold's next sibling rather than its child, because above
+     640px it is a row of its own and the fold is not there at all. What opens
+     it is `details[open] + form` in app.css; a <details> with nothing but a
+     summary in it, which is what this was, opens onto nothing. -->
+<form method="get" action="/b/{{.Board.Slug}}" class="search-form items-center gap-2 mb-6" role="search">
   <div class="relative flex-1">
     <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
     <!-- A label as well as the placeholder: a placeholder is gone the moment

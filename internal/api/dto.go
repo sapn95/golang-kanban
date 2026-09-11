@@ -147,6 +147,26 @@ type columnInput struct {
 	StopsClock bool `json:"stops_clock"`
 }
 
+// columnPatch is the same fields as pointers, so a PATCH can change one of them
+// without saying anything about the other two.
+//
+// It used to be columnInput for both, which made a PATCH a PUT wearing the
+// wrong verb: renaming a column sent no wip_limit, wip_limit decoded to its
+// zero value, and the limit was gone. Same for stops_clock, and same on a label
+// for its colour. boardPatch was already written this way; this is the rest of
+// it.
+type columnPatch struct {
+	Name       *string `json:"name"`
+	WIPLimit   *int    `json:"wip_limit"`
+	StopsClock *bool   `json:"stops_clock"`
+}
+
+// labelPatch is labelInput as pointers, for the same reason.
+type labelPatch struct {
+	Name  *string `json:"name"`
+	Color *string `json:"color"`
+}
+
 // slaInput is a whole promise, the same shape it is read in. A PUT with no
 // response_hours switches the SLA off, the way the settings form does when the
 // hours are cleared.

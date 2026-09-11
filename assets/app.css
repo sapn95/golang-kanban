@@ -371,16 +371,23 @@ html.dark { color-scheme: dark; background-color: #020617; }
    listener, and it cannot be left behind: when the details closes, so does the
    thing drawing it. The panel sits above it on z-40, this below on z-30.
 
-   inset is negative and not 0, and that is the whole of why this works. The app
-   bar carries backdrop-blur, and an element with a backdrop-filter is the
-   containing block for everything fixed inside it: `inset: 0` drew a backdrop
-   the size of the header, so a click on a card below it hit the card and the
-   menu stayed open. Measured, not assumed. Nothing clips it, so overshooting
-   the viewport in every direction covers the page from inside the header. */
+   The app bar carries backdrop-blur, and an element with a backdrop-filter is
+   the containing block for everything fixed inside it, so `inset: 0` drew a
+   backdrop the size of the header and a click on a card below it hit the card.
+   Overshooting with a negative inset covered the page and added 1700px of
+   horizontal scroll to it, because a box positioned against the header does
+   contribute to the page's scrollable overflow.
+
+   So the size is the viewport's and the origin is the header's top left, which
+   is the viewport's top left: the bar is sticky at the top. Both measured, the
+   wrong ones as well as this one. */
 .unfold-pop[open] > summary::before {
   content: "";
   position: fixed;
-  inset: -200vmax;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 30;
 }
 
@@ -389,6 +396,28 @@ html.dark { color-scheme: dark; background-color: #020617; }
    arrived; a sibling is the whole condition, so CSS can say it. */
 .no-comments:not(:only-child) {
   display: none;
+}
+
+/* The search box on a phone. It was the first thing on the page and a card was
+   the fourth, so it folds; above 640px the fold is gone and the form is the row
+   it always was.
+
+   The form is the fold's sibling and not its child, so this is the selector
+   that connects them. Without it the disclosure opened onto nothing, which is
+   exactly what it did: measured at 390px, tapping Search revealed an empty box
+   and there was no other way to reach the field. */
+.search-form {
+  display: flex;
+}
+@media (max-width: 639px) {
+  .search-fold:not([open]) + .search-form {
+    display: none;
+  }
+}
+@media (min-width: 640px) {
+  .search-fold {
+    display: none;
+  }
 }
 
 /* A description on a phone is the card. Two lines, and opening the card is how

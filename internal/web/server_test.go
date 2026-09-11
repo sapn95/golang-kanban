@@ -2921,7 +2921,7 @@ func TestDeleteBoard(t *testing.T) {
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("got %d for a wrong name, want 400", rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "type its name exactly") {
+		if !strings.Contains(rr.Body.String(), "type its name") {
 			t.Error("the page does not say why nothing happened")
 		}
 		if _, err := e.svc.Board(context.Background(), "scratch"); err != nil {
@@ -3107,5 +3107,46 @@ func TestSubtaskIDsSurviveASave(t *testing.T) {
 		"/cards/"+string(e.card.ID)+"/subtasks/"+string(before)+"/toggle", nil, "HX-Request", "true")
 	if rr.Code != http.StatusOK {
 		t.Errorf("toggling a line that survived a save answered %d", rr.Code)
+	}
+}
+
+// A browser reinstalls a service worker only when the worker's own bytes
+// change. sw.js was a constant between releases, so the offline page a browser
+// cached the first time was the one it kept forever.
+func TestServiceWorkerCacheNameFollowsTheBuild(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/sw.js", nil).Body.String()
+	if strings.Contains(body, "__ASSET_VERSION__") {
+		t.Error("the worker went out with the marker still in it")
+	}
+	if !strings.Contains(body, "kanban-shell-"+assets.Version()) {
+		t.Errorf("the cache is not named after the build:\n%s", body[:300])
+	}
+}
+
+// The column headers are out-of-band swaps aimed at elements the archive page
+// does not have, so sending them there logged one "no target" per column in the
+// console on every delete.
+func TestDeleteFromTheArchiveSendsNoHeaders(t *testing.T) {
+	e := seeded(t)
+	if err := e.svc.ArchiveCard(context.Background(), e.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/delete", nil,
+		"HX-Request", "true", "HX-Current-URL", "https://board.example/b/demo/archive")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rr.Code)
+	}
+	if strings.Contains(rr.Body.String(), "hx-swap-oob") {
+		t.Errorf("the archive was sent column headers it has nowhere to put:\n%s", rr.Body.String())
+	}
+
+	// From the board they still come, because that is what keeps the counts and
+	// the WIP warnings right.
+	e = seeded(t)
+	rr = e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/delete", nil,
+		"HX-Request", "true", "HX-Current-URL", "https://board.example/b/demo")
+	if !strings.Contains(rr.Body.String(), "hx-swap-oob") {
+		t.Error("a delete from the board did not redraw the column headers")
 	}
 }

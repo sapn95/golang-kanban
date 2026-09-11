@@ -810,13 +810,72 @@ func TestColumnStopsClock(t *testing.T) {
 		}
 	}
 
-	// And a patch that leaves it out takes it off, the same as it does the WIP
-	// limit, because on this route the fields it does not carry are cleared.
-	e.do("PATCH", "/api/v1/boards/demo/columns/"+id, `{"name":"Waiting"}`).want(t, 204)
+	// A patch that leaves a field out leaves the field alone. It used to clear
+	// it, which made renaming a column a way to lose its limit and its place in
+	// the response-time promise without asking for either.
+	e.do("PATCH", "/api/v1/boards/demo/columns/"+id, `{"name":"Parked"}`).want(t, 204)
 	board = e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
 	for _, c := range board.body["columns"].([]any) {
-		if col := c.(map[string]any); col["id"] == id && col["stops_clock"] != false {
-			t.Errorf("stops_clock is %v after a patch that left it out, want false", col["stops_clock"])
+		col := c.(map[string]any)
+		if col["id"] != id {
+			continue
+		}
+		if col["name"] != "Parked" {
+			t.Errorf("name is %v, want Parked", col["name"])
+		}
+		if col["stops_clock"] != true {
+			t.Errorf("stops_clock is %v after a patch that left it out, want it kept", col["stops_clock"])
+		}
+	}
+
+	// And what is sent is still written, including turning it back off.
+	e.do("PATCH", "/api/v1/boards/demo/columns/"+id, `{"stops_clock":false}`).want(t, 204)
+	board = e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
+	for _, c := range board.body["columns"].([]any) {
+		col := c.(map[string]any)
+		if col["id"] != id {
+			continue
+		}
+		if col["stops_clock"] != false {
+			t.Errorf("stops_clock is %v, want false", col["stops_clock"])
+		}
+		if col["name"] != "Parked" {
+			t.Errorf("name is %v after a patch that only named stops_clock", col["name"])
+		}
+	}
+}
+
+// A label keeps its colour when only its name is sent, and its name when only
+// its colour is. Renaming a label used to send its colour back to the default.
+func TestLabelPatchKeepsWhatItDoesNotSay(t *testing.T) {
+	e := seeded(t)
+	created := e.do("POST", "/api/v1/boards/demo/labels", `{"name":"defect-tracking","color":"#ef4444"}`).want(t, 201)
+	id := created.body["id"].(string)
+
+	e.do("PATCH", "/api/v1/boards/demo/labels/"+id, `{"name":"regression"}`).want(t, 204)
+	board := e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
+	for _, l := range board.body["labels"].([]any) {
+		lab := l.(map[string]any)
+		if lab["id"] != id {
+			continue
+		}
+		if lab["name"] != "regression" {
+			t.Errorf("name is %v, want regression", lab["name"])
+		}
+		if lab["color"] != "#ef4444" {
+			t.Errorf("color is %v after a rename, want it kept", lab["color"])
+		}
+	}
+
+	e.do("PATCH", "/api/v1/boards/demo/labels/"+id, `{"color":"#22c55e"}`).want(t, 204)
+	board = e.do("GET", "/api/v1/boards/demo", "").want(t, 200)
+	for _, l := range board.body["labels"].([]any) {
+		lab := l.(map[string]any)
+		if lab["id"] != id {
+			continue
+		}
+		if lab["color"] != "#22c55e" || lab["name"] != "regression" {
+			t.Errorf("label is %v after recolouring it", lab)
 		}
 	}
 }
