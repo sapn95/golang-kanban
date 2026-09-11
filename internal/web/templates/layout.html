@@ -77,20 +77,68 @@
     {{else}}
     <h1 class="min-w-0 flex-1 truncate text-base sm:text-lg font-semibold tracking-tight">{{.Title}}</h1>
     {{end}}
-    {{if .User.Email}}
-    <span class="hidden sm:flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
-          title="{{.User.Email}}">
-      <span class="relative inline-flex items-center justify-center w-7 h-7 shrink-0 overflow-hidden rounded-full
-                   bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-xs font-semibold uppercase">
-        {{.User.Initials}}
-        <!-- Same as on a card: the picture covers the initials rather than
-             replacing them, so they stay as the fallback. -->
-        {{with avatar .User.Email}}
-        <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
+    {{$viewers := viewers}}
+    {{if or .User.Email $viewers}}
+    <!-- Who you are, and who else can read this. Both were questions the board
+         could not answer: the name was a label on a wide screen and nothing at
+         all on a phone, and "who can see this" lived in a Cloudflare dashboard.
+         details/summary again, so a second popover costs no script. -->
+    <details class="unfold relative shrink-0">
+      <summary class="flex items-center gap-2 cursor-pointer rounded-lg px-1 py-1 text-sm
+                      text-slate-600 dark:text-slate-300
+                      hover:bg-slate-200 dark:hover:bg-slate-800"
+               title="Who can see this board">
+        <span class="relative inline-flex items-center justify-center w-7 h-7 shrink-0 overflow-hidden rounded-full
+                     bg-gradient-to-br from-indigo-500 to-violet-500 text-white text-xs font-semibold uppercase">
+          {{if .User.Email}}{{.User.Initials}}{{else}}<i class="bi bi-people-fill text-sm"></i>{{end}}
+          <!-- Same as on a card: the picture covers the initials rather than
+               replacing them, so they stay as the fallback. -->
+          {{with avatar .User.Email}}
+          <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
+          {{end}}
+        </span>
+        {{if .User.Email}}
+        <span class="hidden sm:inline max-w-36 truncate">{{.User.Display}}</span>
         {{end}}
-      </span>
-      {{.User.Display}}
-    </span>
+      </summary>
+      <div class="absolute right-0 top-full z-40 mt-2 w-72 max-w-[85vw] rounded-xl
+                  border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
+        {{if .User.Email}}
+        <div class="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
+          <div class="text-sm font-semibold truncate">{{.User.Display}}</div>
+          <div class="text-xs text-slate-500 dark:text-slate-400 truncate">{{.User.Email}}</div>
+        </div>
+        {{end}}
+        {{if $viewers}}
+        <div class="px-3 pt-2.5 pb-1 text-xs font-semibold uppercase tracking-wide
+                    text-slate-400 dark:text-slate-500">Who can see this board</div>
+        <ul class="pb-1 max-h-64 overflow-y-auto">
+          {{range $viewers}}
+          <li class="flex items-center gap-2.5 px-3 py-1.5">
+            <span class="relative inline-flex items-center justify-center w-6 h-6 shrink-0 overflow-hidden rounded-full
+                         bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-[10px] font-semibold uppercase">
+              {{.Initials}}
+              {{with avatar .Email}}
+              <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
+              {{end}}
+            </span>
+            <span class="min-w-0">
+              <span class="block text-sm truncate">{{.Display}}</span>
+              <span class="block text-xs text-slate-500 dark:text-slate-400 truncate">{{.Email}}</span>
+            </span>
+          </li>
+          {{end}}
+        </ul>
+        <!-- Said plainly, because a list on a page looks like a setting. This
+             one is a copy: changing who gets in happens where the sign-in is. -->
+        <p class="px-3 py-2 border-t border-slate-100 dark:border-slate-800
+                  text-xs text-slate-500 dark:text-slate-400">
+          The sign-in in front of this board decides who gets in. This is what it
+          was last told to allow.
+        </p>
+        {{end}}
+      </div>
+    </details>
     {{end}}
     <button id="darkModeToggle" type="button"
       class="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 dark:border-slate-700

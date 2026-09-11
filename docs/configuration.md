@@ -46,6 +46,12 @@ Who is making the request. See [docs/adr/0005](adr/0005-request-identity.md) for
 | `ACCESS_AUD` | *(unset)* | the Access application's AUD tag |
 | `AUTH_REQUIRED` | `false` | true: a request with no identity is refused rather than served |
 
+Who the board says may see it, as a mail address list: `Ada Lovelace <ada@example.com>, grace@example.com`. Shown in the app bar and nowhere else. This is a copy of a list kept somewhere else, so one address per person is what reads well, and the sign-in in front of the board is what the copy has to agree with.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `AUTH_VIEWERS` | *(unset)* | displayed, never enforced: the board admits whoever the sign-in admits |
+
 Who has a picture instead of initials, as address=github-login pairs. Unset means initials and no outbound request; [docs/adr/0008](adr/0008-avatars-are-proxied.md) has why the server fetches the picture rather than the browser.
 
 | Variable | Default | Notes |

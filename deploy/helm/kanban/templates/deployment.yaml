@@ -100,6 +100,12 @@ spec:
             - name: AUTH_HEADER
               value: {{ $auth.identityHeader | quote }}
             {{- end }}
+            {{- with .Values.app.viewers }}
+            # Displayed, never enforced: the sign-in in front of the board is
+            # what admits anybody. See values.yaml.
+            - name: AUTH_VIEWERS
+              value: {{ join ", " . | quote }}
+            {{- end }}
             {{- $backup := .Values.backup | default dict }}
             {{- $bdir := $backup.dir | default dict }}
             {{- $bs3 := $backup.s3 | default dict }}

@@ -160,7 +160,7 @@ func serve(ctx context.Context, cfg config.Config, st store.Store, log *slog.Log
 	srv := &http.Server{
 		Handler: identityMiddleware(cfg, log)(web.New(svc, st.Ping, log,
 			web.WithBuild(version, commit), web.WithAvatars(cfg.Avatars),
-			web.WithAPI(api.New(svc, log)))),
+			web.WithViewers(viewers(cfg)), web.WithAPI(api.New(svc, log)))),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -219,4 +219,16 @@ func identityMiddleware(cfg config.Config, log *slog.Logger) func(http.Handler) 
 		log.Info("request identity enabled", "mode", cfg.AuthMode, "anonymous", anonymous)
 	}
 	return identity.Middleware(ic)
+}
+
+// viewers turns the configured roster into the shape the pages draw people in,
+// so that a name on the roster and a name on a card are rendered by the same
+// code. config does not import identity and this is the one place that needs
+// both.
+func viewers(cfg config.Config) []identity.User {
+	out := make([]identity.User, 0, len(cfg.Viewers))
+	for _, v := range cfg.Viewers {
+		out = append(out, identity.User{Email: v.Email, Name: v.Name})
+	}
+	return out
 }
