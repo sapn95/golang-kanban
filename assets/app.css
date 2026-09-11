@@ -377,6 +377,13 @@ html.dark { color-scheme: dark; background-color: #020617; }
   z-index: 30;
 }
 
+/* "Nothing said yet." is true only while it is the only thing in the list. This
+   used to be four lines of script removing the paragraph after a comment
+   arrived; a sibling is the whole condition, so CSS can say it. */
+.no-comments:not(:only-child) {
+  display: none;
+}
+
 /* A description on a phone is the card. Two lines, and opening the card is how
    you read the rest, which is what opening a card is for. */
 .md-clamp {
