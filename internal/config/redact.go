@@ -106,6 +106,16 @@ func settingValue(v reflect.Value) string {
 			return "1 pair"
 		}
 		return fmt.Sprintf("%d pairs", len(value))
+	case []Viewer:
+		// Same reasoning as the pairs above: the roster is people's addresses,
+		// and what a report is read for is whether the list arrived at all.
+		if len(value) == 0 {
+			return ""
+		}
+		if len(value) == 1 {
+			return "1 name"
+		}
+		return fmt.Sprintf("%d names", len(value))
 	default:
 		return fmt.Sprint(value)
 	}

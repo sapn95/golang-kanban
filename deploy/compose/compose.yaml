@@ -14,7 +14,7 @@ name: kanban
 # Docker gives a fresh named volume the ownership the image has, a bind mount
 # keeps whatever the host says.
 x-kanban: &kanban
-  image: ghcr.io/sapn95/golang-kanban:${KANBAN_TAG:-2.6.1}
+  image: ghcr.io/sapn95/golang-kanban:${KANBAN_TAG:-2.7.0}
   restart: unless-stopped
   ports:
     - "${KANBAN_PORT:-17808}:17808"

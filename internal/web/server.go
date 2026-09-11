@@ -39,6 +39,7 @@ type Server struct {
 	version string
 	commit  string
 	avatars *avatars                      // nil unless pictures are configured
+	viewers []identity.User               // empty unless a roster is configured
 	api     http.Handler                  // nil unless the JSON API is mounted
 	pages   map[string]*template.Template // full pages, keyed by name
 	parts   *template.Template            // fragments: card, card_edit
@@ -67,6 +68,16 @@ func WithBuild(version, commit string) Option {
 // no outbound request. See avatar.go for why the pictures are proxied.
 func WithAvatars(logins map[string]string) Option {
 	return func(s *Server) { s.avatars = newAvatars(logins) }
+}
+
+// WithViewers tells the board who may see it, so the app bar can say so.
+//
+// The list is not consulted for anything. What decides who gets in is the
+// sign-in in front of the board, and this is a copy of that decision written
+// where the people it concerns will read it. Passing a copy that has drifted
+// makes the page wrong and changes nothing about who is let in.
+func WithViewers(people []identity.User) Option {
+	return func(s *Server) { s.viewers = people }
 }
 
 // WithAPI mounts the JSON API under apiPrefix. Pass api.New(svc, log); it is
@@ -199,6 +210,10 @@ func (s *Server) parseTemplates() {
 		// Whether the JSON API is mounted, so the footer links to it where it
 		// exists and says nothing where it does not.
 		"hasAPI": func() bool { return s.api != nil },
+		// Who may see this board. A function rather than a field on all five
+		// page structs, because it is the same answer on every page and none
+		// of the handlers has anything to add to it.
+		"viewers": func() []identity.User { return s.viewers },
 	}
 	base := template.Must(template.New("").Funcs(funcs).ParseFS(templateFiles,
 		"templates/layout.html", "templates/card.html", "templates/card_edit.html", "templates/comment.html",

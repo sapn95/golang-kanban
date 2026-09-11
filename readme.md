@@ -106,13 +106,13 @@ The image is built for linux/amd64 and linux/arm64 with a provenance
 attestation, so it runs on a laptop and on a Raspberry Pi from the same tag.
 
 ``` bash
-docker pull ghcr.io/sapn95/golang-kanban:2.6.1
+docker pull ghcr.io/sapn95/golang-kanban:2.7.0
 
 # SQLite: one volume, no database to set up
-docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.6.1
+docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.7.0
 
 # PostgreSQL
-docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.6.1
+docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.7.0
 ```
 
 ### On Unraid
@@ -170,6 +170,10 @@ ACCESS_TEAM_DOMAIN=        # AUTH_MODE=access only, e.g. team.cloudflareaccess.c
 ACCESS_AUD=                # AUTH_MODE=access only, the application's AUD tag
 AUTH_REQUIRED=false        # true: refuse a request that arrives with no identity
 
+# Who the board says may see it. Shown in the app bar and enforced nowhere:
+# the sign-in in front of the board is what actually admits anybody.
+AUTH_VIEWERS=Ada Lovelace <ada@example.com>, grace@example.com
+
 # Who has a picture instead of initials, as address=github-login pairs. Unset
 # means initials and no outbound request. A GitHub noreply address carries the
 # login after the plus sign.
@@ -190,6 +194,13 @@ AWS_SESSION_TOKEN=         # only for temporary credentials
 ```
 
 `kanban` with no arguments serves; `kanban migrate` applies migrations and exits; `kanban doctor` reports the configuration, below; `kanban version` prints the version; `kanban export` and `kanban import` are further down. `/healthz` says the process is up, `/readyz` says the database answers, and `/version` says which build is answering — which is how you find out whether a deploy actually landed, without fetching a page and looking for markup only the new version renders.
+
+`AUTH_VIEWERS` is the answer to "who else can read this". A board behind a
+sign-in knows who is at the keyboard and nothing about who else was let in, so
+the list is written down here and drawn in the app bar beside your own name. It
+decides nothing: the sign-in admits whoever it admits, and a roster that has
+drifted from it makes the page wrong rather than the board looser. One address
+per person, because it is read by people.
 
 `AUTH_MODE` says how a caller is recognised. It does not say that a caller has
 to be anybody: a request that arrives without the header or the assertion is
@@ -231,6 +242,7 @@ checks
   ok    schema         readable, 1 board: board
   ok    identity       proxy mode, reading X-Forwarded-Email; the port must not be reachable except through the proxy that sets it
   --    avatars        AVATARS is unset: the board draws initials and makes no outbound request
+  ok    viewers        2 names shown in the app bar; this is a copy of the sign-in's list and enforces nothing
   ok    backup         dir /data/snapshots, every 24h0m0s, keeping 7, 1 snapshot there, newest kanban-20260909T161209Z.json (2h ago)
 ```
 
@@ -284,7 +296,7 @@ With a target set, the server writes the same document on a timer and prunes to
 ``` bash
 docker run -p 17808:17808 -v kanban:/data \
   -e STORAGE=sqlite -e BACKUP_DIR=/data/snapshots -e BACKUP_INTERVAL=6h \
-  ghcr.io/sapn95/golang-kanban:2.6.1
+  ghcr.io/sapn95/golang-kanban:2.7.0
 ```
 
 For a bucket, set `BACKUP_S3_BUCKET`, a region and the two AWS keys;

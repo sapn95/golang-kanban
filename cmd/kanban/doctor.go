@@ -120,6 +120,7 @@ func (d *doctor) run(ctx context.Context) {
 	}
 	d.identity(ctx)
 	d.avatars()
+	d.viewers()
 	d.backup(ctx)
 }
 
@@ -260,6 +261,18 @@ func (d *doctor) avatars() {
 	}
 	d.add(statusOK, "avatars", plural(len(d.cfg.Avatars), "pair")+
 		"; the pictures are fetched by the server, so GitHub never sees who is looking")
+}
+
+// viewers reports the roster the app bar shows, and says what it is not: the
+// board admits whoever the sign-in in front of it admits, whatever this says.
+// Worth a line of its own, because a list on a page reads like a control.
+func (d *doctor) viewers() {
+	if len(d.cfg.Viewers) == 0 {
+		d.add(statusOff, "viewers", "AUTH_VIEWERS is unset: the board does not say who can see it")
+		return
+	}
+	d.add(statusOK, "viewers", plural(len(d.cfg.Viewers), "name")+
+		" shown in the app bar; this is a copy of the sign-in's list and enforces nothing")
 }
 
 func (d *doctor) backup(ctx context.Context) {

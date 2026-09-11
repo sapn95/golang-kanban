@@ -22,6 +22,8 @@ func probe(f reflect.StructField, def reflect.Value) string {
 		return "3"
 	case reflect.Map:
 		return "probe@example.com=probe"
+	case reflect.Slice:
+		return "probe@example.com"
 	default:
 		return "probe-x"
 	}

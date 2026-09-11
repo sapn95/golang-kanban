@@ -279,6 +279,22 @@ app:
   logLevel: info      # debug | info | warn | error
   logFormat: json     # text | json
   autoMigrate: true
+
+  # Who the board says may see it, drawn in the app bar beside whoever is
+  # signed in. A board behind a sign-in knows who is at the keyboard and
+  # nothing about who else was let in, so the list is written down here.
+  #
+  # It admits nobody. Whatever sits in front of the board is what decides that,
+  # and this is a copy of that decision, put where the people it concerns will
+  # read it. A copy that has drifted makes the page wrong, not the board looser,
+  # so change the sign-in's list and then this one.
+  #
+  # `Name <addr>` or a bare address. One entry per person: a second address for
+  # the same person is a second row saying the same thing.
+  viewers: []
+  #  - Ada Lovelace <ada@example.com>
+  #  - grace@example.com
+
   extraEnv: []
 
 resources:

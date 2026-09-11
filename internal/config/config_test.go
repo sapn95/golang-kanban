@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -490,4 +491,51 @@ func TestAvatars(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestViewers(t *testing.T) {
+	t.Run("unset means the board says nothing about who can see it", func(t *testing.T) {
+		c, err := FromEnv(lookup(nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(c.Viewers) != 0 {
+			t.Errorf("Viewers = %v, want none", c.Viewers)
+		}
+	})
+
+	t.Run("names and bare addresses, in the order they were written", func(t *testing.T) {
+		c, err := FromEnv(lookup(map[string]string{
+			"AUTH_MODE":    AuthProxy,
+			"AUTH_VIEWERS": `Ada Lovelace <Ada@Example.com>, grace@example.com, "Hopper, Grace" <g2@example.com>`,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []Viewer{
+			{Email: "ada@example.com", Name: "Ada Lovelace"},
+			{Email: "grace@example.com"},
+			{Email: "g2@example.com", Name: "Hopper, Grace"},
+		}
+		if !reflect.DeepEqual(c.Viewers, want) {
+			t.Errorf("Viewers = %+v, want %+v", c.Viewers, want)
+		}
+	})
+
+	t.Run("a roster with no sign-in in front of it is refused", func(t *testing.T) {
+		_, err := FromEnv(lookup(map[string]string{"AUTH_VIEWERS": "ada@example.com"}))
+		if err == nil || !strings.Contains(err.Error(), "AUTH_VIEWERS") {
+			t.Errorf("err = %v, want it to name AUTH_VIEWERS", err)
+		}
+	})
+
+	t.Run("something that is not an address is refused rather than dropped", func(t *testing.T) {
+		_, err := FromEnv(lookup(map[string]string{
+			"AUTH_MODE":    AuthProxy,
+			"AUTH_VIEWERS": "ada@example.com, not an address",
+		}))
+		if err == nil || !strings.Contains(err.Error(), "AUTH_VIEWERS") {
+			t.Errorf("err = %v, want it to name AUTH_VIEWERS", err)
+		}
+	})
 }

@@ -2828,3 +2828,52 @@ func TestAMachineCallerHasNoAtMe(t *testing.T) {
 		}
 	})
 }
+
+// The app bar says who can see the board, because a board behind a sign-in
+// knows who is at the keyboard and nothing about who else was let in.
+func TestViewerRoster(t *testing.T) {
+	roster := []identity.User{
+		{Email: "ada@example.com", Name: "Ada Lovelace"},
+		{Email: "grace.hopper@example.com"},
+	}
+
+	t.Run("every name and address is on the page", func(t *testing.T) {
+		e := seeded(t, WithViewers(roster))
+		body := e.doAs("ada@example.com", http.MethodGet, "/b/demo", nil).Body.String()
+		for _, want := range []string{
+			"Who can see this board",
+			"Ada Lovelace", "ada@example.com",
+			// No name was configured for the second, so the board reads one
+			// out of the address rather than printing the local part.
+			"Grace Hopper", "grace.hopper@example.com",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("the app bar does not mention %q", want)
+			}
+		}
+	})
+
+	t.Run("and says it decides nothing", func(t *testing.T) {
+		e := seeded(t, WithViewers(roster))
+		body := e.doAs("ada@example.com", http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, "decides who gets in") {
+			t.Error("the panel does not say the sign-in is what admits anybody")
+		}
+	})
+
+	t.Run("no roster, no panel", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if strings.Contains(body, "Who can see this board") {
+			t.Error("a board with no roster offers the panel anyway")
+		}
+	})
+
+	t.Run("a roster with nobody signed in still lists them", func(t *testing.T) {
+		e := seeded(t, WithViewers(roster))
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, "Ada Lovelace") {
+			t.Error("the roster is not shown to an anonymous reader")
+		}
+	})
+}

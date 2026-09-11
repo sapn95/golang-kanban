@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -54,6 +55,13 @@ type Config struct {
 	AccessTeamDomain string `env:"ACCESS_TEAM_DOMAIN"` // e.g. team.cloudflareaccess.com
 	AccessAudience   string `env:"ACCESS_AUD"`         // the Access application's AUD tag
 	AuthRequired     bool   `env:"AUTH_REQUIRED"`      // true: a request with no identity is refused rather than served
+
+	// Who the board says may see it, as a mail address list: `Ada Lovelace
+	// <ada@example.com>, grace@example.com`. Shown in the app bar and nowhere
+	// else. This is a copy of a list kept somewhere else, so one address per
+	// person is what reads well, and the sign-in in front of the board is what
+	// the copy has to agree with.
+	Viewers []Viewer `env:"AUTH_VIEWERS"` // displayed, never enforced: the board admits whoever the sign-in admits
 
 	// Who has a picture instead of initials, as address=github-login pairs. Unset
 	// means initials and no outbound request; docs/adr/0008 has why the server
@@ -175,6 +183,11 @@ func FromEnv(get Lookup) (Config, error) {
 		return c, err
 	}
 	c.Avatars = avatars
+	viewers, err := parseViewers(env("AUTH_VIEWERS", ""))
+	if err != nil {
+		return c, err
+	}
+	c.Viewers = viewers
 	return c, c.Validate()
 }
 
@@ -207,6 +220,37 @@ func parseAvatars(spec string) (map[string]string, error) {
 	}
 	if len(out) == 0 {
 		return nil, nil
+	}
+	return out, nil
+}
+
+// Viewer is one person on the roster AUTH_VIEWERS names. Name is what the
+// deployment wrote down, empty when it wrote only an address.
+type Viewer struct {
+	Email string
+	Name  string
+}
+
+// parseViewers reads AUTH_VIEWERS as a mail address list, which is the format
+// it already looks like: `Ada Lovelace <ada@example.com>, grace@example.com`.
+// The standard parser rather than a comma split of our own, so a name with a
+// comma in it is quoted and survives, and an address that is not one is refused
+// here instead of being drawn as a row nobody can explain.
+//
+// A refusal on start, like the avatars above: a roster that silently dropped
+// somebody would be a page saying the wrong thing about who can read the board,
+// which is worse than a process that will not start.
+func parseViewers(spec string) ([]Viewer, error) {
+	if strings.TrimSpace(spec) == "" {
+		return nil, nil
+	}
+	addrs, err := mail.ParseAddressList(spec)
+	if err != nil {
+		return nil, fmt.Errorf("AUTH_VIEWERS: %w (want `Name <addr>, addr`)", err)
+	}
+	out := make([]Viewer, 0, len(addrs))
+	for _, a := range addrs {
+		out = append(out, Viewer{Email: strings.ToLower(a.Address), Name: a.Name})
 	}
 	return out, nil
 }
@@ -266,6 +310,12 @@ func (c Config) Validate() error {
 	// rather than at the first request, where it would look like an outage.
 	if c.AuthRequired && c.AuthMode == AuthNone {
 		return fmt.Errorf("AUTH_REQUIRED: needs AUTH_MODE %q or %q; in %q nobody is ever identified", AuthProxy, AuthAccess, AuthNone)
+	}
+	// A roster on a board that has no sign-in in front of it names the people
+	// who may read something everybody can already read. Refused for the same
+	// reason as the line above: the page would be stating something untrue.
+	if len(c.Viewers) > 0 && c.AuthMode == AuthNone {
+		return fmt.Errorf("AUTH_VIEWERS: needs AUTH_MODE %q or %q; in %q the board is open to whoever reaches it", AuthProxy, AuthAccess, AuthNone)
 	}
 	if c.ListenAddr == "" {
 		if _, err := strconv.Atoi(c.ServerPort); err != nil {
