@@ -161,6 +161,10 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 	// service worker only controls what is under the path it was served from
 	// and a manifest's scope defaults to its own directory: from /assets/ both
 	// would cover the assets and nothing else.
+	// Spelled out rather than built from cspReportPath, because the endpoint
+	// reference is checked against the literals in this function; a test holds
+	// the two spellings together, the way it does for the API prefix.
+	mux.HandleFunc("POST /csp-report", s.cspViolation)
 	mux.HandleFunc("GET /manifest.webmanifest", s.manifest)
 	mux.HandleFunc("GET /sw.js", s.serviceWorker)
 	mux.HandleFunc("GET /offline", s.offline)
@@ -1987,16 +1991,26 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 // style attribute, which no nonce covers. Compiling Tailwind (docs/adr/0011)
 // took away the third reason, its runtime <style> injection, and left these
 // two. Everything else is locked to this origin.
+//
+// Violations are reported back to this process. A policy this narrow is worth
+// having and it is also the kind of thing that breaks one person's browser and
+// nobody else's: something injects a script, or a proxy rewrites a page, and
+// what they see is a feature that does not work rather than a rule that refused
+// it. Both ways of asking are used, because they are at different points in
+// their lives: report-uri is deprecated and is what Firefox and Safari send,
+// report-to with Reporting-Endpoints is where Chrome is going.
 func (s *Server) secureHeaders(next http.Handler) http.Handler {
 	const csp = "default-src 'self'; " +
 		"script-src 'self' 'unsafe-inline'; " +
 		"style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data:; font-src 'self'; connect-src 'self'; " +
-		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; " +
+		"report-uri " + cspReportPath + "; report-to csp"
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy", csp)
+		h.Set("Reporting-Endpoints", `csp="`+cspReportPath+`"`)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		// The page carries the viewer's address, so it must not be kept by a

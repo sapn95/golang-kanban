@@ -72,6 +72,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   needs HTTPS, so it is the tunnel or the reverse proxy that offers it, not a
   plain LAN port.
 - Dark mode.
+- Content-Security-Policy violations are reported back to the server and logged,
+  so "something is blocked" is a line in the log rather than a question for
+  whoever is holding the browser.
 - Cross-site writes are refused, security headers are set, and request bodies
   are capped; see [docs/adr/0006](docs/adr/0006-cross-site-writes.md).
 - Schema migrations run on start; an existing single-table database is imported automatically.
@@ -108,13 +111,13 @@ The image is built for linux/amd64 and linux/arm64 with a provenance
 attestation, so it runs on a laptop and on a Raspberry Pi from the same tag.
 
 ``` bash
-docker pull ghcr.io/sapn95/golang-kanban:2.8.0
+docker pull ghcr.io/sapn95/golang-kanban:2.9.0
 
 # SQLite: one volume, no database to set up
-docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.8.0
+docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.9.0
 
 # PostgreSQL
-docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.8.0
+docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.9.0
 ```
 
 ### On Unraid
@@ -298,7 +301,7 @@ With a target set, the server writes the same document on a timer and prunes to
 ``` bash
 docker run -p 17808:17808 -v kanban:/data \
   -e STORAGE=sqlite -e BACKUP_DIR=/data/snapshots -e BACKUP_INTERVAL=6h \
-  ghcr.io/sapn95/golang-kanban:2.8.0
+  ghcr.io/sapn95/golang-kanban:2.9.0
 ```
 
 For a bucket, set `BACKUP_S3_BUCKET`, a region and the two AWS keys;
