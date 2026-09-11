@@ -6,9 +6,13 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
+	"sync"
 	"time"
 
 	"kanban/assets"
@@ -84,7 +88,7 @@ func (s *Server) rootAsset(w http.ResponseWriter, r *http.Request, name, content
 	// that has to differ between releases: a browser reinstalls a worker only
 	// when the worker's own bytes change, and without this they never did, so
 	// the offline page a browser had cached was the first one it ever saw.
-	body := bytes.ReplaceAll(b, []byte(assetVersionMarker), []byte(assets.Version()))
+	body := bytes.ReplaceAll(b, []byte(assetVersionMarker), []byte(contentVersion()))
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(body)
@@ -92,6 +96,32 @@ func (s *Server) rootAsset(w http.ResponseWriter, r *http.Request, name, content
 
 // assetVersionMarker is what sw.js carries where the build's digest goes.
 const assetVersionMarker = "__ASSET_VERSION__"
+
+// contentVersion is a digest of everything the worker's cache could be holding:
+// the asset tree and the templates.
+//
+// The asset digest alone was not enough. The one thing the worker caches is the
+// offline page, which is a template, so a release that changed nothing but that
+// page left /sw.js byte for byte identical, the browser never reinstalled it,
+// and the page it kept serving offline was the old one. A cache key has to
+// cover what is in the cache.
+var contentVersion = sync.OnceValue(func() string {
+	sum := sha256.New()
+	_, _ = io.WriteString(sum, assets.Version())
+	_ = fs.WalkDir(templateFiles, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(templateFiles, path)
+		if err != nil {
+			return err
+		}
+		_, _ = io.WriteString(sum, path+"\x00")
+		_, _ = sum.Write(b)
+		return nil
+	})
+	return hex.EncodeToString(sum.Sum(nil))[:12]
+})
 
 // offline is what the service worker answers with when a navigation cannot
 // reach the server. It says so in the board's own words rather than leaving the

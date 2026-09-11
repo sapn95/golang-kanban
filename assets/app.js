@@ -282,6 +282,14 @@
       if (/^\/cards\/[^/]+$/.test(path)) { hideModal('editCardModal'); }
     }
   });
+  // A selection the server only partly acted on. The page reloads either way,
+  // so without this a move a WIP limit refused looked like one that worked.
+  // alert, like the error handler below: this board has no toast of its own,
+  // and inventing one for two messages would be more script than the thing it
+  // is reporting.
+  document.body.addEventListener('kanban:bulk-partial', function (evt) {
+    alert((evt.detail && evt.detail.message) || 'Some cards were not changed.');
+  });
   document.body.addEventListener('htmx:responseError', function (evt) {
     var xhr = evt.detail.xhr;
     alert(xhr && xhr.responseText ? xhr.responseText : 'Request failed');
