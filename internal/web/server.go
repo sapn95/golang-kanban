@@ -215,6 +215,11 @@ func (s *Server) parseTemplates() {
 		// Whether the JSON API is mounted, so the footer links to it where it
 		// exists and says nothing where it does not.
 		"hasAPI": func() bool { return s.api != nil },
+		// How much JavaScript this project wrote, counted out of the embedded
+		// trees on first use. The footer prints it beside the version, because
+		// a board whose whole idea is a server-rendered page is one where that
+		// number going up should be visible to whoever let it.
+		"js": countJS,
 		// Who may see this board. A function rather than a field on all five
 		// page structs, because it is the same answer on every page and none
 		// of the handlers has anything to add to it.

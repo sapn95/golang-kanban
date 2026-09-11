@@ -71,6 +71,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   an offline page in the board's own words instead of the browser's. Installing
   needs HTTPS, so it is the tunnel or the reverse proxy that offers it, not a
   plain LAN port.
+- The footer counts this project's own JavaScript, beside the version. The board
+  is a server-rendered page on purpose, and that number going up is the kind of
+  thing that happens without anybody deciding to let it.
 - Dark mode.
 - Content-Security-Policy violations are reported back to the server and logged,
   so "something is blocked" is a line in the log rather than a question for
@@ -111,13 +114,13 @@ The image is built for linux/amd64 and linux/arm64 with a provenance
 attestation, so it runs on a laptop and on a Raspberry Pi from the same tag.
 
 ``` bash
-docker pull ghcr.io/sapn95/golang-kanban:2.9.0
+docker pull ghcr.io/sapn95/golang-kanban:2.10.0
 
 # SQLite: one volume, no database to set up
-docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.9.0
+docker run -p 17808:17808 -e STORAGE=sqlite -v kanban:/data ghcr.io/sapn95/golang-kanban:2.10.0
 
 # PostgreSQL
-docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.9.0
+docker run -p 17808:17808 -e DB_HOST=your-postgres -e DB_USER=... -e DB_PASS=... ghcr.io/sapn95/golang-kanban:2.10.0
 ```
 
 ### On Unraid
@@ -301,7 +304,7 @@ With a target set, the server writes the same document on a timer and prunes to
 ``` bash
 docker run -p 17808:17808 -v kanban:/data \
   -e STORAGE=sqlite -e BACKUP_DIR=/data/snapshots -e BACKUP_INTERVAL=6h \
-  ghcr.io/sapn95/golang-kanban:2.9.0
+  ghcr.io/sapn95/golang-kanban:2.10.0
 ```
 
 For a bucket, set `BACKUP_S3_BUCKET`, a region and the two AWS keys;

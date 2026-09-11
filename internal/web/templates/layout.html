@@ -165,6 +165,13 @@
     {{end}}
     <a href="/version" class="tabular-nums hover:text-slate-600 dark:hover:text-slate-300"
        title="The build this page came from">kanban {{build}}</a>
+    <!-- The board is a server-rendered page on purpose, and the amount of
+         script on it is the thing most likely to drift without anybody
+         deciding to let it. Printing it is what makes the drift visible. -->
+    {{with js}}
+    <span class="tabular-nums"
+          title="Lines of this project's own JavaScript: app.js, sw.js and the inline script in the head. A line counts when it is neither blank nor a comment; {{.Total}} lines in all. Plus {{.Handlers}} inline event handlers in the templates. htmx and SortableJS are vendored and not counted.">{{.Code}} lines of JS</span>
+    {{end}}
   </footer>
 </div>
 </body>
