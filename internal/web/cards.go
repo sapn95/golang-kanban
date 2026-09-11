@@ -4,7 +4,10 @@
 package web
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"kanban/internal/identity"
@@ -137,9 +140,38 @@ func (s *Server) bulkCards(w http.ResponseWriter, r *http.Request) {
 	if len(res.Failed) > 0 {
 		s.log.Warn("bulk action partially failed", "action", action,
 			"changed", len(res.Changed), "failed", len(res.Failed))
+		// The page reloads either way, so without this a move that a WIP limit
+		// refused looked exactly like one that worked: the selection cleared,
+		// the board came back, and three of the five cards were where they
+		// started with nothing on screen saying why.
+		w.Header().Set("HX-Trigger", bulkFailureTrigger(action, res))
 	}
 	w.Header().Set("HX-Refresh", "true")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// bulkFailureTrigger builds the HX-Trigger that tells the page how many cards
+// the action did not touch. A JSON value rather than a bare event name, because
+// the count is the whole message: "3 of 5" is the difference between a limit
+// doing its job and a board that ignored the button.
+func bulkFailureTrigger(action service.BulkAction, res service.BulkResult) string {
+	msg := fmt.Sprintf("%d of %d cards could not be %s.",
+		len(res.Failed), len(res.Failed)+len(res.Changed), bulkVerbs[action])
+	b, err := json.Marshal(map[string]map[string]string{"kanban:bulk-partial": {"message": msg}})
+	if err != nil {
+		// The only values here are a short string we built, so this cannot
+		// happen; an event with no detail still beats silence.
+		return "kanban:bulk-partial"
+	}
+	return string(b)
+}
+
+// bulkVerbs reads each action back as the past participle the message needs.
+var bulkVerbs = map[service.BulkAction]string{
+	service.BulkMove:    "moved",
+	service.BulkAssign:  "assigned",
+	service.BulkArchive: "archived",
+	service.BulkDelete:  "deleted",
 }
 
 // cardAndBoard reads the card named in the path together with the board it is
@@ -432,8 +464,16 @@ func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
 // fromArchive reports whether a write came from the archive page rather than
 // from the board. htmx sends the current URL, which is the only thing that
 // tells the two apart: both post to the same route from the same kind of row.
+//
+// The path, not the whole URL. The archive is searchable, so the page a delete
+// comes from is as often /b/x/archive?q=bug as it is /b/x/archive, and matching
+// the tail of the string missed every one that had been searched.
 func fromArchive(r *http.Request) bool {
-	return strings.HasSuffix(strings.TrimSuffix(r.Header.Get("HX-Current-URL"), "/"), "/archive")
+	u, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimSuffix(u.Path, "/"), "/archive")
 }
 
 // archiveCard takes a card off the board. The card row is removed from the

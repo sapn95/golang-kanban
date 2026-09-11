@@ -31,7 +31,13 @@ func (s *Server) settingsMoved(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderSettings draws the settings page, with an optional message. Every write
-// on this page comes back through here, so a refusal keeps what was typed.
+// on this page comes back through here, so a refusal arrives on the page that
+// asked rather than on a fresh one.
+//
+// The board is read back from the store, so the fields show what is stored and
+// not what was typed: a rename refused for a bad WIP limit comes back with the
+// old name in the box and the reason above it. That is worth knowing before
+// somebody reports it as the rename being lost, which it is not.
 func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status int, message string) {
 	b, err := s.svc.Board(r.Context(), r.PathValue("board"))
 	if err != nil {
@@ -297,8 +303,14 @@ func readSLA(r *http.Request) (model.SLA, error) {
 	}, nil
 }
 
-// orZero turns an empty number field into a zero, so a cleared box switches the
-// clock off rather than failing to parse.
+// orZero turns an empty number field into a zero, so a cleared box reaches the
+// validation as a number rather than failing to parse into one.
+//
+// It does not switch the clock off. The switch does that, and with the switch
+// on, a zero is refused with "must be at least one office hour", which is the
+// message somebody clearing the box should get. Turning the promise off by
+// emptying a field would be a second way to do what the switch already does,
+// with no way to tell it from a slip.
 func orZero(v string) string {
 	if v = strings.TrimSpace(v); v == "" {
 		return "0"

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -3119,8 +3120,15 @@ func TestServiceWorkerCacheNameFollowsTheBuild(t *testing.T) {
 	if strings.Contains(body, "__ASSET_VERSION__") {
 		t.Error("the worker went out with the marker still in it")
 	}
-	if !strings.Contains(body, "kanban-shell-"+assets.Version()) {
+	if !strings.Contains(body, "kanban-shell-"+contentVersion()) {
 		t.Errorf("the cache is not named after the build:\n%s", body[:300])
+	}
+	// The digest has to cover the templates as well as the assets. The one
+	// thing the worker caches is the offline page, which is a template, so a
+	// release that changed only that page used to leave sw.js identical and the
+	// browser kept serving the old one.
+	if strings.Contains(body, "kanban-shell-"+assets.Version()) {
+		t.Error("the cache is named after the assets alone; a template-only release would not refresh it")
 	}
 }
 
@@ -3148,5 +3156,97 @@ func TestDeleteFromTheArchiveSendsNoHeaders(t *testing.T) {
 		"HX-Request", "true", "HX-Current-URL", "https://board.example/b/demo")
 	if !strings.Contains(rr.Body.String(), "hx-swap-oob") {
 		t.Error("a delete from the board did not redraw the column headers")
+	}
+}
+
+// A selection the server only partly acted on has to say so. The page reloads
+// either way, so a move a WIP limit refused looked exactly like one that worked.
+func TestBulkSaysWhatItRefused(t *testing.T) {
+	e := seeded(t)
+	ctx := context.Background()
+	b, err := e.svc.Board(ctx, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second column that will take one card and refuse the rest.
+	if err := e.svc.UpdateColumn(ctx, b.Columns[1].ID, b.Columns[1].Name, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for i := range 3 {
+		c, err := e.svc.CreateCard(ctx, b.ID, b.Columns[0].ID, service.CardInput{Title: fmt.Sprintf("c%d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, "ids", string(c.ID))
+	}
+
+	args := append([]string{"action", "move", "target", string(b.Columns[1].ID)}, ids...)
+	rr := e.do(http.MethodPost, "/b/demo/cards/bulk", form(args...))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("got %d, want 204", rr.Code)
+	}
+	trigger := rr.Header().Get("HX-Trigger")
+	if !strings.Contains(trigger, "kanban:bulk-partial") {
+		t.Fatalf("HX-Trigger = %q; nothing told the page cards were refused", trigger)
+	}
+	if !strings.Contains(trigger, "could not be moved") {
+		t.Errorf("HX-Trigger = %q; it does not say what failed", trigger)
+	}
+
+	// And a selection that goes through entirely says nothing.
+	e2 := seeded(t)
+	rr = e2.do(http.MethodPost, "/b/demo/cards/bulk",
+		form("action", "archive", "ids", string(e2.card.ID)))
+	if got := rr.Header().Get("HX-Trigger"); got != "" {
+		t.Errorf("HX-Trigger = %q on an action that worked", got)
+	}
+}
+
+// Clearing the response-time box is a slip, not a way to switch the promise
+// off. The switch does that, and a board with the switch on and no number is
+// refused with the reason on the page.
+func TestClearingTheResponseHoursIsRefused(t *testing.T) {
+	e := seeded(t)
+	rr := e.do(http.MethodPost, "/b/demo/sla",
+		form("on", "on", "response_hours", "", "days", "mon", "start", "09:00", "end", "17:00"))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "at least one office hour") {
+		t.Error("the page does not say why the promise was refused")
+	}
+
+	// And the switch really is the way off.
+	rr = e.do(http.MethodPost, "/b/demo/sla", form("days", "mon", "start", "09:00", "end", "17:00"))
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("turning the switch off answered %d, want 303", rr.Code)
+	}
+	b, err := e.svc.Board(context.Background(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.SLA.Enabled() {
+		t.Error("the promise is still on after the switch went off")
+	}
+}
+
+// The archive is searchable, so a delete as often comes from /archive?q=bug as
+// from /archive. Matching the tail of the URL missed every searched one.
+func TestArchiveDetectionSurvivesASearch(t *testing.T) {
+	for _, from := range []string{
+		"https://board.example/b/demo/archive",
+		"https://board.example/b/demo/archive?q=bug",
+		"https://board.example/b/demo/archive/?q=is%3Aarchived+bug",
+	} {
+		e := seeded(t)
+		if err := e.svc.ArchiveCard(context.Background(), e.card.ID); err != nil {
+			t.Fatal(err)
+		}
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/delete", nil,
+			"HX-Request", "true", "HX-Current-URL", from)
+		if strings.Contains(rr.Body.String(), "hx-swap-oob") {
+			t.Errorf("%s was sent column headers it has nowhere to put", from)
+		}
 	}
 }

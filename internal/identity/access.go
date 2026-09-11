@@ -146,9 +146,9 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	return k, nil
 }
 
-// fetch reads the team's public keys and caches them. Cloudflare publishes two
-// at a time so a rotation overlaps, which is why the result is a map and not a
-// key.
+// fetch reads the team's public keys. It caches nothing; key above does that
+// with what this returns. Cloudflare publishes two keys at a time so a rotation
+// overlaps, which is why the result is a map and not a key.
 func (v *AccessVerifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.CertsURL, nil)
 	if err != nil {
