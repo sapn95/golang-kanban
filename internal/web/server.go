@@ -90,6 +90,10 @@ func New(svc *service.Kanban, ready func(context.Context) error, log *slog.Logge
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
+	// The list, always. GET / redirects to the board when there is only one,
+	// which is what somebody opening the bookmark wants and also meant the page
+	// that creates a second board could not be reached while there was one.
+	mux.HandleFunc("GET /boards", s.boardList)
 	mux.HandleFunc("POST /boards", s.createBoard)
 	mux.HandleFunc("GET /b/{board}", s.board)
 	mux.HandleFunc("POST /b/{board}/cards", s.createCard)
@@ -339,6 +343,9 @@ func columnHead(col model.Column, count int, oob bool) columnView {
 type boardPage struct {
 	Title string
 	User  identity.User
+	// Boards is every board, for the switcher the app bar puts behind this
+	// one's name.
+	Boards []model.Board
 	// Query is what the user typed, echoed back into the box so a reload or a
 	// shared link keeps the search.
 	Query   string
@@ -360,8 +367,11 @@ type archivePage struct {
 	Title     string
 	User      identity.User
 	BoardSlug string
-	Board     *model.Board
-	Cards     []cardView
+	// Boards is every board, for the switcher the app bar puts behind this
+	// one's name.
+	Boards []model.Board
+	Board  *model.Board
+	Cards  []cardView
 	// Query is the raw search, echoed back into the box so reloading keeps it.
 	// Searching says the box had something in it, which is the difference
 	// between an empty archive and a search that found nothing in it.
@@ -521,12 +531,15 @@ type settingsPage struct {
 	Title     string
 	User      identity.User
 	BoardSlug string
-	Board     *model.Board
-	Columns   []columnSetting
-	Labels    []labelView
-	NewLabel  labelView
-	SLA       slaView
-	Error     string
+	// Boards is every board, for the switcher the app bar puts behind this
+	// one's name.
+	Boards   []model.Board
+	Board    *model.Board
+	Columns  []columnSetting
+	Labels   []labelView
+	NewLabel labelView
+	SLA      slaView
+	Error    string
 }
 
 // cardView builds one card face. clock is the board's SLA clock, passed in
@@ -780,6 +793,28 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	s.render(w, s.pages["boards"], "layout", http.StatusOK, boardsPage{Title: "Kanban", User: identity.FromContext(r.Context()), Boards: boards})
 }
 
+func (s *Server) boardList(w http.ResponseWriter, r *http.Request) {
+	boards, err := s.svc.Boards(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, s.pages["boards"], "layout", http.StatusOK,
+		boardsPage{Title: "Boards", User: identity.FromContext(r.Context()), Boards: boards})
+}
+
+// navBoards is the list behind the board name in the app bar. A read that fails
+// logs and returns nothing: a board that cannot name its neighbours is still a
+// board worth drawing, and the switcher simply does not open.
+func (s *Server) navBoards(ctx context.Context) []model.Board {
+	boards, err := s.svc.Boards(ctx)
+	if err != nil {
+		s.log.Error("board switcher", "err", err)
+		return nil
+	}
+	return boards
+}
+
 func (s *Server) createBoard(w http.ResponseWriter, r *http.Request) {
 	b, err := s.svc.CreateBoard(r.Context(), r.FormValue("name"), "", nil)
 	if err != nil {
@@ -836,6 +871,7 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		for _, c := range hits {
 			page.Results = append(page.Results, s.cardView(u, b, clock, c, counts[c.ID], people))
 		}
+		page.Boards = s.navBoards(r.Context())
 		s.render(w, s.pages["board"], "layout", http.StatusOK, page)
 		return
 	}
@@ -845,7 +881,9 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, s.pages["board"], "layout", http.StatusOK, s.boardPage(u, b, cards, counts))
+	page := s.boardPage(u, b, cards, counts)
+	page.Boards = s.navBoards(r.Context())
+	s.render(w, s.pages["board"], "layout", http.StatusOK, page)
 }
 
 func cardInput(r *http.Request) service.CardInput {
@@ -1321,6 +1359,7 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request) {
 		// is to restore a card rather than to reassign it.
 		page.Cards = append(page.Cards, s.cardView(u, b, clock, c, counts[c.ID], nil))
 	}
+	page.Boards = s.navBoards(r.Context())
 	s.render(w, s.pages["archive"], "layout", http.StatusOK, page)
 }
 
@@ -1383,6 +1422,7 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 			Palette: palette,
 		})
 	}
+	p.Boards = s.navBoards(r.Context())
 	s.render(w, s.pages["settings"], "layout", status, p)
 }
 

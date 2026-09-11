@@ -93,8 +93,8 @@
       <button type="submit" class="row-save shrink-0 px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white">Save</button>
     </form>
 
-    <div class="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-      <span class="shrink-0 tabular-nums">
+    <div class="flex flex-wrap items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
+      <span class="shrink-0 tabular-nums mr-2">
         {{if .Cards}}{{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}empty{{end}}
       </span>
       {{if not .First}}
@@ -116,24 +116,38 @@
       </form>
       {{end}}
       {{if not .Only}}
-      <!-- Where the cards go is part of the delete, not a question asked
-           afterwards. "Delete them too" is in the list rather than the
-           default, so losing them is always something someone chose. -->
-      <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/delete"
-            class="w-full sm:w-auto sm:ml-auto flex items-center gap-2 min-w-0"
-            onsubmit="return confirm('Delete this column?')">
-        {{if .Cards}}
-        <select name="move_to" aria-label="Where its cards go"
-          class="flex-1 min-w-0 sm:flex-none px-2 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
-          {{range .Others}}<option value="{{.ID}}">move cards to {{.Name}}</option>{{end}}
-          <option value="">delete the cards too</option>
-        </select>
-        {{end}}
-        <button type="submit" title="Delete this column" aria-label="Delete this column"
-          class="shrink-0 p-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-500/15 rounded-lg">
+      <!-- The bin asks before it does anything, and it asks in the page rather
+           than in a browser dialog. Where the cards go is part of that question
+           and has no business sitting in the row the rest of the time: it was a
+           select as wide as a column name, on every row, for an action nobody
+           takes twice a year.
+
+           details/summary, so the two steps cost no script. -->
+      <details class="unfold unfold-row">
+        <summary title="Delete this column"
+          class="inline-flex items-center justify-center w-9 h-9 rounded-lg cursor-pointer
+                 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-500/15">
           <i class="bi bi-trash text-sm"></i>
-        </button>
-      </form>
+          <span class="sr-only">Delete this column</span>
+        </summary>
+        <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/delete"
+              class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3">
+          <span class="text-sm text-rose-800 dark:text-rose-200">
+            Delete {{.Column.Name}}?{{if .Cards}} Its {{.Cards}} card{{if ne .Cards 1}}s{{end}}:{{end}}
+          </span>
+          {{if .Cards}}
+          <select name="move_to" aria-label="Where its cards go"
+            class="flex-1 min-w-0 sm:flex-none px-2 py-2 text-sm rounded-lg border border-rose-300 dark:border-rose-500/40 bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+            {{range .Others}}<option value="{{.ID}}">move them to {{.Name}}</option>{{end}}
+            <option value="">delete them too</option>
+          </select>
+          {{end}}
+          <button type="submit"
+            class="shrink-0 px-3 py-2 text-sm font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 text-white">
+            Delete column
+          </button>
+        </form>
+      </details>
       {{end}}
     </div>
   </div>
@@ -265,19 +279,31 @@
       <button type="submit" class="row-save shrink-0 px-3 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white">Save</button>
     </form>
 
-    <div class="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-      <span class="shrink-0">
+    <div class="flex flex-wrap items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
+      <span class="shrink-0 mr-2">
         {{if .Cards}}on {{.Cards}} card{{if ne .Cards 1}}s{{end}}{{else}}unused{{end}}
       </span>
       <!-- A second form rather than a second button in the first: a form inside
-           a form is not valid HTML and the browser drops the inner one. -->
-      <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}/delete" class="ml-auto shrink-0"
-            onsubmit="return confirm('Delete this label? It comes off every card that carries it.')">
-        <button type="submit" title="Delete this label" aria-label="Delete this label"
-          class="p-2 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-500/15 rounded-lg">
+           a form is not valid HTML and the browser drops the inner one. The bin
+           asks first, in the page, for the same reason the column's does. -->
+      <details class="unfold unfold-row">
+        <summary title="Delete this label"
+          class="inline-flex items-center justify-center w-9 h-9 rounded-lg cursor-pointer
+                 text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-500/15">
           <i class="bi bi-trash text-sm"></i>
-        </button>
-      </form>
+          <span class="sr-only">Delete this label</span>
+        </summary>
+        <form method="post" action="/b/{{$slug}}/labels/{{.Label.ID}}/delete"
+              class="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-3">
+          <span class="text-sm text-rose-800 dark:text-rose-200">
+            Delete {{.Label.Name}}?{{if .Cards}} It comes off {{.Cards}} card{{if ne .Cards 1}}s{{end}}.{{end}}
+          </span>
+          <button type="submit"
+            class="shrink-0 px-3 py-2 text-sm font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 text-white">
+            Delete label
+          </button>
+        </form>
+      </details>
     </div>
   </div>
   {{end}}

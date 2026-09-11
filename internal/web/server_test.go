@@ -2733,3 +2733,49 @@ func TestTheBoardCanBeInstalled(t *testing.T) {
 		}
 	})
 }
+
+// Getting to another board, and to the form that makes one. Both existed and
+// neither was reachable while there was a single board: GET / redirects to it,
+// so the footer's way to the list came straight back, and the list is where a
+// board is created.
+func TestGettingToAnotherBoard(t *testing.T) {
+	e := seeded(t)
+
+	t.Run("the list is there even with one board", func(t *testing.T) {
+		want(t, e.do(http.MethodGet, "/boards", nil), http.StatusOK,
+			`action="/boards"`, "New board name", "Demo")
+		// And / still goes to the board, which is what a bookmark wants.
+		rr := e.do(http.MethodGet, "/", nil)
+		if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/b/demo" {
+			t.Errorf("GET / = %d to %q, want a redirect to the one board", rr.Code, rr.Header().Get("Location"))
+		}
+	})
+
+	t.Run("the app bar switches boards", func(t *testing.T) {
+		if _, err := e.svc.CreateBoard(context.Background(), "Other", "", nil); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"/b/demo", "/b/demo/settings", "/b/demo/archive"} {
+			body := e.do(http.MethodGet, path, nil).Body.String()
+			for _, s := range []string{`href="/b/other"`, `href="/boards"`, "New board"} {
+				if !strings.Contains(body, s) {
+					t.Errorf("%s has no way to %q", path, s)
+				}
+			}
+		}
+	})
+
+	t.Run("the footer points at the list, not at the redirect", func(t *testing.T) {
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, `<a href="/boards" class="hover:text-slate-600`) {
+			t.Error("the footer still sends All boards through the redirect")
+		}
+	})
+
+	t.Run("a page with no board draws no switcher", func(t *testing.T) {
+		body := e.do(http.MethodGet, "/boards", nil).Body.String()
+		if strings.Contains(body, "bi-chevron-down") {
+			t.Error("the board list offers a switcher to itself")
+		}
+	})
+}

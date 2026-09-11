@@ -44,6 +44,7 @@ policy, which the two routes that serve bytes rather than a page do.
 | Route | Sends | Answers |
 |-------|-------|---------|
 | `GET /` | | The list of boards, or `303` to `/b/{slug}` when there is only one |
+| `GET /boards` | | Every board, with the form that makes another. `GET /` redirects here only when there is not exactly one board |
 | `POST /boards` | `name` | `303` to the new board. `400` and the list again, with the reason, when the name is empty or already taken |
 | `GET /b/{board}` | `?q=` to search, optional | The board. `404` for a slug that does not exist |
 | `POST /b/{board}/layout` | `layout=columns` or `rows` | `303` back to the board |
