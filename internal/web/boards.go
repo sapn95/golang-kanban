@@ -1,4 +1,5 @@
-// The board list, one board, and the two writes that change a board itself.
+// The board list, one board, and the three writes that make, remove or reshape
+// one: create, delete and the layout switch.
 
 package web
 

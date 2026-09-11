@@ -167,9 +167,10 @@ type labelPatch struct {
 	Color *string `json:"color"`
 }
 
-// slaInput is a whole promise, the same shape it is read in. A PUT with no
-// response_hours switches the SLA off, the way the settings form does when the
-// hours are cleared.
+// slaInput is a whole promise, the same shape it is read in. A PUT with
+// response_hours 0 switches the SLA off. The settings form has a switch for
+// that and refuses zero hours with the switch on, which is the difference
+// between an API that takes a value and a form somebody can slip on.
 type slaInput slaBody
 
 // orderInput is the whole order of one column, or of a board's columns.
