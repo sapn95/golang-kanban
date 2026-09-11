@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -116,4 +117,44 @@ func TestCSPReportIgnoresEmptyEntriesAndCapsTheRest(t *testing.T) {
 			t.Error("nothing said the sender was not a browser")
 		}
 	})
+}
+
+// The cap has to be on the decoding and not on what survives it. A megabyte of
+// empty objects is about 350,000 of them, and turning all of them into structs
+// first costs tens of megabytes for a request that writes twenty log lines.
+func TestCSPReportStopsDecodingAtTheCap(t *testing.T) {
+	e := seeded(t)
+	var b strings.Builder
+	b.WriteString("[")
+	const entries = 5000
+	for i := range entries {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"type":"csp-violation","body":{"effectiveDirective":"script-src","blockedURL":"x"}}`)
+	}
+	b.WriteString("]")
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rr := e.do(http.MethodPost, cspReportPath, strings.NewReader(b.String()))
+	runtime.ReadMemStats(&after)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("answered %d, want 204", rr.Code)
+	}
+	if n := strings.Count(e.log.String(), "content security policy refused something"); n != maxReportsPerRequest {
+		t.Errorf("%d violations logged, want %d", n, maxReportsPerRequest)
+	}
+	if !strings.Contains(e.log.String(), "not decoded") {
+		t.Error("nothing said the rest of the array was left alone")
+	}
+	// The whole body is read, so the floor is its size; what must not happen is
+	// allocating a struct per entry on top of it. Generous, because a test that
+	// measures allocation has to survive a GC landing in the middle of it.
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 8*uint64(len(b.String())) {
+		t.Errorf("%d bytes allocated for a %d byte body; the array was decoded whole",
+			grew, len(b.String()))
+	}
 }

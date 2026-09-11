@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -77,29 +78,40 @@ func (s *Server) cspViolation(w http.ResponseWriter, r *http.Request) {
 	var reports []cspReport
 	switch {
 	case strings.HasPrefix(strings.TrimSpace(string(body)), "["):
-		var entries []reportToEntry
-		if err := json.Unmarshal(body, &entries); err == nil {
-			for _, e := range entries {
-				if e.Type != "" && e.Type != "csp-violation" {
-					continue
-				}
-				// A directive is the one field a violation cannot be without,
-				// so an entry with none is not one. Without this, an array of
-				// empty objects wrote a line of blanks for each.
-				if e.Body.Effective == "" {
-					continue
-				}
-				if len(reports) >= maxReportsPerRequest {
-					s.log.Warn("csp report with more entries than a browser sends",
-						"entries", len(entries), "logging", maxReportsPerRequest)
-					break
-				}
-				reports = append(reports, cspReport{
-					Document: e.Body.Document, Effective: e.Body.Effective,
-					Blocked: e.Body.Blocked, Source: e.Body.Source,
-					Line: e.Body.Line, Sample: e.Body.Sample,
-				})
+		// Read one entry at a time and stop at the cap, rather than decoding
+		// the array and then keeping twenty of it. A megabyte of empty objects
+		// is about 350,000 of them, and turning all of them into structs first
+		// costs tens of megabytes for a request that writes twenty log lines.
+		// The cap has to be on the decoding, not on what survives it.
+		dec := json.NewDecoder(bytes.NewReader(body))
+		if _, err := dec.Token(); err != nil { // the opening bracket
+			break
+		}
+		var seen int
+		for dec.More() && len(reports) < maxReportsPerRequest {
+			var e reportToEntry
+			if err := dec.Decode(&e); err != nil {
+				break
 			}
+			seen++
+			if e.Type != "" && e.Type != "csp-violation" {
+				continue
+			}
+			// A directive is the one field a violation cannot be without, so an
+			// entry with none is not one. Without this, an array of empty
+			// objects wrote a line of blanks for each.
+			if e.Body.Effective == "" {
+				continue
+			}
+			reports = append(reports, cspReport{
+				Document: e.Body.Document, Effective: e.Body.Effective,
+				Blocked: e.Body.Blocked, Source: e.Body.Source,
+				Line: e.Body.Line, Sample: e.Body.Sample,
+			})
+		}
+		if dec.More() {
+			s.log.Warn("csp report with more entries than a browser sends",
+				"read", seen, "logging", len(reports), "rest", "not decoded")
 		}
 	default:
 		var env cspReportEnvelope

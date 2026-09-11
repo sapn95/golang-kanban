@@ -108,8 +108,10 @@ func (s *Server) setLayout(w http.ResponseWriter, r *http.Request) {
 }
 
 // setSLA replaces the whole promise. A PUT with response_hours 0 is how a board
-// stops making one, which is also what the settings form posts when the hours
-// are cleared.
+// stops making one over the API. The settings form does it differently: it has
+// a switch, and clearing the hours with the switch on is refused rather than
+// read as off, so there is one way to turn it off and no way to do it by
+// accident.
 func (s *Server) setSLA(w http.ResponseWriter, r *http.Request) {
 	b, ok := s.board(w, r)
 	if !ok {
@@ -166,8 +168,16 @@ func (s *Server) updateColumn(w http.ResponseWriter, r *http.Request) {
 	if !s.decode(w, r, &in) {
 		return
 	}
-	// What is not in the body keeps the value it has. The column is read back
-	// from the board we already loaded, so this costs nothing.
+	// What is not in the body keeps the value it has, read back from the board
+	// this handler already loaded.
+	//
+	// Read then write, so two PATCHes overlapping can still lose one: a rename
+	// that read before a limit was set writes the old limit back. Every update
+	// in this application is last-writer-wins, which is what a board with three
+	// people on it can afford; the merge narrows the window from "a rename
+	// always clears the limit" to "a rename clears a limit set in the
+	// milliseconds it took", and closing it entirely would mean a partial-update
+	// path through all three backends for a race nobody has hit.
 	col := b.Column(id)
 	name, limit, stops := col.Name, col.WIPLimit, col.StopsClock
 	if in.Name != nil {
@@ -261,7 +271,8 @@ func (s *Server) updateLabel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// As for a column: an absent field keeps what the label has, so renaming one
-	// does not send its colour back to the default.
+	// does not send its colour back to the default. Same read-then-write, same
+	// last-writer-wins, and the comment above says why that is where it stops.
 	lab := b.Label(id)
 	name, color := lab.Name, lab.Color
 	if in.Name != nil {
