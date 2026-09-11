@@ -337,3 +337,25 @@ html.dark { color-scheme: dark; background-color: #020617; }
     box-shadow: 0 8px 22px rgba(79, 70, 229, .45);
   }
 }
+
+/* A two-step delete that needs no script: the bin is the summary, and what it
+   would do unfolds under it. The marker goes, because the bin is the affordance
+   and a triangle beside it says the same thing twice. */
+.unfold > summary {
+  list-style: none;
+}
+.unfold > summary::-webkit-details-marker {
+  display: none;
+}
+.unfold > summary::marker {
+  content: "";
+}
+/* A settings row's bin: closed it sits at the end of the line, open it takes
+   the whole width, which in a wrapping row puts it on a line of its own with the
+   question under it. The alternative is a tall box in the middle of a centred
+   row, pushing the card count and the arrows out of line. The switcher in the
+   app bar is the other kind and stays where it is, because its panel is
+   positioned over the page rather than laid out in it. */
+.unfold-row[open] {
+  width: 100%;
+}
