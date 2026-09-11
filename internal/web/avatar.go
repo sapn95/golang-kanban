@@ -137,6 +137,8 @@ func (a *avatars) picture(ctx context.Context, login string) ([]byte, string, er
 	return body, kind, err
 }
 
+// cached returns a picture already fetched for login, or nil when there is
+// none or the one there has gone stale.
 func (a *avatars) cached(login string) *avatarEntry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -155,6 +157,8 @@ func (a *avatars) cached(login string) *avatarEntry {
 	return e
 }
 
+// download fetches one picture from GitHub and returns its bytes and content
+// type. It is the only outbound request this process makes.
 func (a *avatars) download(ctx context.Context, login string) ([]byte, string, error) {
 	// Detached from the request, so a viewer who navigates away mid-fetch does
 	// not leave a cancelled error in the cache for everybody else.

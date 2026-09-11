@@ -597,10 +597,14 @@ func hasPrefixFold(s, prefix string) bool {
 	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
 
+// isASCIIPunct reports whether c is one of the punctuation characters that can
+// end a run of emphasis.
 func isASCIIPunct(c byte) bool {
 	return strings.IndexByte(`!"#$%&'()*+,-./:;<=>?@[\]^_`+"`"+`{|}~`, c) >= 0
 }
 
+// isWordByte reports whether c is a letter or a digit, which is what decides
+// whether an asterisk is opening emphasis or sitting inside a word.
 func isWordByte(c byte) bool {
 	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
 }

@@ -256,8 +256,8 @@
       showModal('editCardModal');
     }
     if (target.id.indexOf('comments-') === 0) {
-      var empty = target.querySelector('.no-comments');
-      if (empty) { empty.remove(); }
+      // The "nothing said yet" line takes itself away: app.css hides it as
+      // soon as it has a sibling. What is left here is the box it was typed in.
       var poster = evt.detail.requestConfig && evt.detail.requestConfig.elt;
       if (poster && poster.tagName === 'FORM') {
         poster.reset();
