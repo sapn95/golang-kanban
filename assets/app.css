@@ -19,17 +19,22 @@ html.dark { color-scheme: dark; background-color: #020617; }
 }
 .modal.show { display: flex; }
 .modal-dialog {
-  /* 500px left the description box too small to see a paragraph at once,
-     and on a phone 90% of the width wasted a margin that was not needed.
-     44rem then wasted most of a desktop screen instead: the form sat in a
-     narrow strip with the comments pushed below the fold. */
-  max-width: min(76rem, 96vw);
-  width: 96%;
+  /* 500px left the description box too small to see a paragraph at once, and
+     on a phone 90% of the width wasted a margin that was not needed. 44rem
+     then wasted most of a desktop screen. 76rem overshot the other way: at 92%
+     of the viewport the sheet reached within 45px of both edges and read as
+     edge to edge, and it gave a short title a 660px input with 500px of empty
+     textarea under it.
+
+     52rem is as wide as the two columns need. The gutter below is what makes
+     it a sheet on a page rather than a second page. */
+  max-width: 52rem;
+  width: calc(100% - 2rem);
   max-height: 94vh;
   overflow-y: auto;
 }
 @media (min-width: 640px) {
-  .modal-dialog { width: 92%; }
+  .modal-dialog { width: calc(100% - 5rem); }
 }
 
 /* The card form in two columns once there is room for them. What a card is
@@ -39,8 +44,8 @@ html.dark { color-scheme: dark; background-color: #020617; }
 @media (min-width: 1024px) {
   .card-fields {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 22rem;
-    column-gap: 2rem;
+    grid-template-columns: minmax(0, 1fr) 17rem;
+    column-gap: 1.75rem;
     align-items: start;
   }
   .card-fields__main { min-width: 0; }
@@ -336,6 +341,52 @@ html.dark { color-scheme: dark; background-color: #020617; }
     font-size: 1.35rem;
     box-shadow: 0 8px 22px rgba(79, 70, 229, .45);
   }
+}
+
+/* On a touch screen the small controls on a card grow to something a thumb can
+   hit. Only there: on a pointer they are the right size already, and making
+   every card 30px taller on a desktop to serve a finger that is not present is
+   the wrong trade. The padding grows, not the ink, so nothing looks different.
+
+   Measured at 390px before this: the x on a label was 16x16, the date chip
+   30x23, the add-label chip the same. */
+@media (hover: none) {
+  /* width and height are set above, so the hit area has to come from a box
+     drawn around it rather than from padding the rule would have to fight. */
+  .chip-x { position: relative; }
+  .chip-x::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+  }
+  .quick-toggle { min-height: 40px; }
+}
+
+/* A popover in the app bar closes when you click somewhere else, which is what
+   every menu does and what <details> alone does not: it stays open until you
+   find the summary again.
+
+   The backdrop is a pseudo-element OF THE SUMMARY, so a click anywhere on the
+   page lands on the summary and toggles the details shut. No script, no
+   listener, and it cannot be left behind: when the details closes, so does the
+   thing drawing it. The panel sits above it on z-40, this below on z-30. */
+.unfold-pop[open] > summary::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+/* A description on a phone is the card. Two lines, and opening the card is how
+   you read the rest, which is what opening a card is for. */
+.md-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (min-width: 640px) {
+  .md-clamp { display: block; overflow: visible; }
 }
 
 /* A two-step delete that needs no script: the bin is the summary, and what it

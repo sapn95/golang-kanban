@@ -81,6 +81,7 @@ column marked `stops_clock` on the settings page.
 | `POST /cards/{id}/assignee` | `assignee`: an address, `@me`, or empty to unassign | The card face, or `303` without htmx. `403` on `@me` when nobody is signed in |
 | `POST /cards/{id}/due` | `due_date`: `YYYY-MM-DD`, or empty to take the date off | The card face, or `303` without htmx. `400` on anything else |
 | `POST /cards/{id}/labels/{label}/toggle` | | The card face with that label put on or taken off. The label stays on the board either way |
+| `POST /cards/{id}/subtasks/{subtask}/toggle` | | The card face with that checklist line ticked or unticked. By subtask id, not position, so a checklist reordered in another tab cannot tick the wrong line |
 | `POST /cards/{id}/archive` | | The column headers, out of band. The row goes with `hx-swap="delete"` |
 | `POST /cards/{id}/delete` | | The same |
 | `POST /cards/{id}/restore` | `?board=` the slug to return to | `204` with `HX-Redirect: /b/{slug}` |

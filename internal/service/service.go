@@ -522,6 +522,33 @@ func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*
 //
 // The label has to belong to the card's own board. Nothing else checks that,
 // so a crafted id would otherwise attach another board's label to this one.
+// ToggleSubtask ticks one line of a card's checklist, or unticks it.
+//
+// By id rather than by position: a card's checklist can be reordered or have a
+// line removed in the edit form while somebody else is looking at the board,
+// and a position would then tick whatever had moved into that slot.
+//
+// UpdatedAt moves, like every other write to a card. That restarts the response
+// clock, which is right: work on a card is the card being attended to, and a
+// desk that looks idle while somebody is working through a checklist is a desk
+// whose badges say the wrong thing.
+func (k *Kanban) ToggleSubtask(ctx context.Context, id, subtaskID model.ID) (*model.Card, error) {
+	c, err := k.store.GetCard(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	i := slices.IndexFunc(c.Subtasks, func(s model.Subtask) bool { return s.ID == subtaskID })
+	if i < 0 {
+		return nil, store.ErrNotFound
+	}
+	c.Subtasks[i].Done = !c.Subtasks[i].Done
+	c.UpdatedAt = k.now()
+	if err := k.store.UpdateCard(ctx, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
 func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*model.Card, error) {
 	c, err := k.store.GetCard(ctx, id)
 	if err != nil {

@@ -82,7 +82,11 @@
     <!-- The description is markdown, rendered by the server. The md class is
          what app.css styles: Tailwind's reset takes the bullets off a list and
          the size off a heading, so the rendered block needs rules of its own. -->
-    <div class="md text-slate-600 dark:text-slate-300 text-sm mb-3">{{markdown .Card.Description}}</div>
+    <!-- Clamped on a phone. Measured at 390px, one card ran to 413px and the
+         first one started 300px down, so a screen held one card and most of it
+         was prose. Opening the card is how you read the rest, which is what
+         opening a card is for. -->
+    <div class="md md-clamp sm:[-webkit-line-clamp:none] text-slate-600 dark:text-slate-300 text-sm mb-3">{{markdown .Card.Description}}</div>
   {{end}}
   {{if .Card.Subtasks}}
     <div class="flex items-center gap-2 mb-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -92,11 +96,25 @@
       </div>
       <span class="tabular-nums shrink-0">{{.SubtasksDone}}/{{.SubtasksTotal}}</span>
     </div>
-    <ul class="space-y-1 mb-3">
+    <!-- Ticked from here. The checklist used to be readable on the card and
+         editable only inside the edit modal, which on a phone is a tap, a wait,
+         a scroll, a tick, a save and a close to record something that takes a
+         second to do. The whole row is the target, and it is a button so a
+         keyboard reaches it and the hit area is the line rather than a 14px
+         icon. Same shape as the label chip above: post, take the card back. -->
+    <ul class="space-y-0.5 mb-3 -mx-1">
       {{range .Card.Subtasks}}
-      <li class="flex items-center text-sm">
-        <i class="bi bi-check-square{{if .Done}}-fill text-green-500{{else}} text-slate-400{{end}} mr-2"></i>
-        <span class="{{if .Done}}line-through text-slate-500{{else}}text-slate-700 dark:text-slate-300{{end}}">{{.Title}}</span>
+      <li>
+        <button type="button"
+          class="subtask-tick flex w-full items-center gap-2 rounded-lg px-1 py-2.5 sm:py-1.5 text-left text-sm
+                 hover:bg-slate-100 dark:hover:bg-slate-700"
+          aria-pressed="{{if .Done}}true{{else}}false{{end}}"
+          title="{{if .Done}}Untick{{else}}Tick{{end}} “{{.Title}}”"
+          hx-post="/cards/{{$.Card.ID}}/subtasks/{{.ID}}/toggle"
+          hx-target="#card-{{$.Card.ID}}" hx-swap="outerHTML">
+          <i class="bi bi-check-square{{if .Done}}-fill text-green-500{{else}} text-slate-400{{end}} shrink-0"></i>
+          <span class="{{if .Done}}line-through text-slate-500{{else}}text-slate-700 dark:text-slate-300{{end}}">{{.Title}}</span>
+        </button>
       </li>
       {{end}}
     </ul>

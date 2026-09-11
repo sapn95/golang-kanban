@@ -2971,3 +2971,65 @@ func TestDeleteBoard(t *testing.T) {
 		}
 	})
 }
+
+// Ticking a checklist line from the board, without the edit form.
+func TestToggleSubtaskFromTheCardFace(t *testing.T) {
+	t.Run("the card comes back with the line ticked", func(t *testing.T) {
+		e := seeded(t)
+		id := e.card.Subtasks[1].ID // "sub two", not done
+		rr := e.do(http.MethodPost,
+			"/cards/"+string(e.card.ID)+"/subtasks/"+string(id)+"/toggle", nil, "HX-Request", "true")
+		if rr.Code != http.StatusOK {
+			t.Fatalf("got %d, want 200", rr.Code)
+		}
+		c, err := e.svc.Card(context.Background(), e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !c.Subtasks[1].Done {
+			t.Error("the subtask is still open")
+		}
+		if !strings.Contains(rr.Body.String(), "2/2") {
+			t.Errorf("the progress on the returned card face was not redrawn:\n%s", rr.Body.String())
+		}
+	})
+
+	t.Run("and untick is the same call", func(t *testing.T) {
+		e := seeded(t)
+		id := e.card.Subtasks[0].ID // "sub one", already done
+		e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/subtasks/"+string(id)+"/toggle", nil)
+		c, _ := e.svc.Card(context.Background(), e.card.ID)
+		if c.Subtasks[0].Done {
+			t.Error("a done subtask stayed done")
+		}
+	})
+
+	t.Run("without htmx it is a redirect to the board", func(t *testing.T) {
+		e := seeded(t)
+		id := e.card.Subtasks[0].ID
+		rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/subtasks/"+string(id)+"/toggle", nil)
+		if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/b/demo" {
+			t.Errorf("got %d to %q, want 303 to /b/demo", rr.Code, rr.Header().Get("Location"))
+		}
+	})
+
+	// By id and not by position, so a checklist reordered in another tab cannot
+	// tick whatever moved into the slot.
+	t.Run("an id the card does not have is a 404", func(t *testing.T) {
+		e := seeded(t)
+		if rr := e.do(http.MethodPost, "/cards/"+string(e.card.ID)+"/subtasks/nope/toggle", nil); rr.Code != http.StatusNotFound {
+			t.Errorf("got %d, want 404", rr.Code)
+		}
+	})
+
+	t.Run("the row on the card face is a button, not an icon", func(t *testing.T) {
+		e := seeded(t)
+		body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+		if !strings.Contains(body, "subtask-tick") {
+			t.Fatal("the checklist on the card face has no tick control")
+		}
+		if !strings.Contains(body, `aria-pressed="true"`) || !strings.Contains(body, `aria-pressed="false"`) {
+			t.Error("the rows do not say which are ticked")
+		}
+	})
+}

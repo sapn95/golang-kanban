@@ -55,7 +55,7 @@
          redirects straight back while there is one board, so a second board
          could not be made from inside the first. details/summary, so switching
          boards costs no script. -->
-    <details class="unfold relative min-w-0 flex-1">
+    <details class="unfold unfold-pop relative min-w-0 flex-1">
       <summary class="flex items-center gap-1.5 cursor-pointer rounded-lg -mx-2 px-2 py-1
                       hover:bg-slate-200 dark:hover:bg-slate-800">
         <h1 class="min-w-0 truncate text-base sm:text-lg font-semibold tracking-tight">{{.Title}}</h1>
@@ -89,7 +89,7 @@
          a page for a caller it could not identify: that caller would be reading
          everybody's address off a board it has no business on. Whoever is
          signed in is on the list and already knows it. -->
-    <details class="unfold relative shrink-0">
+    <details class="unfold unfold-pop relative shrink-0">
       <summary class="flex items-center gap-2 cursor-pointer rounded-lg px-1 py-1 text-sm
                       text-slate-600 dark:text-slate-300
                       hover:bg-slate-200 dark:hover:bg-slate-800"
@@ -103,7 +103,7 @@
           <img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 h-full w-full object-cover">
           {{end}}
         </span>
-        <span class="hidden sm:inline max-w-36 truncate">{{.User.Display}}</span>
+        <span class="hidden sm:inline max-w-36 lg:max-w-none truncate">{{.User.Display}}</span>
       </summary>
       <div class="absolute right-0 top-full z-40 mt-2 w-72 max-w-[85vw] rounded-xl
                   border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl">
