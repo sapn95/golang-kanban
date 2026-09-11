@@ -3331,3 +3331,56 @@ func TestColumnTabsFollowTheCount(t *testing.T) {
 			n, len(e.board.Columns))
 	}
 }
+
+// The settings page answers its own refusals on itself. Anything the store said
+// no to used to fall through to a plain-text 404 or 400, and because these
+// forms are ordinary posts the browser navigated to it: the page, and anything
+// else typed into it, gone, replaced by two words.
+func TestSettingsRefusalsStayOnThePage(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		body       []string
+		want       int
+		says       string
+	}{
+		{
+			name: "a column the board does not have",
+			path: "/b/demo/columns/{col}/delete",
+			body: []string{"move_to", "not-a-column"},
+			want: http.StatusNotFound,
+			says: "not on the board any more",
+		},
+		{
+			name: "a name that is already taken",
+			path: "/b/demo/labels",
+			body: []string{"name", "bug", "color", "#ef4444"},
+			want: http.StatusConflict,
+			says: "already has a label",
+		},
+		{
+			name: "a name that is empty",
+			path: "/b/demo/labels",
+			body: []string{"name", "", "color", "#ef4444"},
+			want: http.StatusBadRequest,
+			says: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := seeded(t)
+			path := strings.ReplaceAll(tc.path, "{col}", string(e.board.Columns[0].ID))
+			rr := e.do(http.MethodPost, path, form(tc.body...))
+			if rr.Code != tc.want {
+				t.Fatalf("got %d, want %d: %s", rr.Code, tc.want, rr.Body.String())
+			}
+			if ct := rr.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+				t.Errorf("Content-Type = %q; the answer is not the page", ct)
+			}
+			if !strings.Contains(rr.Body.String(), "Columns") {
+				t.Error("the settings page was not redrawn")
+			}
+			if tc.says != "" && !strings.Contains(rr.Body.String(), tc.says) {
+				t.Errorf("the page does not say %q", tc.says)
+			}
+		})
+	}
+}

@@ -1,11 +1,11 @@
 # Endpoints
 
-Every route the server answers, all 36 of them, registered in one block in
+Every route the server answers, all 43 of them, registered in one block in
 `internal/web/server.go`. A test compares this file against that block and
 fails when either side has something the other does not, so a route cannot be
 added or removed without the table changing with it.
 
-The last of those 36 is the JSON API, which brings its own thirty-one routes under
+The last of those 43 is the JSON API, which brings its own thirty-one routes under
 `/api/v1/` and its own document; the [table below](#the-json-api) gives it one
 row. This file is about the page routes.
 

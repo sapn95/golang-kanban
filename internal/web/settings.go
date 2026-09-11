@@ -120,7 +120,22 @@ func (s *Server) settingsFailure(w http.ResponseWriter, r *http.Request, err err
 	case errors.Is(err, store.ErrConflict):
 		// Only labels are unique by name; two columns may share one.
 		s.renderSettings(w, r, http.StatusConflict, "this board already has a label with that name")
+	case errors.Is(err, store.ErrNotFound):
+		// Something the form named is not there any more, which on this page
+		// means somebody else changed the board while this was open: a column
+		// deleted out from under a move, a label renamed away.
+		s.renderSettings(w, r, http.StatusNotFound,
+			"something this form named is not on the board any more; it may have just changed")
+	case errors.Is(err, store.ErrInvalid):
+		// The same thing seen from the other side. The store returns this when
+		// an order no longer names every column, which is what happens when a
+		// column arrives or leaves between the page being drawn and the form
+		// being posted.
+		s.renderSettings(w, r, http.StatusBadRequest,
+			"the board changed while this page was open; it has been redrawn")
 	default:
+		// Anything left is not about this form: a store that will not answer,
+		// a context that was cancelled. Those are the ones s.fail is for.
 		s.fail(w, r, err)
 	}
 }
@@ -346,6 +361,13 @@ func clockMinutes(v string, endOfDay bool) (int, error) {
 // no-op rather than an error: the buttons are not offered there, and a repeated
 // submit should not be an error page.
 func (s *Server) moveColumn(w http.ResponseWriter, r *http.Request) {
+	// Parsed explicitly. FormValue answers "" for a body it could not read, and
+	// "" is not "down", so an unreadable body moved the column up: the only
+	// handler here that failed open rather than closed.
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
 	b, col, err := s.boardColumn(r)
 	if err != nil {
 		s.fail(w, r, err)
@@ -360,7 +382,7 @@ func (s *Server) moveColumn(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	to := at - 1
-	if r.FormValue("direction") == "down" {
+	if r.PostFormValue("direction") == "down" {
 		to = at + 1
 	}
 	if to < 0 || to >= len(order) {

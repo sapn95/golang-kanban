@@ -218,10 +218,13 @@ func (k *Kanban) RenameBoard(ctx context.Context, id model.ID, name, slug string
 	if !slugRe.MatchString(slug) || len(slug) > MaxSlug {
 		return nil, invalid("slug", "must be lower-case letters, digits and single hyphens")
 	}
-	b.Name, b.Slug, b.UpdatedAt = name, slug, k.now()
-	if err := k.store.UpdateBoard(ctx, b); err != nil {
+	// The two columns a rename is, so it cannot put back a layout switch or a
+	// response-time change made while this form was open.
+	at := k.now()
+	if err := k.store.PatchBoard(ctx, id, store.BoardPatch{Name: &name, Slug: &slug}, at); err != nil {
 		return nil, err
 	}
+	b.Name, b.Slug, b.UpdatedAt = name, slug, at
 	return b, nil
 }
 
@@ -234,12 +237,10 @@ func (k *Kanban) SetBoardLayout(ctx context.Context, id model.ID, layout string)
 	default:
 		return invalid("layout", "must be columns or rows")
 	}
-	b, err := k.store.GetBoardByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	b.Layout, b.UpdatedAt = layout, k.now()
-	return k.store.UpdateBoard(ctx, b)
+	// One column, not the whole board: a layout switch and a rename are two
+	// forms on two pages, and writing all of it meant either putting the other
+	// one back.
+	return k.store.PatchBoard(ctx, id, store.BoardPatch{Layout: &layout}, k.now())
 }
 
 // SetBoardSLA sets the board's response-time promise. Zero hours switches it
@@ -271,12 +272,9 @@ func (k *Kanban) SetBoardSLA(ctx context.Context, id model.ID, sla model.SLA) er
 			return invalid("zone", "must be an IANA time zone such as Europe/Zurich")
 		}
 	}
-	b, err := k.store.GetBoardByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	b.SLA, b.UpdatedAt = sla, k.now()
-	return k.store.UpdateBoard(ctx, b)
+	// Same as the layout above: the five columns the promise lives in, and
+	// nothing else the board is.
+	return k.store.PatchBoard(ctx, id, store.BoardPatch{SLA: &sla}, k.now())
 }
 
 // DeleteBoard removes a board and everything on it. Nothing brings it back, so
@@ -545,9 +543,11 @@ func (k *Kanban) UpdateCard(ctx context.Context, id model.ID, in CardInput) (*mo
 // unassigns it.
 //
 // Separate from UpdateCard rather than a call through it, because a quick edit
-// on the card face knows one field. Routing it through UpdateCard would mean
-// sending every other field back to keep it, and two people quick-editing one
-// card would then overwrite each other's titles.
+// on the card face knows one field. Routing it through UpdateCard would send
+// every other field back to keep it, and two people quick-editing one card
+// would overwrite each other's titles. PatchCard below is what makes that true:
+// for a while this said it while reading the card and writing it back whole,
+// which is the thing it claims to avoid.
 func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee string) (*model.Card, error) {
 	assignee = strings.TrimSpace(assignee)
 	if err := checkText("assignee", assignee, MaxAssignee, false); err != nil {
@@ -562,10 +562,11 @@ func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee stri
 		// changed nothing.
 		return c, nil
 	}
-	c.Assignee, c.UpdatedAt = assignee, k.now()
-	if err := k.store.UpdateCard(ctx, c); err != nil {
+	at := k.now()
+	if err := k.store.PatchCard(ctx, id, store.CardPatch{Assignee: &assignee}, at); err != nil {
 		return nil, err
 	}
+	c.Assignee, c.UpdatedAt = assignee, at
 	return c, nil
 }
 
@@ -593,10 +594,11 @@ func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*
 		// not an edit, so UpdatedAt stays where it is.
 		return c, nil
 	}
-	c.DueDate, c.UpdatedAt = date, k.now()
-	if err := k.store.UpdateCard(ctx, c); err != nil {
+	at := k.now()
+	if err := k.store.PatchCard(ctx, id, store.CardPatch{DueDate: &date}, at); err != nil {
 		return nil, err
 	}
+	c.DueDate, c.UpdatedAt = date, at
 	return c, nil
 }
 
@@ -662,10 +664,11 @@ func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*mo
 	} else {
 		c.Labels = append(c.Labels, labelID)
 	}
-	c.UpdatedAt = k.now()
-	if err := k.store.UpdateCard(ctx, c); err != nil {
+	at := k.now()
+	if err := k.store.PatchCard(ctx, id, store.CardPatch{Labels: &c.Labels}, at); err != nil {
 		return nil, err
 	}
+	c.UpdatedAt = at
 	return c, nil
 }
 
@@ -995,9 +998,12 @@ func (k *Kanban) Bulk(ctx context.Context, boardID model.ID, action BulkAction, 
 		case BulkArchive:
 			err = k.store.SetCardArchived(ctx, id, k.now())
 		case BulkAssign:
-			c.Assignee = strings.TrimSpace(target)
-			c.UpdatedAt = k.now()
-			err = k.store.UpdateCard(ctx, c)
+			// One field, like the quick edit on the card face. Writing the
+			// whole card did this to every card in the selection at once: two
+			// hundred cards' titles, labels and checklists replaced with
+			// whatever the read a moment earlier had returned.
+			who := strings.TrimSpace(target)
+			err = k.store.PatchCard(ctx, id, store.CardPatch{Assignee: &who}, k.now())
 		case BulkMove:
 			// Through the service method and not straight to the store, because
 			// that is where the WIP limit is checked. Dragging these same cards

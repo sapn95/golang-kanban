@@ -41,7 +41,7 @@ ordinary stylesheet.
 - `assets/tailwind.config.js` names the two places a class can come from, the
   templates and `app.js`, and sets `darkMode: 'class'` because the theme is a
   class on `<html>` that a button toggles.
-- `assets/tailwind.css` is the output, 38 kB and 7 kB gzipped, embedded and
+- `assets/tailwind.css` is the output, 45 kB and 8 kB gzipped, embedded and
   served with the digest-stamped URL every other asset gets. `go build` needs
   nothing but Go, and the Docker build does not see the compiler or its inputs.
 - `go generate ./assets/` runs the compile. CI runs the same script and fails on

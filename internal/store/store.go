@@ -23,6 +23,26 @@ var (
 	ErrInvalid  = errors.New("store: invalid argument") // e.g. a reorder that does not name every column
 )
 
+// CardPatch names the fields of a card to write. A nil field is one the write
+// leaves alone; a non-nil one is written even when it is empty, which is how a
+// card is unassigned or has its due date taken off.
+type CardPatch struct {
+	Assignee *string
+	DueDate  *time.Time
+	// Labels replaces the whole set when it is not nil. A card carries few
+	// enough of them that naming the difference would be more to get wrong than
+	// it saves.
+	Labels *[]model.ID
+}
+
+// BoardPatch names the fields of a board to write, on the same terms.
+type BoardPatch struct {
+	Name   *string
+	Slug   *string
+	Layout *string
+	SLA    *model.SLA
+}
+
 // Store is implemented by every backend. IDs and timestamps are set by the
 // caller; a backend never generates them. Every method is atomic within its
 // backend.
@@ -68,6 +88,20 @@ type Store interface {
 	// UpdateCard replaces Title, Description, DueDate, Assignee, Labels,
 	// Subtasks and UpdatedAt. It never changes ColumnID or Position.
 	UpdateCard(ctx context.Context, c *model.Card) error
+	// PatchCard writes the fields a CardPatch names and stamps UpdatedAt,
+	// leaving everything else alone.
+	//
+	// The quick edits on the card face each change one thing: who it is
+	// assigned to, when it is due, whether a label is on it. Reading the card
+	// and writing it back whole meant a tap on the assignee putting back a
+	// title somebody had renamed, a label they had added and a checklist line
+	// they had ticked, all within one store round trip. Same reason as
+	// TouchCard and SetSubtaskDone; one method rather than three.
+	PatchCard(ctx context.Context, id model.ID, p CardPatch, at time.Time) error
+	// PatchBoard is the same for a board. A rename, a layout switch and a
+	// change to the response-time promise are three forms on two pages, and
+	// each of them used to write all of it.
+	PatchBoard(ctx context.Context, id model.ID, p BoardPatch, at time.Time) error
 	// SetSubtaskDone ticks or unticks one checklist line and stamps the card's
 	// UpdatedAt, writing nothing else. Reading a card back to flip one boolean
 	// and writing the whole thing would hand an edit that landed in between

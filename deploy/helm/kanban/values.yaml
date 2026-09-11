@@ -301,7 +301,7 @@ resources:
   requests: {cpu: 25m, memory: 32Mi}
   limits: {memory: 128Mi}
 
-# The image is gcr.io/distroless/static-debian12:nonroot, which runs as uid
+# The image is gcr.io/distroless/static-debian13:nonroot, which runs as uid
 # 65532 and carries no shell and no package manager.
 podSecurityContext:
   runAsNonRoot: true

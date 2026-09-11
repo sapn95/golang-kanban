@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"kanban/internal/model"
+	"kanban/internal/store"
 	"kanban/internal/store/memory"
 )
 
@@ -445,3 +447,50 @@ func TestScheduleFallsBackToTheClockAndTheDefaultLogger(t *testing.T) {
 		t.Error("log() must fall back to the default logger")
 	}
 }
+
+// A snapshot that an import would refuse must not be written and logged as a
+// backup. Export reads the boards and then walks them reading cards, so a
+// column added in between comes back on a card whose board was listed without
+// it, and that is the shape import refuses.
+func TestScheduleRefusesASnapshotThatWillNotImport(t *testing.T) {
+	ctx := context.Background()
+	s := memory.New()
+	seed(t, s)
+
+	tg := &countingTarget{}
+	l := &logs{}
+	sch := &Schedule{Store: torn{Store: s}, Target: tg, Every: time.Hour, Log: l.logger()}
+	_, err := sch.Once(ctx)
+	if err == nil {
+		t.Fatal("a snapshot naming a column its board does not have was accepted")
+	}
+	if !strings.Contains(err.Error(), "would not import") {
+		t.Errorf("err = %v; it does not say the snapshot is unrestorable", err)
+	}
+	if tg.puts != 0 {
+		t.Errorf("%d snapshots written; one that cannot be read back must not be", tg.puts)
+	}
+}
+
+// torn is a store whose card list names a column its board list did not, which
+// is what a column created part-way through an export looks like.
+type torn struct{ store.Store }
+
+func (t torn) ListCards(ctx context.Context, boardID model.ID) ([]model.Card, error) {
+	cards, err := t.Store.ListCards(ctx, boardID)
+	if err != nil {
+		return nil, err
+	}
+	return append(cards, model.Card{ID: "k-late", BoardID: boardID,
+		ColumnID: "added-mid-export", Title: "filed while the export was running"}), nil
+}
+
+// countingTarget counts what was written, so a test can assert nothing was.
+type countingTarget struct {
+	puts int
+}
+
+func (c *countingTarget) Put(context.Context, string, []byte) error { c.puts++; return nil }
+func (c *countingTarget) String() string                            { return "counting" }
+func (c *countingTarget) List(context.Context) ([]string, error)    { return nil, nil }
+func (c *countingTarget) Delete(context.Context, string) error      { return nil }
