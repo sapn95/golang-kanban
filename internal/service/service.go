@@ -602,8 +602,15 @@ func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*
 	return c, nil
 }
 
-// ToggleSubtask ticks one line of a card's checklist, or unticks it, and hands
+// SetSubtaskDone ticks one line of a card's checklist or unticks it, and hands
 // the card back as it now stands.
+//
+// The caller says which state it wants rather than asking for a flip, so the
+// same request twice is the same result. It used to be a toggle, and a toggle
+// is the one shape where a retry is worse than a duplicate: the board answers,
+// the response is lost on the way back, the person taps again because nothing
+// happened, and the second tap undoes the first. On a phone that is the normal
+// case, not the unlucky one.
 //
 // By id rather than by position: a card's checklist can be reordered or have a
 // line removed in the edit form while somebody else is looking at the board,
@@ -621,7 +628,7 @@ func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*
 // clock, which is right: work on a card is the card being attended to, and a
 // desk that looks idle while somebody is working through a checklist is a desk
 // whose badges say the wrong thing.
-func (k *Kanban) ToggleSubtask(ctx context.Context, id, subtaskID model.ID) (*model.Card, error) {
+func (k *Kanban) SetSubtaskDone(ctx context.Context, id, subtaskID model.ID, done bool) (*model.Card, error) {
 	c, err := k.store.GetCard(ctx, id)
 	if err != nil {
 		return nil, err
@@ -631,21 +638,25 @@ func (k *Kanban) ToggleSubtask(ctx context.Context, id, subtaskID model.ID) (*mo
 		return nil, store.ErrNotFound
 	}
 	at := k.now()
-	if err := k.store.SetSubtaskDone(ctx, id, subtaskID, !c.Subtasks[i].Done, at); err != nil {
+	if err := k.store.SetSubtaskDone(ctx, id, subtaskID, done, at); err != nil {
 		return nil, err
 	}
-	c.Subtasks[i].Done = !c.Subtasks[i].Done
+	c.Subtasks[i].Done = done
 	c.UpdatedAt = at
 	return c, nil
 }
 
-// ToggleCardLabel puts one of the board's labels on a card, or takes it off,
-// whichever the card is not already. Same reason as SetCardAssignee for not
-// going through UpdateCard.
+// SetCardLabel puts one of the board's labels on a card or takes it off, and
+// the caller says which. Same reason as SetCardAssignee for not going through
+// UpdateCard.
+//
+// The state rather than a flip, so the same request twice is the same result.
+// It was a toggle, and a toggle undoes itself when a response is lost and the
+// person taps the chip again.
 //
 // The label has to belong to the card's own board. Nothing else checks that, so
 // a crafted id would otherwise attach another board's label to this one.
-func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*model.Card, error) {
+func (k *Kanban) SetCardLabel(ctx context.Context, id, labelID model.ID, on bool) (*model.Card, error) {
 	c, err := k.store.GetCard(ctx, id)
 	if err != nil {
 		return nil, err
@@ -659,10 +670,17 @@ func (k *Kanban) ToggleCardLabel(ctx context.Context, id, labelID model.ID) (*mo
 	}
 	// No cap on how many: a toggle can only ever add a label the board has, so
 	// the board's own label count is the bound.
-	if i := slices.Index(c.Labels, labelID); i >= 0 {
+	i := slices.Index(c.Labels, labelID)
+	switch {
+	case i >= 0 && !on:
 		c.Labels = slices.Delete(c.Labels, i, i+1)
-	} else {
+	case i < 0 && on:
 		c.Labels = append(c.Labels, labelID)
+	default:
+		// Already where the caller wants it. Nothing to write and no reason to
+		// move UpdatedAt for a request that changed nothing, which is also what
+		// makes a second delivery of the same request harmless.
+		return c, nil
 	}
 	at := k.now()
 	if err := k.store.PatchCard(ctx, id, store.CardPatch{Labels: &c.Labels}, at); err != nil {

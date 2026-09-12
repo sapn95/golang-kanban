@@ -97,7 +97,7 @@ func seed(t *testing.T, s store.Store) {
 		},
 	})
 	must(t, "create card", err)
-	_, err = svc.ToggleCardLabel(ctx, first.ID, bug.ID)
+	_, err = svc.SetCardLabel(ctx, first.ID, bug.ID, true)
 	must(t, "label card", err)
 
 	second, err := svc.CreateCard(ctx, work.ID, work.Columns[1].ID, service.CardInput{Title: "Fix the filer"})

@@ -922,24 +922,24 @@ func TestSetCardDueDateToTheSameDayChangesNothing(t *testing.T) {
 	}
 }
 
-func TestToggleCardLabel(t *testing.T) {
+func TestSetCardLabel(t *testing.T) {
 	k := newSvc(t)
 	ctx := context.Background()
 	b, _ := k.CreateBoard(ctx, "B", "", nil)
 	bug, _ := k.CreateLabel(ctx, b.ID, "bug", "#f00")
 	c, _ := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "T"})
 
-	if _, err := k.ToggleCardLabel(ctx, c.ID, bug.ID); err != nil {
+	if _, err := k.SetCardLabel(ctx, c.ID, bug.ID, true); err != nil {
 		t.Fatalf("adding: %v", err)
 	}
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 1 || got.Labels[0] != bug.ID {
 		t.Errorf("labels = %v, want just the bug label", got.Labels)
 	}
-	if _, err := k.ToggleCardLabel(ctx, c.ID, bug.ID); err != nil {
+	if _, err := k.SetCardLabel(ctx, c.ID, bug.ID, false); err != nil {
 		t.Fatalf("removing: %v", err)
 	}
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
-		t.Errorf("labels = %v after the second toggle, want none", got.Labels)
+		t.Errorf("labels = %v after taking it off, want none", got.Labels)
 	}
 
 	// A label belongs to a board. Without this check a crafted id would hang
@@ -947,14 +947,34 @@ func TestToggleCardLabel(t *testing.T) {
 	// card carrying a label it does not have.
 	other, _ := k.CreateBoard(ctx, "Other", "", nil)
 	theirs, _ := k.CreateLabel(ctx, other.ID, "theirs", "#00f")
-	if _, err := k.ToggleCardLabel(ctx, c.ID, theirs.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := k.SetCardLabel(ctx, c.ID, theirs.ID, true); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("another board's label = %v, want ErrNotFound", err)
 	}
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
-		t.Errorf("labels = %v, want the refused toggle to have changed nothing", got.Labels)
+		t.Errorf("labels = %v, want the refused write to have changed nothing", got.Labels)
 	}
-	if _, err := k.ToggleCardLabel(ctx, "nope", theirs.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("toggling on an unknown card = %v, want ErrNotFound", err)
+	if _, err := k.SetCardLabel(ctx, "nope", theirs.ID, true); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("labelling an unknown card = %v, want ErrNotFound", err)
+	}
+
+	// The same request twice is the same result, which is the point of taking
+	// the state rather than flipping: a lost response has the person tapping
+	// the chip again.
+	for range 2 {
+		if _, err := k.SetCardLabel(ctx, c.ID, bug.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 1 {
+		t.Errorf("labels = %v after asking for it twice, want one", got.Labels)
+	}
+	for range 2 {
+		if _, err := k.SetCardLabel(ctx, c.ID, bug.ID, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
+		t.Errorf("labels = %v after taking it off twice, want none", got.Labels)
 	}
 }
 

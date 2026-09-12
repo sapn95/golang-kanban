@@ -31,6 +31,9 @@ Database: SQLite or PostgreSQL. SQLite is a file, needs nothing installed, and i
   and labels, and restoring puts back the same card. The archive has a search
   box of its own, on the same syntax as the board's, so finding the one card
   somebody archived in March does not mean scrolling to March.
+- A tap that has to travel over a phone network says which state it wants, not
+  "the other one": a request that arrives twice leaves a checklist line and a
+  label where you put them, rather than undoing itself.
 - Comments on a card, with who wrote them and when. They cannot be edited and
   the author can remove their own; the reasoning is in
   [docs/adr/0007](docs/adr/0007-comments-are-append-only.md).

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"slices"
 
 	"kanban/internal/identity"
 	"kanban/internal/model"
@@ -170,8 +171,16 @@ func (s *Server) setAssignee(w http.ResponseWriter, r *http.Request) {
 // answered 409 for a label the card already carries would make a script that
 // wants a label on a card check first for no reason.
 func (s *Server) toggleLabel(w http.ResponseWriter, r *http.Request) {
-	c, err := s.svc.ToggleCardLabel(r.Context(),
-		model.ID(r.PathValue("card")), model.ID(r.PathValue("label")))
+	// A flip, because the route says toggle and a script that calls it twice
+	// meant to. The page sends the state it wants instead; the reason is on
+	// SetCardLabel.
+	cardID, labelID := model.ID(r.PathValue("card")), model.ID(r.PathValue("label"))
+	cur, err := s.svc.Card(r.Context(), cardID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	c, err := s.svc.SetCardLabel(r.Context(), cardID, labelID, !slices.Contains(cur.Labels, labelID))
 	if err != nil {
 		s.fail(w, r, err)
 		return
