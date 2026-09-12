@@ -32,6 +32,7 @@ func Run(t *testing.T, newStore New) {
 		"Patch":         testPatch,
 		"PatchMatrix":   testPatchMatrix,
 		"PatchBoards":   testPatchBoardMatrix,
+		"LastColumn":    testLastColumnStays,
 		"Comments":      testComments,
 		"Layout":        testLayout,
 		"SLA":           testSLA,
@@ -1146,6 +1147,28 @@ func testPatch(t *testing.T, s store.Store) {
 
 	wantErr(t, "a card that is not there", s.PatchCard(ctx, newID("card"), store.CardPatch{Assignee: &who}, later), store.ErrNotFound)
 
+	// A label belongs to a board, and this is the write that had no check. The
+	// service checks first, so nothing reaches here with a foreign label today;
+	// the boundary that can enforce it is this one.
+	other := mustBoard(t, s, string(newID("other")), "To Do")
+	theirs := &model.Label{ID: newID("label"), BoardID: other.ID, Name: "theirs", Color: "#0ea5e9"}
+	if err := s.CreateLabel(ctx, theirs); err != nil {
+		t.Fatal(err)
+	}
+	foreign := []model.ID{theirs.ID}
+	wantErr(t, "another board's label",
+		s.PatchCard(ctx, c.ID, store.CardPatch{Labels: &foreign}, later), store.ErrNotFound)
+
+	// And the same label twice is the same label once, on every backend. The
+	// SQL ones get that from a primary key; the in-memory one has to do it.
+	twice := []model.ID{lab.ID, lab.ID}
+	if err := s.PatchCard(ctx, c.ID, store.CardPatch{Labels: &twice}, later); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.GetCard(ctx, c.ID); len(got.Labels) != 1 {
+		t.Errorf("labels = %v after naming one twice, want one", got.Labels)
+	}
+
 	// And the same for a board: a layout switch must not put back a rename.
 	name := "Renamed board"
 	if err := s.PatchBoard(ctx, b.ID, store.BoardPatch{Name: &name}, later); err != nil {
@@ -1320,5 +1343,38 @@ func testPatchBoardMatrix(t *testing.T, s store.Store) {
 				t.Errorf("UpdatedAt = %v, want %v", got.UpdatedAt, at)
 			}
 		})
+	}
+}
+
+// testLastColumnStays is the guard that cannot live in the service. The service
+// counts a board's columns and then calls DeleteColumn, and two deletes arriving
+// together both pass that count: each sees two columns, each removes one, and
+// the board is left with none. Its cards go with them, deleted and not archived,
+// so nothing brings them back.
+func testLastColumnStays(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "last-column", "To Do", "Doing")
+
+	// Two is fine, one is not.
+	if err := s.DeleteColumn(ctx, b.Columns[1].ID, ""); err != nil {
+		t.Fatalf("deleting the second of two: %v", err)
+	}
+	wantErr(t, "deleting the only column", s.DeleteColumn(ctx, b.Columns[0].ID, ""), store.ErrInvalid)
+
+	got, err := s.GetBoardByID(ctx, b.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Columns) != 1 {
+		t.Fatalf("%d columns, want the last one kept", len(got.Columns))
+	}
+
+	// And the cards on it are still there, which is the thing that cannot be
+	// undone if this check is missed.
+	c := mustCard(t, s, got, got.Columns[0].ID, "still here")
+	wantErr(t, "deleting the only column, with a card on it",
+		s.DeleteColumn(ctx, got.Columns[0].ID, ""), store.ErrInvalid)
+	if _, err := s.GetCard(ctx, c.ID); err != nil {
+		t.Errorf("the card went with the refused delete: %v", err)
 	}
 }

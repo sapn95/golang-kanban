@@ -41,18 +41,24 @@ type AccessVerifier struct {
 	// only has to be short enough to pick up a rotation well inside a week.
 	KeyTTL time.Duration
 
-	mu        sync.Mutex
-	keys      map[string]*rsa.PublicKey
+	mu   sync.Mutex
+	keys map[string]*rsa.PublicKey
+	// fetchedAt is when keys last came back from the endpoint. It answers two
+	// questions: whether the set is still fresh, and whether an unknown key id
+	// is worth another fetch. The second is what keeps an invented id from
+	// making an outbound request, and it does so for every invented id at once
+	// rather than one at a time.
 	fetchedAt time.Time
-	// missAt remembers when a kid was last looked for and not found. The
-	// lookup happens before the signature is checked, so without this an
-	// unsigned token carrying an invented kid makes an outbound request
-	// every time it arrives.
-	missAt map[string]time.Time
 }
 
-// missTTL is how long a kid that the endpoint did not serve is remembered as
-// missing, so an invented one cannot be used to make this process fetch.
+// maxKID is the longest key id this will look at. Cloudflare's are a few dozen
+// characters; the field is read out of a JWT header before the signature is
+// checked, so its size is the caller's choice until something says otherwise.
+const maxKID = 128
+
+// missTTL is how long a fetch holds off another one for an unknown key id. A
+// real rotation is minutes apart, not milliseconds, so this costs a legitimate
+// new key at most this long and it costs a caller inventing ids everything.
 const missTTL = 30 * time.Second
 
 // ErrNoKey is returned when the token names a key the endpoint does not serve.
@@ -100,6 +106,12 @@ type jwks struct {
 // copy is stale or does not contain it. A miss forces one refetch, so a
 // rotation is picked up immediately rather than after the TTL.
 func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
+	// Before anything is looked up or remembered. A key id this long is not one
+	// Cloudflare issued, and refusing it here is what keeps the size of what is
+	// kept out of the caller's hands.
+	if len(kid) > maxKID {
+		return nil, fmt.Errorf("%w: key id is %d bytes", ErrNoKey, len(kid))
+	}
 	v.mu.Lock()
 	fresh := v.now().Sub(v.fetchedAt) < v.ttl()
 	k, ok := v.keys[kid]
@@ -108,12 +120,16 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		return k, nil
 	}
 
-	// A kid that was missing a moment ago is still missing; a real rotation
-	// is minutes apart, not milliseconds.
+	// A set fetched a moment ago does not have this id either, so there is
+	// nothing to go and get. One timestamp covers every unknown id at once:
+	// the id is read out of the token's header before the signature is
+	// checked, so a caller who varies it on every request would otherwise make
+	// the process ask the team's endpoint for keys as fast as the requests
+	// arrive, with no valid token and before AUTH_REQUIRED refuses anything.
 	v.mu.Lock()
-	missed, seen := v.missAt[kid]
+	recent := v.now().Sub(v.fetchedAt) < missTTL
 	v.mu.Unlock()
-	if seen && v.now().Sub(missed) < missTTL {
+	if recent {
 		if ok {
 			return k, nil
 		}
@@ -135,12 +151,6 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	k, ok = keys[kid]
 	v.mu.Unlock()
 	if !ok {
-		v.mu.Lock()
-		if v.missAt == nil {
-			v.missAt = map[string]time.Time{}
-		}
-		v.missAt[kid] = v.now()
-		v.mu.Unlock()
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
 	return k, nil

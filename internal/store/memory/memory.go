@@ -261,6 +261,12 @@ func (s *Store) DeleteColumn(_ context.Context, id, moveCardsTo model.ID) error 
 	if col == nil {
 		return store.ErrNotFound
 	}
+	if len(b.Columns) <= 1 {
+		// A board has to keep a column. The service counts them and then calls
+		// this, and two deletes arriving together both pass that count; here is
+		// where the board can be looked at under the lock that decides.
+		return store.ErrInvalid
+	}
 	if moveCardsTo != "" {
 		if moveCardsTo == id || b.Column(moveCardsTo) == nil {
 			return store.ErrInvalid
@@ -395,9 +401,19 @@ func (s *Store) PatchCard(_ context.Context, id model.ID, p store.CardPatch, at 
 		c.DueDate = *p.DueDate
 	}
 	if p.Labels != nil {
-		// Copied, or the caller's slice and the stored one are the same array
-		// and a later append rewrites what is kept.
-		c.Labels = append([]model.ID(nil), (*p.Labels)...)
+		// Checked against the board and de-duplicated, the way every other
+		// write of a card's labels is. The SQL backends get the second from a
+		// primary key; without it here, a card posted with one label twice kept
+		// it twice on this backend alone.
+		b, ok := s.boards[c.BoardID]
+		if !ok {
+			return store.ErrNotFound
+		}
+		labels := uniqueLabels(*p.Labels)
+		if err := s.checkLabels(b, labels); err != nil {
+			return err
+		}
+		c.Labels = labels
 	}
 	c.UpdatedAt = at.UTC()
 	return nil
@@ -497,13 +513,36 @@ func (s *Store) checkLabels(b *model.Board, labels []model.ID) error {
 	return nil
 }
 
-// normalise sorts a card's labels and numbers its subtasks, so two cards with
-// the same content compare equal however they were built.
+// normalise sorts and de-duplicates a card's labels and numbers its subtasks,
+// so two cards with the same content compare equal however they were built.
+//
+// The de-duplication is what the SQL backends get from a primary key on
+// (card_id, label_id) and this one has to do for itself. Without it a card
+// posted with the same label twice kept it twice here and once there: the face
+// drew the chip twice and its X needed two clicks, on one backend only.
 func normalise(c *model.Card) {
-	sort.Slice(c.Labels, func(i, j int) bool { return c.Labels[i] < c.Labels[j] })
+	c.Labels = uniqueLabels(c.Labels)
 	for i := range c.Subtasks {
 		c.Subtasks[i].Position = i + 1
 	}
+}
+
+// uniqueLabels returns the ids once each, sorted, which is the order the SQL
+// backends read them back in.
+func uniqueLabels(in []model.ID) []model.ID {
+	if len(in) == 0 {
+		return in
+	}
+	seen := make(map[model.ID]bool, len(in))
+	out := make([]model.ID, 0, len(in))
+	for _, id := range in {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // CreateCard appends a card to its column and gives it the next position.

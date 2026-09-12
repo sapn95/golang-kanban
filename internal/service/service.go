@@ -173,11 +173,29 @@ func (k *Kanban) CreateBoard(ctx context.Context, name, slug string, columns []s
 	if err := checkText("name", name, MaxName, true); err != nil {
 		return nil, err
 	}
-	if slug == "" {
+	given := slug != ""
+	if !given {
 		slug = Slugify(name)
+		if slug == "" {
+			// Slugify keeps only a-z and 0-9, so a name written in Cyrillic,
+			// Greek, Han or Arabic leaves nothing. The board form has one field
+			// and it is the name, so refusing this as a bad slug would be a
+			// message about something nobody typed. A board can be called
+			// anything; what it cannot do is be called nothing in a URL.
+			// The whole id, not a slice of it: how long an id is belongs to
+			// whatever makes them, and a test that injects a short one should
+			// not be a panic.
+			slug = Slugify(string(k.newID()))
+		}
 	}
 	if !slugRe.MatchString(slug) || len(slug) > MaxSlug {
-		return nil, invalid("slug", "must be lower-case letters, digits and single hyphens")
+		field := "slug"
+		if !given {
+			// The caller never sent one, so the complaint is about the name it
+			// was made from.
+			field = "name"
+		}
+		return nil, invalid(field, "must be lower-case letters, digits and single hyphens")
 	}
 	if len(columns) == 0 {
 		columns = DefaultColumns

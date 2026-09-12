@@ -82,8 +82,12 @@ func TestCreateBoardValidation(t *testing.T) {
 	if _, err := k.CreateBoard(ctx, "Ok", "Not A Slug", nil); !isValidation(err, "slug") {
 		t.Errorf("bad slug: %v", err)
 	}
-	if _, err := k.CreateBoard(ctx, "ÄÖÜ", "", nil); !isValidation(err, "slug") {
-		t.Errorf("unslugifiable name: %v", err)
+	// A name that slugifies to nothing is not a refusal any more: the form has
+	// one field and it is the name, so the board gets a slug of its own rather
+	// than a message about something nobody typed. TestABoardCanBeNamedInAnyScript
+	// is where that is asserted.
+	if b, err := k.CreateBoard(ctx, "ÄÖÜ", "", nil); err != nil || b.Slug == "" {
+		t.Errorf("unslugifiable name: %v, slug %q", err, b.Slug)
 	}
 	if _, err := k.CreateBoard(ctx, "Ok", "", []string{"A", " "}); !isValidation(err, "column") {
 		t.Errorf("empty column: %v", err)
@@ -1223,4 +1227,42 @@ func TestSubtaskIDsAreNotTheCallersToChoose(t *testing.T) {
 			t.Errorf("err = %v, want a validation error", err)
 		}
 	})
+}
+
+// A board can be called anything. Slugify keeps only a-z and 0-9, so a name in
+// Cyrillic, Greek, Han or Arabic left nothing, and the board form, which has one
+// field and it is the name, refused it with a sentence about a slug.
+func TestABoardCanBeNamedInAnyScript(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	for _, name := range []string{"日本語", "Проект", "Ελλάδα", "لوحة"} {
+		b, err := k.CreateBoard(ctx, name, "", nil)
+		if err != nil {
+			t.Fatalf("%q: %v", name, err)
+		}
+		if b.Name != name {
+			t.Errorf("Name = %q, want %q", b.Name, name)
+		}
+		if b.Slug == "" {
+			t.Errorf("%q got no slug", name)
+		}
+		if got, err := k.Board(ctx, b.Slug); err != nil || got.Name != name {
+			t.Errorf("%q is not reachable at /b/%s: %v", name, b.Slug, err)
+		}
+	}
+
+	// A name that does slugify still slugifies, so the URL stays readable.
+	b, err := k.CreateBoard(ctx, "Work Board", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Slug != "work-board" {
+		t.Errorf("Slug = %q, want work-board", b.Slug)
+	}
+
+	// And a slug the caller sends is still checked as a slug, because there the
+	// caller did type one.
+	if _, err := k.CreateBoard(ctx, "Fine", "Not A Slug", nil); !isValidation(err, "slug") {
+		t.Errorf("err = %v, want a validation error naming slug", err)
+	}
 }

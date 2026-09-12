@@ -66,6 +66,8 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 			First:  i == 0,
 			Last:   i == len(b.Columns)-1,
 			Only:   len(b.Columns) == 1,
+			Prev:   i - 1,
+			Next:   i + 1,
 		}
 		for _, other := range b.Columns {
 			if other.ID != col.ID {
@@ -381,9 +383,29 @@ func (s *Server) moveColumn(w http.ResponseWriter, r *http.Request) {
 			at = i
 		}
 	}
+	// The position the column should end at, not a direction. A direction is
+	// relative, so the same request twice moves the column two places, and
+	// these are plain form posts with nothing on screen until the redirect
+	// lands: a second tap is what somebody does when the first seems not to
+	// have worked. The arrows send the number they were drawn with.
 	to := at - 1
-	if r.PostFormValue("direction") == "down" {
+	if want := r.PostFormValue("to"); want != "" {
+		n, err := strconv.Atoi(want)
+		if err != nil {
+			plain(w, http.StatusBadRequest, "bad position")
+			return
+		}
+		to = n
+	} else if r.PostFormValue("direction") == "down" {
+		// No position: a page from before this change, or a curl. Still
+		// relative, and still says so.
 		to = at + 1
+	}
+	if to == at {
+		// Already where it was asked to be, which is what the second delivery
+		// of the same request looks like.
+		s.settingsRedirect(w, r, b)
+		return
 	}
 	if to < 0 || to >= len(order) {
 		s.settingsRedirect(w, r, b)

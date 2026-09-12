@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -169,7 +170,12 @@ func TestKeysAreCachedButAMissRefetches(t *testing.T) {
 	s := newSigner(t, "k1")
 	v := verifierFor(certServer(t, &hits, s))
 
-	for i := 0; i < 3; i++ {
+	// A clock the test moves, because how long ago the last fetch was is what
+	// decides whether an unknown key id is worth another one.
+	at := time.Now()
+	v.Now = func() time.Time { return at }
+
+	for i := range 3 {
 		if _, err := v.Verify(context.Background(), s.token(t, "RS256", nil)); err != nil {
 			t.Fatalf("Verify %d: %v", i, err)
 		}
@@ -178,14 +184,55 @@ func TestKeysAreCachedButAMissRefetches(t *testing.T) {
 		t.Errorf("fetched the key set %d times for three verifications, want 1", got)
 	}
 
-	// An unknown kid must not be answered from cache: that is what a
-	// rotation looks like, and waiting out the TTL would be an outage.
-	unknown := newSigner(t, "k2")
-	if _, err := v.Verify(context.Background(), unknown.token(t, "RS256", nil)); err == nil {
+	// Twenty invented key ids, one after another, with no time passing. This is
+	// the shape of the attack: the id is read out of the token's header before
+	// the signature is checked, so without a hold-off the process asks
+	// Cloudflare for keys as fast as the requests arrive, with no valid token
+	// and before AUTH_REQUIRED refuses anything.
+	for i := range 20 {
+		invented := newSigner(t, fmt.Sprintf("invented-%d", i))
+		if _, err := v.Verify(context.Background(), invented.token(t, "RS256", nil)); err == nil {
+			t.Fatal("accepted a token signed by a key the endpoint does not serve")
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("hits = %d after twenty invented key ids, want no further fetches", got)
+	}
+
+	// A real rotation is minutes apart, not milliseconds. Once the hold-off has
+	// passed, an unknown id fetches again, so a new key is picked up within
+	// thirty seconds of appearing rather than after the whole key TTL.
+	at = at.Add(time.Minute)
+	rotated := newSigner(t, "k2")
+	if _, err := v.Verify(context.Background(), rotated.token(t, "RS256", nil)); err == nil {
 		t.Fatal("accepted a token signed by a key the endpoint does not serve")
 	}
 	if got := hits.Load(); got != 2 {
-		t.Errorf("hits = %d after an unknown kid, want a refetch (2)", got)
+		t.Errorf("hits = %d a minute later, want the rotation to have been fetched (2)", got)
+	}
+
+	// And the key that does work still works, from the set just fetched.
+	if _, err := v.Verify(context.Background(), s.token(t, "RS256", nil)); err != nil {
+		t.Errorf("the working key stopped working: %v", err)
+	}
+	if got := hits.Load(); got != 2 {
+		t.Errorf("hits = %d; a known key fetched again", got)
+	}
+}
+
+// A key id longer than any Cloudflare issues is refused before anything looks
+// it up, because the field is the caller's to size until something says no.
+func TestAnOversizedKeyIDIsRefusedOutright(t *testing.T) {
+	var hits atomic.Int64
+	s := newSigner(t, "k1")
+	v := verifierFor(certServer(t, &hits, s))
+
+	huge := newSigner(t, strings.Repeat("x", 2000))
+	if _, err := v.Verify(context.Background(), huge.token(t, "RS256", nil)); err == nil {
+		t.Fatal("a 2000-byte key id was looked up")
+	}
+	if got := hits.Load(); got != 0 {
+		t.Errorf("hits = %d; an oversized key id reached the endpoint", got)
 	}
 }
 
@@ -344,8 +391,10 @@ func TestAnInventedKidDoesNotMakeUsFetchRepeatedly(t *testing.T) {
 	s := newSigner(t, "k1")
 	v := verifierFor(certServer(t, &hits, s))
 
-	// The key lookup happens before the signature is checked, so an unsigned
-	// token carrying a made-up kid used to cost one outbound request each.
+	// One invented kid, over and over. The varying-kid case is in
+	// TestKeysAreCachedButAMissRefetches, and it is the one that matters: this
+	// was closed for a repeated id long before it was closed for a caller who
+	// changes it every time.
 	bogus := newSigner(t, "invented")
 	for i := 0; i < 10; i++ {
 		if _, err := v.Verify(context.Background(), bogus.token(t, "RS256", nil)); err == nil {

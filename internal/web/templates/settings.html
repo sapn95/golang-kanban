@@ -99,7 +99,7 @@
       </span>
       {{if not .First}}
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move" class="shrink-0">
-        <input type="hidden" name="direction" value="up">
+        <input type="hidden" name="to" value="{{.Prev}}">
         <button type="submit" title="Move left" aria-label="Move left"
           class="p-2 rounded-lg hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
           <i class="bi bi-arrow-left-short text-lg"></i>
@@ -108,7 +108,7 @@
       {{end}}
       {{if not .Last}}
       <form method="post" action="/b/{{$slug}}/columns/{{.Column.ID}}/move" class="shrink-0">
-        <input type="hidden" name="direction" value="down">
+        <input type="hidden" name="to" value="{{.Next}}">
         <button type="submit" title="Move right" aria-label="Move right"
           class="p-2 rounded-lg hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
           <i class="bi bi-arrow-right-short text-lg"></i>

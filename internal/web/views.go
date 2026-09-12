@@ -250,6 +250,14 @@ type columnSetting struct {
 	Others []model.Column
 	First  bool
 	Last   bool
+	// Prev and Next are the positions the two move arrows ask for, counting
+	// from zero. A position rather than a direction, because a direction is
+	// relative and the same request twice moves the column two places; these
+	// are plain form posts with nothing on screen until the redirect lands, so
+	// a second tap is what somebody does when the first seems not to have
+	// worked.
+	Prev int
+	Next int
 	// Only marks the last column standing. It cannot be deleted, so the form
 	// does not offer to.
 	Only bool

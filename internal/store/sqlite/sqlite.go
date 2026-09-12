@@ -471,6 +471,20 @@ func (s *Store) DeleteColumn(ctx context.Context, id, moveCardsTo model.ID) erro
 		if err := tx.QueryRowContext(ctx, `SELECT board_id FROM columns WHERE id = ?`, id).Scan(&boardID); err != nil {
 			return err
 		}
+		// A board has to keep a column, and this is the only place that can
+		// promise it. The service counts the columns and then calls this, which
+		// two deletes arriving together both pass: each reads two columns, each
+		// deletes one, and the board is left with none and its cards deleted
+		// with them. Cards are deleted here, not archived, so nothing brings
+		// them back, and a board with no columns then fails every snapshot of
+		// the whole store until somebody notices.
+		var left int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM columns WHERE board_id = ?`, boardID).Scan(&left); err != nil {
+			return err
+		}
+		if left <= 1 {
+			return store.ErrInvalid
+		}
 		if moveCardsTo != "" {
 			var targetBoard model.ID
 			err := tx.QueryRowContext(ctx, `SELECT board_id FROM columns WHERE id = ?`, moveCardsTo).Scan(&targetBoard)
@@ -698,12 +712,33 @@ func (s *Store) PatchCard(ctx context.Context, id model.ID, p store.CardPatch, a
 		if p.Labels == nil {
 			return nil
 		}
+		// The same check every other write of a card's labels makes: a label
+		// belongs to a board, and card_labels' only constraint is a foreign key
+		// to labels(id), which another board's label satisfies. Nothing reaches
+		// here with one today, because the service checks first; the invariant
+		// belongs at the boundary that can enforce it.
+		labels := uniqueIDs(*p.Labels)
+		if len(labels) > 0 {
+			var boardID model.ID
+			if err := tx.QueryRowContext(ctx, `SELECT board_id FROM cards WHERE id = ?`, id).Scan(&boardID); err != nil {
+				return err
+			}
+			args := append([]any{string(boardID)}, idArgs(labels)...)
+			var n int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(DISTINCT id) FROM labels WHERE board_id = ? AND id IN `+inClause(len(labels)),
+				args...).Scan(&n); err != nil {
+				return err
+			}
+			if n != len(labels) {
+				return store.ErrNotFound
+			}
+		}
 		// Replaced wholesale, like UpdateCard does: a card carries few enough
 		// labels that naming the difference would be more to get wrong.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM card_labels WHERE card_id = ?`, id); err != nil {
 			return err
 		}
-		for _, l := range uniqueIDs(*p.Labels) {
+		for _, l := range labels {
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO card_labels (card_id, label_id) VALUES (?, ?)`, id, l); err != nil {
 				return err
