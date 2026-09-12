@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"kanban/internal/identity"
@@ -406,13 +407,43 @@ func (s *Server) setCardDue(w http.ResponseWriter, r *http.Request) {
 
 // toggleSubtask ticks one checklist line from the board, without the edit form.
 //
+// It takes the state it should end in rather than flipping what is there, so a
+// request that arrives twice leaves the line where the person put it. A toggle
+// is the one shape where a lost response is worse than a duplicate: nothing
+// visibly happened, so they tap again, and the second tap undoes the first.
+//
 // The checklist was readable on the card and editable only inside a modal, which
 // on a phone is a tap, a wait, a scroll, a tick, a save and a close to record
 // something that takes a second to do. It is the same shape as the label chip
 // beside it: post, and take the card back.
 func (s *Server) toggleSubtask(w http.ResponseWriter, r *http.Request) {
-	c, err := s.svc.ToggleSubtask(r.Context(),
-		model.ID(r.PathValue("id")), model.ID(r.PathValue("subtask")))
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	// The button says which state it wants, because it knows: the row it sits
+	// on was drawn with the line's current state on it. Absent, it falls back
+	// to a flip, which is what a page from before this change posts and what a
+	// curl without a body means.
+	done := true
+	switch r.PostFormValue("done") {
+	case "true":
+	case "false":
+		done = false
+	default:
+		cur, err := s.svc.Card(r.Context(), model.ID(r.PathValue("id")))
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		for _, st := range cur.Subtasks {
+			if st.ID == model.ID(r.PathValue("subtask")) {
+				done = !st.Done
+			}
+		}
+	}
+	c, err := s.svc.SetSubtaskDone(r.Context(),
+		model.ID(r.PathValue("id")), model.ID(r.PathValue("subtask")), done)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -425,8 +456,28 @@ func (s *Server) toggleSubtask(w http.ResponseWriter, r *http.Request) {
 // that said "add" would be wrong the moment somebody else clicked first. The
 // label stays on the board either way; the bin on the settings page removes one.
 func (s *Server) toggleCardLabel(w http.ResponseWriter, r *http.Request) {
-	c, err := s.svc.ToggleCardLabel(r.Context(),
-		model.ID(r.PathValue("id")), model.ID(r.PathValue("label")))
+	if err := r.ParseForm(); err != nil {
+		plain(w, http.StatusBadRequest, "bad form")
+		return
+	}
+	cardID, labelID := model.ID(r.PathValue("id")), model.ID(r.PathValue("label"))
+	// As for a checklist line: the chip says whether it wants the label on or
+	// off, because it was drawn knowing. No field means flip, which is what a
+	// page from before this change posts.
+	on := true
+	switch r.PostFormValue("on") {
+	case "true":
+	case "false":
+		on = false
+	default:
+		cur, err := s.svc.Card(r.Context(), cardID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		on = !slices.Contains(cur.Labels, labelID)
+	}
+	c, err := s.svc.SetCardLabel(r.Context(), cardID, labelID, on)
 	if err != nil {
 		s.fail(w, r, err)
 		return

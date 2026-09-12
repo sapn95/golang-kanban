@@ -2974,7 +2974,7 @@ func TestDeleteBoard(t *testing.T) {
 }
 
 // Ticking a checklist line from the board, without the edit form.
-func TestToggleSubtaskFromTheCardFace(t *testing.T) {
+func TestSetSubtaskDoneFromTheCardFace(t *testing.T) {
 	t.Run("the card comes back with the line ticked", func(t *testing.T) {
 		e := seeded(t)
 		id := e.card.Subtasks[1].ID // "sub two", not done
@@ -3382,5 +3382,49 @@ func TestSettingsRefusalsStayOnThePage(t *testing.T) {
 				t.Errorf("the page does not say %q", tc.says)
 			}
 		})
+	}
+}
+
+// A request that arrives twice must leave the line where the person put it. A
+// toggle is the one shape where a lost response is worse than a duplicate:
+// nothing visibly happened, so they tap again, and the second tap undoes the
+// first.
+func TestTickingTwiceIsTickedOnce(t *testing.T) {
+	e := seeded(t)
+	open := e.card.Subtasks[1].ID // "sub two", not done
+	path := "/cards/" + string(e.card.ID) + "/subtasks/" + string(open) + "/toggle"
+
+	for range 2 {
+		if rr := e.do(http.MethodPost, path, form("done", "true"), "HX-Request", "true"); rr.Code != http.StatusOK {
+			t.Fatalf("got %d, want 200", rr.Code)
+		}
+	}
+	c, err := e.svc.Card(context.Background(), e.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Subtasks[1].Done {
+		t.Error("the second request undid the first")
+	}
+
+	// And unticking twice is unticked.
+	for range 2 {
+		e.do(http.MethodPost, path, form("done", "false"), "HX-Request", "true")
+	}
+	if c, _ = e.svc.Card(context.Background(), e.card.ID); c.Subtasks[1].Done {
+		t.Error("unticking twice ticked it")
+	}
+
+	// Without the field it is still a flip, which is what a page from before
+	// this change posts.
+	e.do(http.MethodPost, path, nil, "HX-Request", "true")
+	if c, _ = e.svc.Card(context.Background(), e.card.ID); !c.Subtasks[1].Done {
+		t.Error("a request with no state did not flip the line")
+	}
+
+	// The button on the page carries its intention.
+	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	if !strings.Contains(body, `hx-vals`) || !strings.Contains(body, `"done"`) {
+		t.Error("the checklist buttons do not say which state they want")
 	}
 }
