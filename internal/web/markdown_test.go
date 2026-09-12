@@ -310,6 +310,13 @@ func TestThePagesRenderTheDescriptionAsMarkdown(t *testing.T) {
 // An unclosed bracket used to make the scan read to the end of the description
 // and the caller try again at the next character: 20,000 of them is 200 million
 // comparisons for one card, on every render.
+//
+// The budget is ten seconds, which is not a performance target. Linear, this is
+// 27ms on a laptop with -race and under a second on the slowest runner this has
+// run on; quadratic, it is minutes. Ten seconds separates those two and nothing
+// else, which is what the test is for. A tighter budget was a red build on a
+// loaded shared runner while the code was correct, and a test that goes red for
+// reasons that are not the code is how people learn to ignore red.
 func TestUnclosedBracketsAreBounded(t *testing.T) {
 	src := strings.Repeat("[", 20000)
 	done := make(chan string, 1)
@@ -319,8 +326,8 @@ func TestUnclosedBracketsAreBounded(t *testing.T) {
 		if !strings.Contains(out, "[") {
 			t.Errorf("the brackets were not printed as themselves: %.80s", out)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("rendering 20,000 open brackets took longer than two seconds")
+	case <-time.After(10 * time.Second):
+		t.Fatal("rendering 20,000 open brackets took longer than ten seconds, which is the shape of quadratic work")
 	}
 }
 
