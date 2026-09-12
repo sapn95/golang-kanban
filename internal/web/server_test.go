@@ -3428,3 +3428,60 @@ func TestTickingTwiceIsTickedOnce(t *testing.T) {
 		t.Error("the checklist buttons do not say which state they want")
 	}
 }
+
+// The move arrows post the position they want. A direction is relative, so the
+// same request twice moved the column two places, and these are plain form
+// posts with nothing on screen until the redirect lands.
+func TestMovingAColumnTwiceMovesItOnce(t *testing.T) {
+	e := seeded(t)
+	b, err := e.svc.Board(context.Background(), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Columns) < 3 {
+		t.Fatalf("this test wants three columns, the board has %d", len(b.Columns))
+	}
+	names := func() []string {
+		cur, err := e.svc.Board(context.Background(), "demo")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range cur.Columns {
+			out = append(out, c.Name)
+		}
+		return out
+	}
+	before := names()
+
+	// The last column asks to be at position 1, twice.
+	last := b.Columns[len(b.Columns)-1]
+	for range 2 {
+		if rr := e.do(http.MethodPost, "/b/demo/columns/"+string(last.ID)+"/move", form("to", "1")); rr.Code != http.StatusSeeOther {
+			t.Fatalf("got %d, want 303", rr.Code)
+		}
+	}
+	after := names()
+	if after[1] != last.Name {
+		t.Errorf("order is %v; the column asked for position 1 and is not there", after)
+	}
+	if len(after) != len(before) {
+		t.Errorf("%d columns, was %d", len(after), len(before))
+	}
+
+	// The page sends a position on every arrow.
+	body := e.do(http.MethodGet, "/b/demo/settings", nil).Body.String()
+	if strings.Contains(body, `name="direction"`) {
+		t.Error("an arrow still posts a direction")
+	}
+	if !strings.Contains(body, `name="to"`) {
+		t.Error("the arrows do not post a position")
+	}
+
+	// A direction still works, for a page loaded before this change.
+	first := names()[0]
+	e.do(http.MethodPost, "/b/demo/columns/"+string(b.Columns[0].ID)+"/move", form("direction", "down"))
+	if names()[0] == first {
+		t.Error("a request with a direction did nothing")
+	}
+}
