@@ -30,6 +30,8 @@ func Run(t *testing.T, newStore New) {
 		"Touch":         testTouch,
 		"SubtaskDone":   testSubtaskDone,
 		"Patch":         testPatch,
+		"PatchMatrix":   testPatchMatrix,
+		"PatchBoards":   testPatchBoardMatrix,
 		"Comments":      testComments,
 		"Layout":        testLayout,
 		"SLA":           testSLA,
@@ -1168,4 +1170,155 @@ func testPatch(t *testing.T, s store.Store) {
 	}
 	wantErr(t, "a board that is not there",
 		s.PatchBoard(ctx, newID("board"), store.BoardPatch{Name: &name}, later), store.ErrNotFound)
+}
+
+// testPatchMatrix walks every combination of set and unset fields, because the
+// SQL backends build their SET clause by concatenation and the argument order
+// is only right if every combination puts the placeholders in the same order as
+// the values.
+func testPatchMatrix(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "matrix", "To Do")
+	l1 := &model.Label{ID: newID("label"), BoardID: b.ID, Name: "one", Color: "#ef4444"}
+	l2 := &model.Label{ID: newID("label"), BoardID: b.ID, Name: "two", Color: "#22c55e"}
+	for _, l := range []*model.Label{l1, l2} {
+		if err := s.CreateLabel(ctx, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	who := "person@example.com"
+	due := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	both := []model.ID{l1.ID, l2.ID}
+	none := []model.ID{}
+
+	for _, tc := range []struct {
+		name  string
+		patch store.CardPatch
+	}{
+		{"nothing at all", store.CardPatch{}},
+		{"assignee only", store.CardPatch{Assignee: &who}},
+		{"due only", store.CardPatch{DueDate: &due}},
+		{"labels only", store.CardPatch{Labels: &both}},
+		{"assignee and due", store.CardPatch{Assignee: &who, DueDate: &due}},
+		{"assignee and labels", store.CardPatch{Assignee: &who, Labels: &both}},
+		{"due and labels", store.CardPatch{DueDate: &due, Labels: &both}},
+		{"all three", store.CardPatch{Assignee: &who, DueDate: &due, Labels: &both}},
+		{"labels emptied", store.CardPatch{Labels: &none}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &model.Card{ID: newID("card"), BoardID: b.ID, ColumnID: b.Columns[0].ID,
+				Title: "untouched", Description: "also untouched",
+				CreatedAt: now(), UpdatedAt: now()}
+			if err := s.CreateCard(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			at := now().Add(time.Hour)
+			if err := s.PatchCard(ctx, c.ID, tc.patch, at); err != nil {
+				t.Fatalf("PatchCard: %v", err)
+			}
+			got, err := s.GetCard(ctx, c.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Title != "untouched" || got.Description != "also untouched" {
+				t.Errorf("the patch touched what it did not name: %+v", got)
+			}
+			if !got.UpdatedAt.Equal(at) {
+				t.Errorf("UpdatedAt = %v, want %v", got.UpdatedAt, at)
+			}
+			wantAssignee := ""
+			if tc.patch.Assignee != nil {
+				wantAssignee = *tc.patch.Assignee
+			}
+			if got.Assignee != wantAssignee {
+				t.Errorf("Assignee = %q, want %q", got.Assignee, wantAssignee)
+			}
+			wantDue := time.Time{}
+			if tc.patch.DueDate != nil {
+				wantDue = *tc.patch.DueDate
+			}
+			if !got.DueDate.Equal(wantDue) {
+				t.Errorf("DueDate = %v, want %v", got.DueDate, wantDue)
+			}
+			wantLabels := 0
+			if tc.patch.Labels != nil {
+				wantLabels = len(*tc.patch.Labels)
+			}
+			if len(got.Labels) != wantLabels {
+				t.Errorf("%d labels, want %d", len(got.Labels), wantLabels)
+			}
+		})
+	}
+}
+
+// testPatchBoardMatrix does the same for a board, whose SLA is five columns.
+func testPatchBoardMatrix(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	name, rows := "Renamed", model.LayoutRows
+	sla := model.SLA{ResponseHours: 6, Days: model.DaySet(0b0111110), Start: 9 * 60, End: 17 * 60, Zone: "Europe/Zurich"}
+
+	// The slug is the one field two boards cannot share, so each case that sets
+	// it gets its own.
+	withSlug := func(p store.BoardPatch) store.BoardPatch {
+		s := string(newID("slug"))
+		p.Slug = &s
+		return p
+	}
+	for _, tc := range []struct {
+		name  string
+		patch store.BoardPatch
+	}{
+		{"nothing at all", store.BoardPatch{}},
+		{"name only", store.BoardPatch{Name: &name}},
+		{"slug only", withSlug(store.BoardPatch{})},
+		{"layout only", store.BoardPatch{Layout: &rows}},
+		{"sla only", store.BoardPatch{SLA: &sla}},
+		{"name and sla", store.BoardPatch{Name: &name, SLA: &sla}},
+		{"layout and sla", store.BoardPatch{Layout: &rows, SLA: &sla}},
+		{"everything", withSlug(store.BoardPatch{Name: &name, Layout: &rows, SLA: &sla})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := mustBoard(t, s, string(newID("m")), "To Do")
+			// Read back, not as created: the store normalises a layout and an
+			// SLA on the way in, so what it holds is what a patch has to leave
+			// alone.
+			was, err := s.GetBoardByID(ctx, b.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			at := now().Add(time.Hour)
+			if err := s.PatchBoard(ctx, b.ID, tc.patch, at); err != nil {
+				t.Fatalf("PatchBoard: %v", err)
+			}
+			got, err := s.GetBoardByID(ctx, b.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := func(p *string, had string) string {
+				if p != nil {
+					return *p
+				}
+				return had
+			}
+			if got.Name != want(tc.patch.Name, was.Name) {
+				t.Errorf("Name = %q", got.Name)
+			}
+			if got.Slug != want(tc.patch.Slug, was.Slug) {
+				t.Errorf("Slug = %q", got.Slug)
+			}
+			if got.Layout != want(tc.patch.Layout, was.Layout) {
+				t.Errorf("Layout = %q", got.Layout)
+			}
+			if tc.patch.SLA != nil && got.SLA != *tc.patch.SLA {
+				t.Errorf("SLA = %+v, want %+v", got.SLA, *tc.patch.SLA)
+			}
+			if len(got.Columns) != 1 {
+				t.Errorf("%d columns after a patch, want 1", len(got.Columns))
+			}
+			if !got.UpdatedAt.Equal(at) {
+				t.Errorf("UpdatedAt = %v, want %v", got.UpdatedAt, at)
+			}
+		})
+	}
 }
