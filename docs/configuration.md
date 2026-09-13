@@ -68,7 +68,7 @@ Where the scheduler puts snapshots and how often. Neither a directory nor a buck
 | `BACKUP_S3_BUCKET` | *(unset)* | the other target; set one of the two, not both |
 | `BACKUP_S3_PREFIX` | *(unset)* | normalised to end in /, so one bucket can hold several boards |
 | `BACKUP_S3_REGION` | *(unset)* | or `AWS_REGION`; required with a bucket, it is part of the signature |
-| `BACKUP_S3_ENDPOINT` | *(unset)* | empty for AWS; anything else is addressed path-style |
+| `BACKUP_S3_ENDPOINT` | *(unset)* | empty for AWS; anything else is addressed path-style; a secret: reports keep the address and take out the password |
 
 The usual AWS names, so a deployment that already injects credentials for something else does not need a second set under our own names.
 

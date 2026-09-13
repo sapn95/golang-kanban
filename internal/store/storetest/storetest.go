@@ -432,6 +432,26 @@ func testReorderCards(t *testing.T, s store.Store) {
 	wantErr(t, "card of other board", s.ReorderCards(ctx, b.ID, a, []model.ID{x1.ID}), store.ErrNotFound)
 	wantErr(t, "unknown card", s.ReorderCards(ctx, b.ID, a, []model.ID{"nope"}), store.ErrNotFound)
 	wantErr(t, "duplicate", s.ReorderCards(ctx, b.ID, a, []model.ID{a2.ID, a2.ID}), store.ErrInvalid)
+
+	// An archived card is not on the board, so an order naming one is a page
+	// that has not been told about the archive. Accepting it moved the archived
+	// row to another column, and restoring it then put the card somewhere it
+	// had never been.
+	ghost := mustCard(t, s, b, a, "archived")
+	if err := s.SetCardArchived(ctx, ghost.ID, now()); err != nil {
+		t.Fatal(err)
+	}
+	wantErr(t, "an archived card", s.ReorderCards(ctx, b.ID, bb, []model.ID{ghost.ID}), store.ErrNotFound)
+	wantErr(t, "an archived card among live ones",
+		s.ReorderCards(ctx, b.ID, bb, []model.ID{a2.ID, ghost.ID}), store.ErrNotFound)
+	back, err := s.GetCard(ctx, ghost.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.ColumnID != a {
+		t.Errorf("the archived card moved to %s; it must come back to %s", back.ColumnID, a)
+	}
+
 	if got := columnCards(t, s, b, a); !equalStrings(got, []string{"a2", "a3"}) {
 		t.Fatalf("failed reorders must not change anything: %v", got)
 	}

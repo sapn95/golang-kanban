@@ -969,7 +969,7 @@ func (s *Store) ReorderCards(ctx context.Context, boardID, columnID model.ID, or
 		if len(order) > 0 {
 			args := append([]any{string(boardID)}, idArgs(order)...)
 			var n int
-			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM cards WHERE board_id = ? AND id IN `+inClause(len(order)),
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM cards WHERE board_id = ? AND archived_at IS NULL AND id IN `+inClause(len(order)),
 				args...).Scan(&n); err != nil {
 				return err
 			}

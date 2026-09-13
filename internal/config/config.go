@@ -76,13 +76,13 @@ type Config struct {
 	// Where the scheduler puts snapshots and how often. Neither a directory nor a
 	// bucket means no schedule, and `kanban export` is then the only way a
 	// snapshot gets taken.
-	BackupInterval   time.Duration `env:"BACKUP_INTERVAL"`    // 0 turns the schedule off; under a minute is refused
-	BackupKeep       int           `env:"BACKUP_KEEP"`        // 0 keeps every snapshot; the rest go after a successful write
-	BackupDir        string        `env:"BACKUP_DIR"`         // a directory on a volume that outlives the container
-	BackupS3Bucket   string        `env:"BACKUP_S3_BUCKET"`   // the other target; set one of the two, not both
-	BackupS3Prefix   string        `env:"BACKUP_S3_PREFIX"`   // normalised to end in /, so one bucket can hold several boards
-	BackupS3Region   string        `env:"BACKUP_S3_REGION"`   // or `AWS_REGION`; required with a bucket, it is part of the signature
-	BackupS3Endpoint string        `env:"BACKUP_S3_ENDPOINT"` // empty for AWS; anything else is addressed path-style
+	BackupInterval   time.Duration `env:"BACKUP_INTERVAL"`                 // 0 turns the schedule off; under a minute is refused
+	BackupKeep       int           `env:"BACKUP_KEEP"`                     // 0 keeps every snapshot; the rest go after a successful write
+	BackupDir        string        `env:"BACKUP_DIR"`                      // a directory on a volume that outlives the container
+	BackupS3Bucket   string        `env:"BACKUP_S3_BUCKET"`                // the other target; set one of the two, not both
+	BackupS3Prefix   string        `env:"BACKUP_S3_PREFIX"`                // normalised to end in /, so one bucket can hold several boards
+	BackupS3Region   string        `env:"BACKUP_S3_REGION"`                // or `AWS_REGION`; required with a bucket, it is part of the signature
+	BackupS3Endpoint string        `env:"BACKUP_S3_ENDPOINT" secret:"url"` // empty for AWS; anything else is addressed path-style
 
 	// The usual AWS names, so a deployment that already injects credentials for
 	// something else does not need a second set under our own names.
@@ -375,13 +375,18 @@ func (c Config) validateBackup() error {
 	if !isSafeKeyPrefix(c.BackupS3Prefix) {
 		return fmt.Errorf("BACKUP_S3_PREFIX: %q; use letters, digits, dots, dashes, underscores and slashes, and do not start with one", c.BackupS3Prefix)
 	}
+	// Every refusal below redacts the value it names. This is the one setting
+	// that is a URL a person writes by hand, so it is the one that arrives with
+	// a password in it, and the refusal goes to stderr and into a doctor report
+	// that gets pasted into an issue. The `secret:"url"` tag covers the report's
+	// own listing of it; these cover the messages.
 	if c.BackupS3Endpoint != "" {
 		u, err := url.Parse(c.BackupS3Endpoint)
 		if err != nil {
 			return fmt.Errorf("BACKUP_S3_ENDPOINT: %w", err)
 		}
 		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q is not an http or https URL", c.BackupS3Endpoint)
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q is not an http or https URL", redactURL(c.BackupS3Endpoint))
 		}
 		// A gateway may sit under a path, and that path is signed along with the
 		// key, so it is held to the same characters for the same reason.
@@ -389,7 +394,10 @@ func (c Config) validateBackup() error {
 			return fmt.Errorf("BACKUP_S3_ENDPOINT: path %q; use letters, digits, dots, dashes, underscores and slashes", u.Path)
 		}
 		if u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q; a scheme, a host and at most a path, no query, fragment or credentials", c.BackupS3Endpoint)
+			// Redacted on the way out: this is the branch a URL with a
+			// password in it takes, and the message goes to stderr and into
+			// the doctor report.
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q; a scheme, a host and at most a path, no query, fragment or credentials", redactURL(c.BackupS3Endpoint))
 		}
 	}
 	return nil

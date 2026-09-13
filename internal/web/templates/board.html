@@ -36,7 +36,12 @@
   <span class="font-mono text-xs">{{.Query}}</span>
 </div>
 {{if .Results}}
-<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+<!-- search-results turns off the per-card tick box. The multi-select toolbar
+     lives in the {{"{{else}}"}} branch below, on the board, so on this page the
+     boxes ticked nothing and offered nowhere to act: app.js returns early when
+     the toolbar is not there. Hidden here rather than left out of the card,
+     because the same card face is drawn on the board where it does work. -->
+<div class="search-results grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
   {{range .Results}}{{template "card" .}}{{end}}
 </div>
 {{else}}
@@ -130,9 +135,7 @@
            there is something to drop onto, and a message below that left the
            empty column with a hole above its own explanation. It carries no
            data-id, so the order a drop posts never mentions it. -->
-      {{if not .Cards}}
-      <p class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-6 text-center text-sm text-slate-400 dark:text-slate-500 pointer-events-none">Nothing here yet</p>
-      {{end}}
+      <p class="no-cards rounded-xl border border-dashed border-slate-300 dark:border-slate-700 py-6 text-center text-sm text-slate-400 dark:text-slate-500 pointer-events-none">Nothing here yet</p>
     </div>
   </div>
   {{end}}

@@ -122,9 +122,16 @@ var contentVersion = sync.OnceValue(func() string {
 // offline is what the service worker answers with when a navigation cannot
 // reach the server. It says so in the board's own words rather than leaving the
 // browser to draw its error page over an installed application.
-func (s *Server) offline(w http.ResponseWriter, r *http.Request) {
-	s.render(w, s.pages["offline"], "layout", http.StatusOK,
-		offlinePage{Title: "Offline", User: identity.FromContext(r.Context())})
+//
+// Drawn with no identity, on purpose. The worker keeps this page in Cache
+// Storage, which is per origin and not per person and which no-store does not
+// reach, and answers every failed navigation with it. Rendered with the
+// installer's user it carried their name, their address and the whole viewer
+// roster, and handed all three to whoever opened the board on that browser
+// next: a different person, or the same one after signing out. layout draws
+// none of that behind an empty address, so passing nothing is the whole fix.
+func (s *Server) offline(w http.ResponseWriter, _ *http.Request) {
+	s.render(w, s.pages["offline"], "layout", http.StatusOK, offlinePage{Title: "Offline"})
 }
 
 type offlinePage struct {

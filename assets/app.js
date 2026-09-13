@@ -179,11 +179,6 @@
   // round: with no script every button is simply there, which is how the page
   // worked before.
   //
-  // Two ways of hiding, because the button sits differently at the two widths.
-  // From sm up it is inline with the WIP field or the swatches, so invisible
-  // keeps its width and revealing it shifts nothing. On a phone the label rows
-  // put it on a line of its own, where reserving the space leaves a visibly
-  // empty line in every row, so there it is taken out of the layout instead.
   // invisible, not hidden: the button keeps its place in the row, so showing it
   // moves nothing and it can never end up drawn over what was standing where it
   // wanted to be. hidden plus a breakpoint did both.
@@ -208,8 +203,9 @@
   }
 
   // --- subtasks ------------------------------------------------------------
-  // The form posts one hidden field, "subtasks", in the line format
-  // "flag|title" where flag is 1 for done.
+  // The form posts one hidden field, "subtasks", one line per checklist row in
+  // the format "id|flag|title" where flag is 1 for done. An empty id is a row
+  // that has not been saved yet; see model.ParseSubtasks for the reading end.
   // A checklist row is markup the server owns, so the Add Subtask button is an
   // hx-get and there is nothing here that builds one. What is left is the two
   // things markup cannot say: take a row away, and put the cursor in a row

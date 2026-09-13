@@ -146,6 +146,45 @@ func TestBoardPage(t *testing.T) {
 	want(t, e.do(http.MethodGet, "/b/missing", nil), http.StatusNotFound)
 }
 
+// Every column carries "Nothing here yet", including the ones that hold cards,
+// and CSS hides it wherever it is not the only thing in the column. Drawn once
+// at render time it was wrong after the first swap: a card arrives beforeend,
+// so the message sat underneath it until a reload, and a column emptied by a
+// drag or an archive kept a blank space where the message should have returned.
+func TestEveryColumnCarriesTheEmptyMessage(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	b, _ := e.svc.Board(context.Background(), "demo")
+	if n := strings.Count(body, `class="no-cards`); n != len(b.Columns) {
+		t.Errorf("%d empty messages for %d columns; CSS cannot decide what is not there", n, len(b.Columns))
+	}
+	// And the rule that hides it has to be in the stylesheet the page loads.
+	css := e.do(http.MethodGet, "/assets/app.css", nil)
+	if !strings.Contains(css.Body.String(), ".no-cards:not(:only-child)") {
+		t.Error("app.css does not hide the message when the column holds something")
+	}
+}
+
+// The tick box on a card is for the board's multi-select toolbar, which the
+// search results page does not draw: app.js returns early without it, so the
+// boxes there ticked nothing and offered nowhere to act.
+func TestSearchResultsDoNotOfferSelection(t *testing.T) {
+	e := seeded(t)
+	board := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	if !strings.Contains(board, "selectionBar") || !strings.Contains(board, "card-select") {
+		t.Fatal("the board draws no toolbar or no tick boxes")
+	}
+	results := e.do(http.MethodGet, "/b/demo?q=First", nil)
+	want(t, results, http.StatusOK, "First card", "search-results")
+	if strings.Contains(results.Body.String(), "selectionBar") {
+		t.Error("the results page draws the toolbar after all; then the boxes should stay")
+	}
+	css := e.do(http.MethodGet, "/assets/app.css", nil)
+	if !strings.Contains(css.Body.String(), ".search-results .card-select") {
+		t.Error("app.css does not hide the tick boxes on the results page")
+	}
+}
+
 func TestCreateCard(t *testing.T) {
 	e := seeded(t)
 	col := e.board.Columns[1].ID
@@ -2876,6 +2915,28 @@ func TestTheBoardCanBeInstalled(t *testing.T) {
 
 	t.Run("the offline page", func(t *testing.T) {
 		want(t, e.do(http.MethodGet, "/offline", nil), http.StatusOK, "No connection", "Try again")
+	})
+
+	// The worker keeps this page in Cache Storage and answers every failed
+	// navigation with it. That store is per origin, not per person, and
+	// no-store does not reach it, so whatever the page carries when it is
+	// installed is handed to whoever opens the board on that browser next.
+	t.Run("the offline page names nobody", func(t *testing.T) {
+		e := seeded(t, WithViewers([]identity.User{
+			{Email: "ada@example.invalid", Name: "Ada Lovelace"},
+			{Email: "grace@example.invalid"},
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/offline", nil)
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req.WithContext(identity.NewContext(req.Context(),
+			identity.User{Email: "ada@example.invalid", Name: "Ada Lovelace"})))
+		body := rec.Body.String()
+		for _, leak := range []string{"ada@example.invalid", "grace@example.invalid",
+			"Ada Lovelace", "Who can see this board"} {
+			if strings.Contains(body, leak) {
+				t.Errorf("the cached offline page carries %q", leak)
+			}
+		}
 	})
 
 	t.Run("every page says where the manifest is", func(t *testing.T) {
