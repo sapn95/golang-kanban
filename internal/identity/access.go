@@ -177,9 +177,18 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		// the one that set triedAt. Answering from the older copy would refuse
 		// a key that is sitting in the map by the time the question is asked.
 		k, ok = v.keys[kid]
+		failed := v.lastErr
 		v.mu.Unlock()
 		if ok {
 			return k, nil
+		}
+		if failed != nil {
+			// The same reason the waiters above are told this. The hold-off is
+			// thirty seconds and the in-flight window is a fraction of one, so
+			// during an outage nearly every refusal comes out of this branch:
+			// answering with the key id here put "signing key not found" in
+			// every log line of it, which reads as a rotation.
+			return nil, failed
 		}
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
