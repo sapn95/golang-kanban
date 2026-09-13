@@ -307,6 +307,45 @@ func TestClockDeadlineOnAVeryShortOfficeDay(t *testing.T) {
 	}
 }
 
+// An office day short enough to make the walk the expensive part of drawing the
+// board. A one-minute Monday spends every one of maxSteps, which measured at
+// 336 ms for a single card; the board asks twice per card, so twenty cards took
+// thirteen seconds and ninety passed the write timeout. Anybody who can see the
+// board can post this.
+//
+// The walk stops at the horizon instead, which bounds it by calendar days and
+// so does not grow as the office day shrinks. Asserted on the answer rather
+// than on a stopwatch, because what makes it fast is that it cannot walk past
+// this date and a loaded machine must not decide whether that is true.
+func TestClockDeadlineStopsAtTheHorizon(t *testing.T) {
+	for _, minutes := range []int{1, 5, 15} {
+		desk := SLA{ResponseHours: MaxResponseHours, Days: Day(time.Monday),
+			Start: 0, End: minutes, Zone: "Europe/Zurich"}
+		c := desk.Clock()
+		from := time.Date(2026, time.September, 14, 0, 0, 0, 0, c.Location())
+		deadline := c.Deadline(from)
+		if latest := from.Add(maxHorizon); deadline.After(latest.AddDate(0, 0, 7)) {
+			t.Errorf("a %d-minute office day walked to %s, past the horizon at %s",
+				minutes, deadline.Format(time.RFC3339), latest.Format(time.RFC3339))
+		}
+		// And it does not stop early either: a promise this size on a schedule
+		// this thin is decades out, so the walk has to have gone a long way.
+		if deadline.Year() < 2060 {
+			t.Errorf("a %d-minute office day stopped at %s, sooner than the horizon",
+				minutes, deadline.Format(time.RFC3339))
+		}
+	}
+	// Between takes the same stop, for a card whose timestamp came from an
+	// import rather than from somebody touching it.
+	desk := SLA{ResponseHours: MaxResponseHours, Days: Day(time.Monday),
+		Start: 0, End: 1, Zone: "Europe/Zurich"}
+	c := desk.Clock()
+	from := time.Date(1990, time.January, 1, 0, 0, 0, 0, c.Location())
+	if got := c.Between(from, from.AddDate(500, 0, 0)); got > MaxResponseHours*time.Hour {
+		t.Errorf("Between over five centuries = %v, want the horizon to have stopped it", got)
+	}
+}
+
 // A week with no office day in it has no office instant to walk to, so nothing
 // searches for one.
 func TestClockWithNoOfficeDay(t *testing.T) {

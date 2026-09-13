@@ -62,6 +62,10 @@ type AccessVerifier struct {
 	// refused for a key that is on its way. A channel rather than a mutex
 	// because waiting on it can be given up when the request is cancelled.
 	inflight chan struct{}
+	// lastErr is what the last fetch came back with, so a caller that waited
+	// for somebody else's is told why it got nothing rather than being handed
+	// the "no such key id" a caller who did fetch would never have seen.
+	lastErr error
 }
 
 // maxKID is the longest key id this will look at. Cloudflare's are a few dozen
@@ -154,9 +158,16 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		}
 		v.mu.Lock()
 		k, ok = v.keys[kid]
+		failed := v.lastErr
 		v.mu.Unlock()
 		if ok {
 			return k, nil
+		}
+		if failed != nil {
+			// The fetch this waited for did not come back. Saying so beats
+			// naming the key id, which reads as a rotation rather than as the
+			// endpoint being down.
+			return nil, failed
 		}
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
@@ -180,12 +191,23 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	v.inflight, v.triedAt = done, v.now()
 	v.mu.Unlock()
 
-	keys, err := v.fetch(ctx)
+	// Detached from this caller's request. The key set belongs to the process
+	// and everybody waiting on `done` is waiting for it, so one client hanging
+	// up must not take it from them. It also must not spend the hold-off: the
+	// claim above is already made, and a cancellation returns instantly without
+	// the endpoint having been asked, which on a cold process meant thirty
+	// seconds of refusing everybody after a single aborted request. The client's
+	// own timeout still bounds it.
+	keys, err := v.fetch(context.WithoutCancel(ctx))
 
 	v.mu.Lock()
 	if err == nil {
 		v.keys, v.fetchedAt = keys, v.now()
 	}
+	// Kept for the waiters. Without it they hear "signing key not found", which
+	// reads as a rotation this build has not picked up rather than as the
+	// endpoint being unreachable, and that is what goes in the log.
+	v.lastErr = err
 	v.inflight = nil
 	v.mu.Unlock()
 	close(done)
