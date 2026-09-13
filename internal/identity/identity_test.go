@@ -220,6 +220,43 @@ func TestKeysAreCachedButAMissRefetches(t *testing.T) {
 	}
 }
 
+// A cert endpoint that is down holds the process off just as an unknown key id
+// does. The hold-off used to be recorded only when a fetch came back, so a
+// process that had never fetched, or whose endpoint was failing, went out once
+// per request: with AUTH_REQUIRED every page load was refused and cost an
+// outbound call, and the load was the reason the endpoint refused it.
+func TestAFailingEndpointIsNotRetriedPerRequest(t *testing.T) {
+	var hits atomic.Int64
+	s := newSigner(t, "k1")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	v := verifierFor(srv)
+	at := time.Now()
+	v.Now = func() time.Time { return at }
+
+	for i := range 20 {
+		if _, err := v.Verify(context.Background(), s.token(t, "RS256", nil)); err == nil {
+			t.Fatalf("verification %d succeeded against an endpoint serving 500", i)
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("hits = %d for twenty requests against a failing endpoint, want 1", got)
+	}
+
+	// Once the hold-off has passed it tries again, so the process recovers on
+	// its own when the endpoint does.
+	at = at.Add(time.Minute)
+	if _, err := v.Verify(context.Background(), s.token(t, "RS256", nil)); err == nil {
+		t.Fatal("verification succeeded against an endpoint serving 500")
+	}
+	if got := hits.Load(); got != 2 {
+		t.Errorf("hits = %d a minute later, want it to have tried again (2)", got)
+	}
+}
+
 // A key id longer than any Cloudflare issues is refused before anything looks
 // it up, because the field is the caller's to size until something says no.
 func TestAnOversizedKeyIDIsRefusedOutright(t *testing.T) {
@@ -359,6 +396,38 @@ func TestDisplay(t *testing.T) {
 		if got := tt.user.Display(); got != tt.want {
 			t.Errorf("User%+v.Display() = %q, want %q", tt.user, got, tt.want)
 		}
+	}
+}
+
+// Author is what a comment is signed with and what deleting one is compared
+// against, so two callers who are not the same person must not share it.
+func TestAuthorSeparatesCallersThatHaveNoAddress(t *testing.T) {
+	tests := []struct {
+		user identity.User
+		want string
+	}{
+		{identity.User{Email: "a.b@example.com", Name: "A Person"}, "a.b@example.com"},
+		// A machine has no address. Signing its comments with the empty string
+		// made every one of them deletable by any other token, and by an
+		// anonymous request on a board whose AUTH_REQUIRED is off.
+		{identity.User{Service: "backup"}, "service:backup"},
+		{identity.User{Service: "reporting"}, "service:reporting"},
+		// A token that somehow carries an address is that address, so a person
+		// and their own token are not two different authors.
+		{identity.User{Email: "a.b@example.com", Service: "backup"}, "a.b@example.com"},
+		// Nobody at all, which is the deployment with no authentication.
+		{identity.User{}, ""},
+	}
+	for _, tt := range tests {
+		if got := tt.user.Author(); got != tt.want {
+			t.Errorf("User%+v.Author() = %q, want %q", tt.user, got, tt.want)
+		}
+	}
+	if a, b := (identity.User{Service: "backup"}).Author(), (identity.User{Service: "reporting"}).Author(); a == b {
+		t.Errorf("two service tokens share the author %q", a)
+	}
+	if a, b := (identity.User{Service: "backup"}).Author(), (identity.User{}).Author(); a == b {
+		t.Errorf("a service token and an anonymous request share the author %q", a)
 	}
 }
 

@@ -394,12 +394,11 @@ func (s *Store) PatchCard(_ context.Context, id model.ID, p store.CardPatch, at 
 	if !ok {
 		return store.ErrNotFound
 	}
-	if p.Assignee != nil {
-		c.Assignee = *p.Assignee
-	}
-	if p.DueDate != nil {
-		c.DueDate = *p.DueDate
-	}
+	// Everything the patch could refuse is settled before the first field is
+	// written. The SQL backends do this work inside a transaction and roll the
+	// whole patch back; here a refusal halfway used to leave the fields it had
+	// already reached applied, with the card's UpdatedAt never stamped.
+	var labels []model.ID
 	if p.Labels != nil {
 		// Checked against the board and de-duplicated, the way every other
 		// write of a card's labels is. The SQL backends get the second from a
@@ -409,11 +408,61 @@ func (s *Store) PatchCard(_ context.Context, id model.ID, p store.CardPatch, at 
 		if !ok {
 			return store.ErrNotFound
 		}
-		labels := uniqueLabels(*p.Labels)
+		labels = uniqueLabels(*p.Labels)
 		if err := s.checkLabels(b, labels); err != nil {
 			return err
 		}
+	}
+	if p.Assignee != nil {
+		c.Assignee = *p.Assignee
+	}
+	if p.DueDate != nil {
+		c.DueDate = *p.DueDate
+	}
+	if p.Labels != nil {
 		c.Labels = labels
+	}
+	c.UpdatedAt = at.UTC()
+	return nil
+}
+
+// SetCardLabel adds or removes one label and leaves the card's others alone.
+func (s *Store) SetCardLabel(_ context.Context, cardID, labelID model.ID, on bool, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.cards[cardID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	b, ok := s.boards[c.BoardID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	if b.Label(labelID) == nil {
+		return store.ErrNotFound
+	}
+	has := false
+	for _, lid := range c.Labels {
+		if lid == labelID {
+			has = true
+			break
+		}
+	}
+	if has == on {
+		// Already the way the caller wants it. Nothing written, so a request
+		// delivered twice does not move UpdatedAt the second time.
+		return nil
+	}
+	if on {
+		c.Labels = uniqueLabels(append(c.Labels, labelID))
+	} else {
+		kept := c.Labels[:0]
+		for _, lid := range c.Labels {
+			if lid != labelID {
+				kept = append(kept, lid)
+			}
+		}
+		c.Labels = kept
 	}
 	c.UpdatedAt = at.UTC()
 	return nil

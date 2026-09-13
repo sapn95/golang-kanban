@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ func Run(t *testing.T, newStore New) {
 		"SubtaskDone":   testSubtaskDone,
 		"Patch":         testPatch,
 		"PatchMatrix":   testPatchMatrix,
+		"Concurrent":    testConcurrentEdits,
 		"PatchBoards":   testPatchBoardMatrix,
 		"LastColumn":    testLastColumnStays,
 		"Comments":      testComments,
@@ -459,6 +461,46 @@ func testLabels(t *testing.T, s store.Store) {
 	if err := s.CreateCard(ctx, c); err != nil {
 		t.Fatal(err)
 	}
+
+	// SetCardLabel is the one-chip write. It says what the label should be
+	// rather than flipping it, so the same request twice is the same result,
+	// and it leaves UpdatedAt alone when it changes nothing.
+	before, _ := s.GetCard(ctx, c.ID)
+	at := now().Add(time.Hour)
+	if err := s.SetCardLabel(ctx, c.ID, l.ID, true, at); err != nil {
+		t.Fatalf("SetCardLabel to what it already is: %v", err)
+	}
+	card, _ := s.GetCard(ctx, c.ID)
+	if len(card.Labels) != 1 || !card.UpdatedAt.Equal(before.UpdatedAt) {
+		t.Errorf("setting a label that is already on = %v at %v; want no write", card.Labels, card.UpdatedAt)
+	}
+	if err := s.SetCardLabel(ctx, c.ID, l.ID, false, at); err != nil {
+		t.Fatal(err)
+	}
+	if card, _ = s.GetCard(ctx, c.ID); len(card.Labels) != 0 || !card.UpdatedAt.Equal(at) {
+		t.Errorf("after clearing = %v at %v, want none at %v", card.Labels, card.UpdatedAt, at)
+	}
+	if err := s.SetCardLabel(ctx, c.ID, l.ID, false, at.Add(time.Hour)); err != nil {
+		t.Fatalf("clearing a label that is already off: %v", err)
+	}
+	if card, _ = s.GetCard(ctx, c.ID); !card.UpdatedAt.Equal(at) {
+		t.Errorf("clearing a label twice moved UpdatedAt to %v", card.UpdatedAt)
+	}
+	if err := s.SetCardLabel(ctx, c.ID, l.ID, true, at); err != nil {
+		t.Fatal(err)
+	}
+
+	// A label of another board is refused, the same way every other write of a
+	// card's labels refuses one: the foreign key only says the label exists.
+	other := mustBoard(t, s, "labels-other", "A")
+	foreign := &model.Label{ID: newID("l"), BoardID: other.ID, Name: "theirs"}
+	if err := s.CreateLabel(ctx, foreign); err != nil {
+		t.Fatal(err)
+	}
+	wantErr(t, "a label of another board", s.SetCardLabel(ctx, c.ID, foreign.ID, true, at), store.ErrNotFound)
+	wantErr(t, "a label that does not exist", s.SetCardLabel(ctx, c.ID, "nope", true, at), store.ErrNotFound)
+	wantErr(t, "a card that does not exist", s.SetCardLabel(ctx, "nope", l.ID, true, at), store.ErrNotFound)
+
 	l.Name = "eta"
 	l.Color = ""
 	if err := s.UpdateLabel(ctx, l); err != nil {
@@ -475,7 +517,7 @@ func testLabels(t *testing.T, s store.Store) {
 	if err := s.DeleteLabel(ctx, l.ID); err != nil {
 		t.Fatal(err)
 	}
-	card, _ := s.GetCard(ctx, c.ID)
+	card, _ = s.GetCard(ctx, c.ID)
 	if len(card.Labels) != 0 {
 		t.Fatalf("label still on card: %v", card.Labels)
 	}
@@ -1159,6 +1201,29 @@ func testPatch(t *testing.T, s store.Store) {
 	wantErr(t, "another board's label",
 		s.PatchCard(ctx, c.ID, store.CardPatch{Labels: &foreign}, later), store.ErrNotFound)
 
+	// A patch that is refused writes none of itself, including the fields named
+	// beside the one that was refused. The SQL backends get that from the
+	// transaction they already run in; the in-memory one wrote the assignee and
+	// the due date first and then returned the error, leaving a card with a new
+	// assignee, its old labels and an UpdatedAt that never moved.
+	was, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaked, stamp := "leaked@example.invalid", later.Add(time.Hour)
+	wantErr(t, "a foreign label beside a field that would be accepted",
+		s.PatchCard(ctx, c.ID, store.CardPatch{Assignee: &leaked, Labels: &foreign}, stamp), store.ErrNotFound)
+	after, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Assignee != was.Assignee {
+		t.Errorf("Assignee = %q after a refused patch, want %q", after.Assignee, was.Assignee)
+	}
+	if !after.UpdatedAt.Equal(was.UpdatedAt) {
+		t.Errorf("UpdatedAt = %v after a refused patch, want %v", after.UpdatedAt, was.UpdatedAt)
+	}
+
 	// And the same label twice is the same label once, on every backend. The
 	// SQL ones get that from a primary key; the in-memory one has to do it.
 	twice := []model.ID{lab.ID, lab.ID}
@@ -1376,5 +1441,124 @@ func testLastColumnStays(t *testing.T, s store.Store) {
 		s.DeleteColumn(ctx, got.Columns[0].ID, ""), store.ErrInvalid)
 	if _, err := s.GetCard(ctx, c.ID); err != nil {
 		t.Errorf("the card went with the refused delete: %v", err)
+	}
+}
+
+// testConcurrentEdits is testSubtaskDone and testPatch with the writes actually
+// overlapping. Those two prove the single-field writes touch one field; this
+// proves they stay correct when they run at the same instant, which is the shape
+// the bug had every time it came back: each write was fine on its own and the
+// loser's change was gone.
+//
+// Sequential tests cannot catch it, because the read and the write of a
+// read-modify-write only lose each other when a second one runs between them.
+func testConcurrentEdits(t *testing.T, s store.Store) {
+	ctx := context.Background()
+	b := mustBoard(t, s, "concurrent", "To Do")
+
+	// Three labels to move between, and one subtask per writer so every tick
+	// has its own line and no two writers want the same field.
+	labels := make([]model.ID, 3)
+	for i := range labels {
+		l := &model.Label{ID: newID("lab"), BoardID: b.ID, Name: fmt.Sprintf("L%d", i), Color: "slate"}
+		if err := s.CreateLabel(ctx, l); err != nil {
+			t.Fatal(err)
+		}
+		labels[i] = l.ID
+	}
+	const writers = 24
+	c := &model.Card{ID: newID("card"), BoardID: b.ID, ColumnID: b.Columns[0].ID, Title: "everyone at once",
+		CreatedAt: now(), UpdatedAt: now()}
+	for i := range writers {
+		c.Subtasks = append(c.Subtasks, model.Subtask{ID: newID("sub"), Title: fmt.Sprintf("line %d", i), Position: i})
+	}
+	if err := s.CreateCard(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Everyone ticks their own line at the same moment.
+	at := now().Add(time.Minute)
+	ticks := make([]error, writers)
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticks[i] = s.SetSubtaskDone(ctx, c.ID, c.Subtasks[i].ID, true, at)
+		}()
+	}
+	wg.Wait()
+	for i, err := range ticks {
+		if err != nil {
+			t.Errorf("ticking line %d: %v", i, err)
+		}
+	}
+	got, err := s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range got.Subtasks {
+		if !st.Done {
+			t.Errorf("%q came back unticked; another writer put it back", st.Title)
+		}
+	}
+	if got.Title != "everyone at once" {
+		t.Errorf("Title = %q; a tick rewrote the rest of the card", got.Title)
+	}
+
+	// The three quick edits on the card face, plus a tick, all at once. Each
+	// names a different field, so all four have to survive together.
+	assignee, due, want := "someone@example.invalid", at.Truncate(24*time.Hour), labels[:1]
+	// Compared against its own copy: a backend that keeps the slice it was
+	// handed would otherwise be checked against the value it stored.
+	wantLabels := append([]model.ID(nil), want...)
+	edits := make([]error, 4)
+	wg.Add(4)
+	go func() { defer wg.Done(); edits[0] = s.PatchCard(ctx, c.ID, store.CardPatch{Assignee: &assignee}, at) }()
+	go func() { defer wg.Done(); edits[1] = s.PatchCard(ctx, c.ID, store.CardPatch{DueDate: &due}, at) }()
+	go func() { defer wg.Done(); edits[2] = s.PatchCard(ctx, c.ID, store.CardPatch{Labels: &want}, at) }()
+	go func() { defer wg.Done(); edits[3] = s.SetSubtaskDone(ctx, c.ID, c.Subtasks[0].ID, false, at) }()
+	wg.Wait()
+	for i, err := range edits {
+		if err != nil {
+			t.Errorf("edit %d: %v", i, err)
+		}
+	}
+
+	got, err = s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Assignee != assignee {
+		t.Errorf("Assignee = %q, want %q; another field's write took it back", got.Assignee, assignee)
+	}
+	if !got.DueDate.Equal(due) {
+		t.Errorf("DueDate = %v, want %v; another field's write took it back", got.DueDate, due)
+	}
+	if len(got.Labels) != 1 || got.Labels[0] != wantLabels[0] {
+		t.Errorf("Labels = %v, want %v; another field's write took them back", got.Labels, wantLabels)
+	}
+	if got.Subtasks[0].Done {
+		t.Error("the untick was lost; a card patch put the line back")
+	}
+
+	// Two more label chips, tapped in quick succession on a card that carries
+	// neither. Each names one label, so neither may write the set it read.
+	chips := make([]error, 2)
+	wg.Add(2)
+	go func() { defer wg.Done(); chips[0] = s.SetCardLabel(ctx, c.ID, labels[1], true, at) }()
+	go func() { defer wg.Done(); chips[1] = s.SetCardLabel(ctx, c.ID, labels[2], true, at) }()
+	wg.Wait()
+	for i, err := range chips {
+		if err != nil {
+			t.Errorf("chip %d: %v", i, err)
+		}
+	}
+	got, err = s.GetCard(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Labels) != 3 {
+		t.Errorf("Labels = %v, want all three; one chip wrote over the other", got.Labels)
 	}
 }

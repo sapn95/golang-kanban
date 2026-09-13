@@ -49,6 +49,15 @@ type AccessVerifier struct {
 	// making an outbound request, and it does so for every invented id at once
 	// rather than one at a time.
 	fetchedAt time.Time
+	// triedAt is when a fetch was last started, whether or not it came back.
+	// fetchedAt cannot answer "is another fetch worth it" on its own: it does
+	// not move when a fetch fails, and it has not moved at all before the first
+	// one. So a cold process served a burst of requests started one outbound
+	// fetch each, and a process whose endpoint was down kept asking for as long
+	// as the requests kept arriving, which is the load that got it refused.
+	// Written before the fetch rather than after it, so the requests that
+	// arrive while one is in flight wait for it instead of starting their own.
+	triedAt time.Time
 }
 
 // maxKID is the longest key id this will look at. Cloudflare's are a few dozen
@@ -127,7 +136,12 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	// the process ask the team's endpoint for keys as fast as the requests
 	// arrive, with no valid token and before AUTH_REQUIRED refuses anything.
 	v.mu.Lock()
-	recent := v.now().Sub(v.fetchedAt) < missTTL
+	recent := v.now().Sub(v.triedAt) < missTTL
+	if !recent {
+		// Claimed here, under the same lock that read it, so one request goes
+		// and the rest of the burst does not.
+		v.triedAt = v.now()
+	}
 	v.mu.Unlock()
 	if recent {
 		if ok {

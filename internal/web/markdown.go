@@ -538,10 +538,16 @@ func safeURL(dest string) (href string, external, ok bool) {
 	if url == "" {
 		return "", false, false
 	}
-	if strings.ContainsAny(url, " \t\"'<>`") {
+	if strings.ContainsAny(url, " \t\"'<>`\\") {
 		// A destination with a space in it is either not a URL or is trying to
 		// be more than one attribute. Angle-bracketed destinations, which is
 		// how CommonMark writes those, are not in this subset.
+		//
+		// A backslash is refused for a different reason: browsers read it as a
+		// slash. `/\host` passes the "starts with / but not //" test below and
+		// then resolves to https://host, so the link leaves the board while
+		// being rendered as one that stays on it, without the rel= an outside
+		// link gets. A URL that genuinely wants one writes %5C.
 		return "", false, false
 	}
 	switch {

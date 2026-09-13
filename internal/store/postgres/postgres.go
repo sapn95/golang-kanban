@@ -659,6 +659,43 @@ func (s *Store) SetSubtaskDone(ctx context.Context, cardID, subtaskID model.ID, 
 	})
 }
 
+// SetCardLabel adds or removes one row of card_labels and leaves the card's
+// other labels alone, so two chips tapped at once cannot drop each other.
+func (s *Store) SetCardLabel(ctx context.Context, cardID, labelID model.ID, on bool, at time.Time) error {
+	return s.tx(ctx, func(tx *sql.Tx) error {
+		// card_labels' foreign key only says the label exists, not that it
+		// belongs to this card's board, so the board is compared here.
+		var n int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM labels JOIN cards ON cards.board_id = labels.board_id
+			 WHERE labels.id = $1 AND cards.id = $2`, labelID, cardID).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return store.ErrNotFound
+		}
+		var res sql.Result
+		var err error
+		if on {
+			// The primary key makes a second tap a no-op rather than a duplicate.
+			res, err = tx.ExecContext(ctx,
+				`INSERT INTO card_labels (card_id, label_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, cardID, labelID)
+		} else {
+			res, err = tx.ExecContext(ctx,
+				`DELETE FROM card_labels WHERE card_id = $1 AND label_id = $2`, cardID, labelID)
+		}
+		if err != nil {
+			return err
+		}
+		// Nothing changed means the label was already the way the caller wants
+		// it, so the card is left untouched and a redelivered request is free.
+		if rows, err := res.RowsAffected(); err != nil || rows == 0 {
+			return err
+		}
+		return affected(tx.ExecContext(ctx, `UPDATE cards SET updated_at = $1 WHERE id = $2`, at.UTC(), cardID))
+	})
+}
+
 // TouchCard writes UpdatedAt and nothing else, so a comment cannot hand back an
 // edit that landed while it was being written.
 func (s *Store) TouchCard(ctx context.Context, id model.ID, at time.Time) error {

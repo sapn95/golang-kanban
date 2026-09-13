@@ -176,6 +176,16 @@ func TestMarkdownEscapes(t *testing.T) {
 			"<p>[click](//evil.example.com)</p>",
 		},
 		{
+			"a backslash is refused too: the browser reads /\\host as //host",
+			`[click](/\evil.example.com)`,
+			`<p>[click](/\evil.example.com)</p>`,
+		},
+		{
+			"and the same with the slash the other way round",
+			`[click](/\/evil.example.com)`,
+			`<p>[click](/\/evil.example.com)</p>`,
+		},
+		{
 			"a quote in a destination cannot end the attribute",
 			`[click](https://example.com/" onmouseover="alert(1))`,
 			`<p>[click](https://example.com/&#34; onmouseover=&#34;alert(1))</p>`,

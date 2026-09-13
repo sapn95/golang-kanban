@@ -631,6 +631,44 @@ func TestEditFormMovesTheCard(t *testing.T) {
 			t.Errorf("title = %q, want %q: the fields were written despite the refused move", after.Title, before.Title)
 		}
 	})
+
+	t.Run("a stale checklist line is refused before the move, not after it", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, _ := e.svc.Board(ctx, "demo")
+		target := b.Columns[1].ID
+		before, _ := e.svc.Card(ctx, e.card.ID)
+		gone := before.Subtasks[0].ID
+
+		// Somebody else deletes that line while this form is open.
+		if _, err := e.svc.UpdateCard(ctx, e.card.ID, service.CardInput{Title: before.Title}); err != nil {
+			t.Fatal(err)
+		}
+
+		// The form still carries the id, and picks another column. Only the
+		// card can say the id is stale, so a check that never read the card
+		// let this through and refused it after the move had committed.
+		body := url.Values{
+			"title":    {"moved"},
+			"column":   {string(target)},
+			"subtasks": {string(gone) + "|0|still here"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 for a subtask id the card does not have", rec.Code)
+		}
+		after, err := e.svc.Card(ctx, e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.ColumnID != before.ColumnID {
+			t.Errorf("column = %s, want %s: the refused save moved the card anyway", after.ColumnID, before.ColumnID)
+		}
+	})
 }
 
 func TestCrossSiteWritesAreRefused(t *testing.T) {
@@ -1575,6 +1613,44 @@ func TestColumnsThroughTheWeb(t *testing.T) {
 		want(t, post(e, "/b/demo/columns/"+string(todo.ID)+"/delete", form("move_to", "")), http.StatusSeeOther)
 		if _, err := e.svc.Card(context.Background(), e.card.ID); err == nil {
 			t.Error("the card survived a delete with nowhere to move it")
+		}
+	})
+
+	t.Run("a column that filled up after the page was drawn keeps its cards", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		// The settings page asks where the cards go only when the column has
+		// some, so a form drawn over an empty column carries no answer, and no
+		// answer used to mean "delete them too". It now names a destination,
+		// which moves nothing while the column really is empty.
+		empty := e.board.Columns[1]
+		page := e.do(http.MethodGet, "/b/demo/settings", nil)
+		want(t, page, http.StatusOK)
+		var moveTo string
+		for _, line := range strings.Split(page.Body.String(), "\n") {
+			if strings.Contains(line, `name="move_to"`) && strings.Contains(line, `type="hidden"`) {
+				_, rest, _ := strings.Cut(line, `value="`)
+				moveTo, _, _ = strings.Cut(rest, `"`)
+				break
+			}
+		}
+		if moveTo == "" {
+			t.Fatal("the form over an empty column names nowhere for its cards to go")
+		}
+
+		// Somebody files a card into it before the bin is clicked.
+		late, err := e.svc.CreateCard(ctx, e.board.ID, empty.ID, service.CardInput{Title: "filed just now"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want(t, post(e, "/b/demo/columns/"+string(empty.ID)+"/delete", form("move_to", moveTo)),
+			http.StatusSeeOther)
+		card, err := e.svc.Card(ctx, late.ID)
+		if err != nil {
+			t.Fatalf("the card filed after the page was drawn went with the column: %v", err)
+		}
+		if card.ColumnID == empty.ID {
+			t.Error("the card is still in the column that was deleted")
 		}
 	})
 
