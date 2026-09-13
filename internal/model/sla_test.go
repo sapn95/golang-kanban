@@ -337,12 +337,25 @@ func TestClockDeadlineStopsAtTheHorizon(t *testing.T) {
 	}
 	// Between takes the same stop, for a card whose timestamp came from an
 	// import rather than from somebody touching it.
+	//
+	// Measured against what the walk returns without the horizon, not against
+	// MaxResponseHours. Five centuries of one-minute Mondays is 26 089 minutes,
+	// which is 435 hours: well inside maxSteps, so the walk ends on its own at
+	// b and the old threshold of 2000 hours was four times larger than anything
+	// it could ever produce. That assertion held with the horizon deleted, so
+	// it guarded nothing. Forty years of Mondays is 2088 of them, so the
+	// horizon has to cut this to roughly 35 hours.
 	desk := SLA{ResponseHours: MaxResponseHours, Days: Day(time.Monday),
 		Start: 0, End: 1, Zone: "Europe/Zurich"}
 	c := desk.Clock()
 	from := time.Date(1990, time.January, 1, 0, 0, 0, 0, c.Location())
-	if got := c.Between(from, from.AddDate(500, 0, 0)); got > MaxResponseHours*time.Hour {
-		t.Errorf("Between over five centuries = %v, want the horizon to have stopped it", got)
+	got := c.Between(from, from.AddDate(500, 0, 0))
+	if want := 60 * time.Hour; got > want {
+		t.Errorf("Between over five centuries = %v, want at most %v: the horizon did not stop it", got, want)
+	}
+	// And it did walk: a stop that returned nothing would pass the line above.
+	if got < 20*time.Hour {
+		t.Errorf("Between over five centuries = %v, want the office time inside the horizon", got)
 	}
 }
 

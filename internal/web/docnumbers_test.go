@@ -56,9 +56,16 @@ func TestStylesheetSizeInProse(t *testing.T) {
 // TestRouteCountInProse holds the two sentences in docs/api.md that count the
 // routes. The table beside them is checked route by route; the prose was not,
 // and said 36 when there were 43.
+//
+// Counted on every mux.Handle and mux.HandleFunc, not on the ones whose pattern
+// is a string literal. The JSON API is mounted as mux.Handle(apiPrefix, s.api),
+// which has no literal, so the narrower pattern did not see it: the test agreed
+// with a document that was one short, and the route the sentence beside it is
+// about is precisely the one neither of them counted. api_doc_test.go had to
+// handle the same registration and does, which is where the pattern comes from.
 func TestRouteCountInProse(t *testing.T) {
 	src := repoFile(t, "internal/web/server.go")
-	n := len(regexp.MustCompile(`mux\.Handle(?:Func)?\("`).FindAllString(src, -1))
+	n := len(regexp.MustCompile(`(?m)^\t*mux\.Handle(?:Func)?\(`).FindAllString(src, -1))
 	if n == 0 {
 		t.Fatal("no route registrations found, so this test is reading the wrong file")
 	}

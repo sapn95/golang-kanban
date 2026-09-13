@@ -747,6 +747,12 @@ func TestEditFormMovesTheCard(t *testing.T) {
 // handler its author, which are the same string for a person and opposites for
 // a caller that has no address, so a service token saw a bin on comments it may
 // not touch and none on its own.
+//
+// The handler is the oracle, not a third copy of its rule written out here.
+// That copy left out the TrimSpace both real sides apply, so the one caller it
+// could have disagreed on was the padded one, and the table had none: the test
+// agreed with itself and held nothing about the trimming half of the fix. Each
+// probe writes its own comment, because the handler's answer is a delete.
 func TestTheCommentBinAgreesWithTheHandler(t *testing.T) {
 	e := seeded(t)
 	ctx := context.Background()
@@ -755,38 +761,31 @@ func TestTheCommentBinAgreesWithTheHandler(t *testing.T) {
 		{Email: "somebody.else@example.com"},
 		{Service: "deploy-bot"},
 		{Service: "reporting"},
+		// An identity provider that pads its claim. AddComment stores the
+		// author trimmed, so only a view that trims too draws the right bin.
+		{Email: "  padded@example.com  "},
 		{},
 	}
-	// One comment from each, so every caller meets its own and everybody else's.
 	srv := &Server{now: func() time.Time { return today }}
-	var comments []model.Comment
-	for _, u := range callers {
-		c, err := e.svc.AddComment(ctx, e.card.ID, u.Author(), "written by "+u.Display())
-		if err != nil {
-			t.Fatal(err)
-		}
-		comments = append(comments, *c)
-	}
-	for _, u := range callers {
-		for _, c := range comments {
-			drawn := srv.commentView(u, c).Mine
-			// Asked without writing: the handler's rule is this comparison, and
-			// deleting to find out would take the comment away from the next case.
-			allowed := strings.EqualFold(u.Author(), c.Author)
+	for _, writer := range callers {
+		for _, reader := range callers {
+			c, err := e.svc.AddComment(ctx, e.card.ID, writer.Author(), "probe")
+			if err != nil {
+				t.Fatal(err)
+			}
+			drawn := srv.commentView(reader, *c).Mine
+			_, err = e.svc.DeleteComment(ctx, c.ID, reader.Author())
+			allowed := err == nil
 			if drawn != allowed {
-				t.Errorf("%s: bin drawn = %v on a comment by %q, handler allows = %v",
-					u.Display(), drawn, c.Author, allowed)
+				t.Errorf("written by %q, read by %q: bin drawn = %v, handler allowed = %v",
+					writer.Author(), reader.Author(), drawn, allowed)
+			}
+			if !allowed {
+				if _, err := e.svc.DeleteComment(ctx, c.ID, writer.Author()); err != nil {
+					t.Fatalf("tidying up the probe: %v", err)
+				}
 			}
 		}
-	}
-	// And the rule itself: deleting somebody else's is refused, your own is not.
-	mine, theirs := comments[2], comments[3] // deploy-bot's and reporting's
-	bot := callers[2]
-	if _, err := e.svc.DeleteComment(ctx, theirs.ID, bot.Author()); err == nil {
-		t.Error("one service token deleted another's comment")
-	}
-	if _, err := e.svc.DeleteComment(ctx, mine.ID, bot.Author()); err != nil {
-		t.Errorf("a service token could not delete its own comment: %v", err)
 	}
 }
 

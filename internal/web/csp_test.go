@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -176,11 +177,7 @@ func TestCSPReportStopsDecodingEntriesItThrowsAway(t *testing.T) {
 	}
 	b.WriteString("]")
 
-	var before, after runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&before)
 	rr := e.do(http.MethodPost, cspReportPath, strings.NewReader(b.String()))
-	runtime.ReadMemStats(&after)
 
 	if rr.Code != http.StatusNoContent {
 		t.Fatalf("answered %d, want 204", rr.Code)
@@ -188,8 +185,18 @@ func TestCSPReportStopsDecodingEntriesItThrowsAway(t *testing.T) {
 	if n := strings.Count(e.log.String(), "content security policy refused something"); n != 0 {
 		t.Errorf("%d violations logged for entries with no directive, want 0", n)
 	}
-	if grew := after.TotalAlloc - before.TotalAlloc; grew > 8*uint64(len(b.String())) {
-		t.Errorf("%d bytes allocated for a %d byte body; entries it throws away were decoded anyway",
-			grew, len(b.String()))
+	// Asserted on what the handler says it did, not on how much it allocated.
+	// An allocation budget generous enough not to be flaky was four times
+	// larger than the difference between decoding twenty entries and decoding
+	// five thousand, so this test passed with the loop it was written for still
+	// counting survivors. The handler only warns while dec.More() is true, and
+	// that is true exactly when it stopped early; with the old loop it read to
+	// the end of the array and said nothing at all.
+	log := e.log.String()
+	if !strings.Contains(log, "more entries than a browser sends") {
+		t.Errorf("no warning, so every one of the %d entries was decoded:\n%s", entries, log)
+	}
+	if want := fmt.Sprintf("read=%d", maxReportsPerRequest); !strings.Contains(log, want) {
+		t.Errorf("log does not say %q, so the cap counted something other than entries read:\n%s", want, log)
 	}
 }
