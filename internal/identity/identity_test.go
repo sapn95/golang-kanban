@@ -323,6 +323,39 @@ func TestACancelledFirstCallerDoesNotHoldOffTheRest(t *testing.T) {
 	}
 }
 
+// An endpoint that accepts the connection and then says nothing must not hold
+// the process. Detaching the fetch from the caller's request took its deadline
+// with its cancellation, and a caller that supplies its own HTTP client without
+// a Timeout had nothing else bounding it: inflight stays set and every other
+// request blocks on that channel for as long as the endpoint keeps the socket.
+func TestAStalledEndpointDoesNotHoldEveryCaller(t *testing.T) {
+	s := newSigner(t, "k1")
+	hang := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-hang // never answers until the test lets go
+	}))
+	t.Cleanup(func() { close(hang); srv.Close() })
+
+	v := verifierFor(srv)
+	// A client with no Timeout of its own, which is what the httptest one is.
+	v.HTTP = &http.Client{}
+	v.FetchTimeout = 300 * time.Millisecond
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := v.Verify(context.Background(), s.token(t, "RS256", nil))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a stalled endpoint answered")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the fetch never gave up; every caller waiting on it would still be blocked")
+	}
+}
+
 // A key id longer than any Cloudflare issues is refused before anything looks
 // it up, because the field is the caller's to size until something says no.
 func TestAnOversizedKeyIDIsRefusedOutright(t *testing.T) {

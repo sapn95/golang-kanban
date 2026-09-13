@@ -40,6 +40,11 @@ type AccessVerifier struct {
 	// every six weeks and keeps the old key valid for seven days, so this
 	// only has to be short enough to pick up a rotation well inside a week.
 	KeyTTL time.Duration
+	// FetchTimeout bounds one call to the certs endpoint. Zero means
+	// defaultFetchTimeout. It is a field rather than a constant because it is
+	// applied to the context and not to the client, so a caller that supplies
+	// its own HTTP client cannot set it any other way.
+	FetchTimeout time.Duration
 
 	mu   sync.Mutex
 	keys map[string]*rsa.PublicKey
@@ -90,13 +95,27 @@ func (v *AccessVerifier) now() time.Time {
 	return time.Now()
 }
 
+// defaultFetchTimeout bounds one call to the certs endpoint. It is applied to
+// the context rather than left to the client, because a caller may supply its
+// own and one without a Timeout would hold every waiter on the in-flight
+// channel for as long as the endpoint kept the connection open.
+const defaultFetchTimeout = 10 * time.Second
+
+// fetchTimeout is how long one call to the certs endpoint may take.
+func (v *AccessVerifier) fetchTimeout() time.Duration {
+	if v.FetchTimeout > 0 {
+		return v.FetchTimeout
+	}
+	return defaultFetchTimeout
+}
+
 // client fetches the signing keys, defaulting to one with a timeout so a slow
 // key set cannot hold a request open.
 func (v *AccessVerifier) client() *http.Client {
 	if v.HTTP != nil {
 		return v.HTTP
 	}
-	return &http.Client{Timeout: 10 * time.Second}
+	return &http.Client{Timeout: defaultFetchTimeout}
 }
 
 // ttl is how long a fetched key set is kept. Long enough that a busy board is
@@ -205,9 +224,16 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	// up must not take it from them. It also must not spend the hold-off: the
 	// claim above is already made, and a cancellation returns instantly without
 	// the endpoint having been asked, which on a cold process meant thirty
-	// seconds of refusing everybody after a single aborted request. The client's
-	// own timeout still bounds it.
-	keys, err := v.fetch(context.WithoutCancel(ctx))
+	// seconds of refusing everybody after a single aborted request.
+	//
+	// Detaching takes the deadline with the cancellation, so one is put back
+	// here rather than left to the HTTP client: a caller may supply its own
+	// client, and one without a Timeout would leave inflight set and every
+	// waiter on that channel blocked for as long as the endpoint held the
+	// connection open.
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), v.fetchTimeout())
+	keys, err := v.fetch(fetchCtx)
+	cancel()
 
 	v.mu.Lock()
 	if err == nil {
