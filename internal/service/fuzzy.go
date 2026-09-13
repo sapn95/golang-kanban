@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"kanban/internal/model"
 )
@@ -13,9 +14,21 @@ import (
 // from one wrong letter in twelve, and a short term gets none at all: at three
 // letters almost every word is one edit from every other, so "bug" would find
 // "bag", "big" and "but" and the search would stop being a search.
+// maxFuzzyTerm is the longest term this will look for a typo in. Fuzzy matching
+// is for a word somebody mistyped, and past this a term is not a mistyped word:
+// it is a paste, or a URL, or a request built to be expensive. The literal
+// match still runs on it, so nothing findable becomes unfindable.
+//
+// It is a bound on work as much as on meaning. The distance is computed once
+// per word of every card the literal match missed, so the cost is the term
+// times the board: a 64 kB term over 200 ordinary cards took 1.15 s, and over
+// 50 cards at the description cap it took 8.85 s and allocated 22 GB. One
+// request, from anybody who can see the board.
+const maxFuzzyTerm = 64
+
 func tolerance(term string) int {
-	switch n := len([]rune(term)); {
-	case n < 4:
+	switch n := utf8.RuneCountInString(term); {
+	case n < 4, n > maxFuzzyTerm:
 		return 0
 	case n < 8:
 		return 1
@@ -74,12 +87,15 @@ func splitWords(s string) []string {
 // Three rows rather than the whole matrix, and runes rather than bytes so that a
 // mistyped umlaut counts as one edit and not as two.
 func withinDistance(a, b string, max int) bool {
-	ar, br := []rune(a), []rune(b)
 	// A difference in length is a lower bound on the distance: the shorter
 	// string needs at least that many letters inserted to reach the longer one.
-	if diff := len(ar) - len(br); diff > max || -diff > max {
+	// Counted before the strings are converted, not after: the conversion
+	// allocates four bytes per byte of the term and was being done once per
+	// word of every card, only to be thrown away on this line.
+	if diff := utf8.RuneCountInString(a) - utf8.RuneCountInString(b); diff > max || -diff > max {
 		return false
 	}
+	ar, br := []rune(a), []rune(b)
 	prev2 := make([]int, len(br)+1)
 	prev := make([]int, len(br)+1)
 	cur := make([]int, len(br)+1)
