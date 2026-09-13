@@ -291,6 +291,28 @@ func (c Clock) Enabled() bool { return c.SLA.Enabled() }
 // the office time of the years it walked rather than walking all of them.
 const maxSteps = MaxResponseHours * 60
 
+// maxHorizon is how far ahead a walk will go before it stops and answers with
+// where it got to.
+//
+// maxSteps alone is not a bound anybody would want to wait for. It counts
+// office days, and it is sized for the shortest office day the form accepts,
+// so a one-minute Monday spends all 120 000 of them: 336 ms to place one card,
+// two of those per card on every board render, thirteen seconds for twenty
+// cards and past the write timeout at ninety. One settings form, posted by
+// anybody who can see the board.
+//
+// A horizon bounds the walk by calendar days instead, which is the thing that
+// does not grow when the office day shrinks. Forty years holds more office days
+// than the longest promise the model takes can spend on any schedule a desk
+// keeps, so those still get their exact answer; the short-office-day cases that
+// do reach it are the ones walking towards a date decades out, where the day
+// the walk stops on says what the true one would.
+//
+// A minimum office-day length would not do instead: a quarter of an hour is a
+// legal office day and has its own test, and five minutes is as reasonable a
+// thing to type and still costs 24 000 steps.
+const maxHorizon = 40 * 366 * 24 * time.Hour
+
 // window is the office hours of t's own calendar day, whether or not that day
 // is an office day. The end is exclusive.
 func (c Clock) window(t time.Time) (start, end time.Time) {
@@ -338,7 +360,11 @@ func (c Clock) Deadline(from time.Time) time.Time {
 	}
 	left := c.SLA.Window()
 	t := c.next(from)
+	horizon := from.Add(maxHorizon)
 	for range maxSteps {
+		if t.After(horizon) {
+			return t
+		}
 		_, end := c.window(t)
 		room := end.Sub(t)
 		if room >= left {
@@ -364,8 +390,12 @@ func (c Clock) Between(a, b time.Time) time.Duration {
 	}
 	var total time.Duration
 	t := c.next(a)
+	// The same stop as Deadline's. b is usually now and a is usually recent, so
+	// this rarely bites; a card restored from a backup taken by another tool,
+	// or one whose timestamp was set through the API, is what reaches it.
+	horizon := a.Add(maxHorizon)
 	for range maxSteps {
-		if !t.Before(b) {
+		if !t.Before(b) || t.After(horizon) {
 			return total
 		}
 		_, end := c.window(t)

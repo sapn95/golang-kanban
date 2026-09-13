@@ -300,6 +300,29 @@ func TestABurstOnAColdStartFetchesOnceAndAllOfThemSucceed(t *testing.T) {
 	}
 }
 
+// The first caller on a cold process hanging up must not take the key set with
+// it. The hold-off is claimed before the fetch, so a fetch that used that
+// caller's context came back cancelled at once with the claim already made:
+// one aborted request, and for the next thirty seconds nobody was let in and
+// the endpoint was never asked.
+func TestACancelledFirstCallerDoesNotHoldOffTheRest(t *testing.T) {
+	var hits atomic.Int64
+	s := newSigner(t, "k1")
+	v := verifierFor(certServer(t, &hits, s))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the client is already gone when the token is looked at
+	if _, err := v.Verify(ctx, s.token(t, "RS256", nil)); err != nil {
+		t.Errorf("the fetch went with the caller that started it: %v", err)
+	}
+	if _, err := v.Verify(context.Background(), s.token(t, "RS256", nil)); err != nil {
+		t.Errorf("the next caller was refused: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("hits = %d, want the one fetch to have happened and been kept", got)
+	}
+}
+
 // A key id longer than any Cloudflare issues is refused before anything looks
 // it up, because the field is the caller's to size until something says no.
 func TestAnOversizedKeyIDIsRefusedOutright(t *testing.T) {

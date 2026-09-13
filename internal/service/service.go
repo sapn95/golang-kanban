@@ -118,15 +118,55 @@ func Slugify(name string) string {
 	return s
 }
 
-// checkText enforces the two rules every text field here has: it must not be
-// empty when it is required, and it must not be longer than the column holding
-// it. Checked before the store, so the message names the field.
+// dueDateLayout is the one shape a due date is written in, everywhere.
+const dueDateLayout = "2006-01-02"
+
+// parseDueDate reads a due date and refuses the two years that are not dates.
+//
+// Year 0 parses here and Postgres answers 22008 for it, so the save failed on
+// one backend only, and on that one it failed after the card had already been
+// moved. Year 1 is worse in the other direction: 0001-01-01 is exactly
+// time.Time{}, which is how a card says it has no due date, so it was accepted
+// and then silently thrown away on every backend, and setting it on a card that
+// had no date did not even count as a change.
+//
+// The floor is the Unix epoch. A due date is something somebody is waiting for,
+// so a year before computers is a typo whichever way it was meant.
+func parseDueDate(s string) (time.Time, error) {
+	d, err := time.Parse(dueDateLayout, s)
+	if err != nil {
+		return time.Time{}, invalid("due_date", "must be YYYY-MM-DD")
+	}
+	if y := d.Year(); y < 1970 || y > 9999 {
+		return time.Time{}, invalid("due_date", "must be a year between 1970 and 9999")
+	}
+	return d, nil
+}
+
+// checkText enforces the rules every text field here has: it must not be empty
+// when it is required, it must not be longer than the column holding it, and it
+// must be something every backend can store. Checked before the store, so the
+// message names the field.
 func checkText(field, value string, max int, required bool) error {
 	if required && strings.TrimSpace(value) == "" {
 		return invalid(field, "must not be empty")
 	}
 	if utf8.RuneCountInString(value) > max {
 		return invalid(field, fmt.Sprintf("must be at most %d characters", max))
+	}
+	// Refused here rather than by whichever backend happens to be underneath.
+	// Postgres takes neither a NUL nor a byte that is not UTF-8 in a text
+	// column and answers 22021; sqlite and the in-memory store keep both. So
+	// the same card saved on one deployment and refused on another, and on the
+	// one that refused it the refusal arrived after the card had already been
+	// moved, because the move goes first and this is the check it hangs on.
+	// RuneCountInString counts a bad byte as a rune rather than rejecting it,
+	// which is why the length check above does not catch this.
+	if !utf8.ValidString(value) {
+		return invalid(field, "must be text")
+	}
+	if strings.ContainsRune(value, 0) {
+		return invalid(field, "must not contain a null character")
 	}
 	return nil
 }
@@ -386,7 +426,7 @@ func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 	}
 	due := time.Time{}
 	if in.DueDate != "" {
-		due, _ = time.Parse("2006-01-02", in.DueDate) // checked above
+		due, _ = parseDueDate(in.DueDate) // checked above
 	}
 	// What the card already has, so a line can keep its id and nothing can
 	// invent one. On a card being created this is empty, which is right: there
@@ -592,8 +632,8 @@ func checkCardFields(in CardInput) error {
 		return err
 	}
 	if in.DueDate != "" {
-		if _, err := time.Parse("2006-01-02", in.DueDate); err != nil {
-			return invalid("due_date", "must be YYYY-MM-DD")
+		if _, err := parseDueDate(in.DueDate); err != nil {
+			return err
 		}
 	}
 	for _, st := range in.Subtasks {
@@ -670,9 +710,9 @@ func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee stri
 func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*model.Card, error) {
 	date := time.Time{}
 	if due = strings.TrimSpace(due); due != "" {
-		d, err := time.Parse("2006-01-02", due)
+		d, err := parseDueDate(due)
 		if err != nil {
-			return nil, invalid("due_date", "must be YYYY-MM-DD")
+			return nil, err
 		}
 		date = d
 	}
