@@ -245,6 +245,51 @@ func hrefs(html string) []string {
 	return out
 }
 
+var anchorPattern = regexp.MustCompile(`<a href="([^"]*)"[^>]*>`)
+
+// internalHrefs is every destination the renderer drew as staying on this
+// board: an anchor with no rel=, which is how it says the link is one of ours.
+func internalHrefs(html string) []string {
+	var out []string
+	for _, m := range anchorPattern.FindAllStringSubmatch(html, -1) {
+		if !strings.Contains(m[0], `rel="noopener`) {
+			out = append(out, m[1])
+		}
+	}
+	return out
+}
+
+// leavesTheOrigin reads an href the way a browser does rather than the way
+// safeURL does, which is the whole point of it: it strips the characters the
+// URL parser throws away, reads a backslash as a slash, and then asks whether
+// what is left still names this site.
+//
+// Two destinations got past safeURL by being read differently here: `/\host`,
+// because the backslash is a slash, and "/\rhost", because the carriage return
+// is removed before the parse. Asking safeURL whether its own output is safe
+// could not have found either.
+func leavesTheOrigin(href string) bool {
+	var b strings.Builder
+	for i := range len(href) {
+		switch c := href[i]; {
+		case c < 0x20 || c == 0x7f: // stripped before the URL is parsed
+		case c == '\\':
+			b.WriteByte('/')
+		default:
+			b.WriteByte(c)
+		}
+	}
+	u := b.String()
+	if strings.HasPrefix(u, "//") {
+		return true // another host, scheme left to the browser
+	}
+	// A scheme before the first slash is an absolute URL, wherever it points.
+	if i := strings.IndexAny(u, ":/?#"); i >= 0 && u[i] == ':' {
+		return true
+	}
+	return false
+}
+
 // The tags this renderer is allowed to write, with the attributes each may
 // carry. Anything else in the output is a tag the input smuggled through, which
 // is what the fuzz target below looks for.
@@ -259,6 +304,11 @@ func FuzzMarkdown(f *testing.F) {
 		"", "plain", "# h", "- a\n- b", "**b** *i* `c` ~~s~~", "[t](https://e.com)",
 		"<script>", "```\nx\n```", "> q", "---", "![i](x)", "[a](javascript:x)",
 		"_a_b_", "***", "`` ` ``", "1. a", "\\*", "http://e.com/(a)b", "&amp;",
+		// The shapes that got past safeURL, seeded so a mutation of either is
+		// one edit away rather than something the fuzzer has to invent. Both
+		// were drawn as links that stay on this board and did not.
+		`[a](/\evil.example)`, "[a](/\revil.example)", "[a](/\tevil.example)",
+		`[a](//evil.example)`, `[a](https://kanban.example@evil.example)`,
 	} {
 		f.Add(seed)
 	}
@@ -267,6 +317,14 @@ func FuzzMarkdown(f *testing.F) {
 		for _, href := range hrefs(out) {
 			if _, _, ok := safeURL(href); !ok {
 				t.Fatalf("markdown(%q) wrote href=%q: %s", in, href, out)
+			}
+		}
+		// And the same question asked from the other side. The check above runs
+		// safeURL over safeURL's own output, so a destination it reads wrongly
+		// passes twice; this one reads the href the way a browser will.
+		for _, href := range internalHrefs(out) {
+			if leavesTheOrigin(href) {
+				t.Fatalf("markdown(%q) drew href=%q as a link that stays here, and it does not: %s", in, href, out)
 			}
 		}
 		for i := 0; i < len(out); i++ {
