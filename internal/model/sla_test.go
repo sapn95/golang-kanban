@@ -248,7 +248,7 @@ func TestClockCardState(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			state, left := tt.sla.Clock().CardState(tt.card, tt.col, now)
+			state, left, _ := tt.sla.Clock().CardState(tt.card, tt.col, now)
 			if state != tt.want || left != tt.wantD {
 				t.Errorf("CardState = %q, %v, want %q, %v", state, left, tt.want, tt.wantD)
 			}

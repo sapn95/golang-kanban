@@ -364,10 +364,10 @@ type settingsPage struct {
 func (s *Server) cardView(u identity.User, b *model.Board, clock model.Clock, c model.Card, comments int, people []string) cardView {
 	v := cardView{Viewer: u, Card: c, BoardSlug: b.Slug, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments, People: people}
 	now := s.now().UTC()
-	if state, left := clock.CardState(c, b.Column(c.ColumnID), now); state != model.SLAOff {
+	if state, left, due := clock.CardState(c, b.Column(c.ColumnID), now); state != model.SLAOff {
 		v.SLAState = state
 		v.SLALeft = slaLeft(left)
-		v.SLADue = clock.Deadline(c.UpdatedAt).In(clock.Location()).Format("2 Jan 2006, 15:04 MST")
+		v.SLADue = due.In(clock.Location()).Format("2 Jan 2006, 15:04 MST")
 	}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
