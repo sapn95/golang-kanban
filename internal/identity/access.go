@@ -161,6 +161,11 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
 	if v.now().Sub(v.triedAt) < missTTL {
+		// Read again rather than trusting what the first read above said: a
+		// fetch somebody else started can have finished in between, and it is
+		// the one that set triedAt. Answering from the older copy would refuse
+		// a key that is sitting in the map by the time the question is asked.
+		k, ok = v.keys[kid]
 		v.mu.Unlock()
 		if ok {
 			return k, nil
