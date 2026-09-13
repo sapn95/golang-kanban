@@ -426,25 +426,32 @@ const (
 // promise gives an hour's notice.
 const soonPart = 4
 
-// CardState grades one card against the promise, and says how much office time
-// is left of it; the duration is negative once the promise has gone by.
+// CardState grades one card against the promise, says how much office time is
+// left of it, and hands back the deadline it worked that out from; the duration
+// is negative once the promise has gone by.
 //
-// SLAOff, and a zero duration, when nobody is waiting: no promise on the board,
-// a card that has left it, or a column that stops the clock. That last one is
-// what keeps a Done column from turning red, and it is also why this takes the
-// column rather than only the card.
-func (c Clock) CardState(card Card, col *Column, now time.Time) (string, time.Duration) {
+// The deadline is returned rather than left to the caller to ask for again
+// because working one out is the expensive thing this package does: it walks
+// the calendar an office day at a time, and the card face wants both the grade
+// and the date. Asking twice doubled the cost of drawing every board.
+//
+// SLAOff, a zero duration and a zero time when nobody is waiting: no promise on
+// the board, a card that has left it, or a column that stops the clock. That
+// last one is what keeps a Done column from turning red, and it is also why
+// this takes the column rather than only the card.
+func (c Clock) CardState(card Card, col *Column, now time.Time) (string, time.Duration, time.Time) {
 	if !c.Enabled() || card.Archived() || (col != nil && col.StopsClock) {
-		return SLAOff, 0
+		return SLAOff, 0, time.Time{}
 	}
-	left := c.Left(card.UpdatedAt, now)
+	deadline := c.Deadline(card.UpdatedAt)
+	left := c.leftOf(deadline, now)
 	switch {
 	case left <= 0:
-		return SLABreached, left
+		return SLABreached, left, deadline
 	case left <= c.SLA.Window()/soonPart:
-		return SLASoon, left
+		return SLASoon, left, deadline
 	default:
-		return SLAOK, left
+		return SLAOK, left, deadline
 	}
 }
 
@@ -456,7 +463,12 @@ func (c Clock) CardState(card Card, col *Column, now time.Time) (string, time.Du
 // three days late, and telling a desk it is three days late for a weekend it
 // was never open is how a badge stops being read.
 func (c Clock) Left(from, now time.Time) time.Duration {
-	deadline := c.Deadline(from)
+	return c.leftOf(c.Deadline(from), now)
+}
+
+// leftOf is Left once the deadline is already in hand, which is how CardState
+// avoids working the same one out twice.
+func (c Clock) leftOf(deadline, now time.Time) time.Duration {
 	if deadline.IsZero() {
 		return 0
 	}
