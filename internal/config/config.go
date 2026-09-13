@@ -383,7 +383,10 @@ func (c Config) validateBackup() error {
 	if c.BackupS3Endpoint != "" {
 		u, err := url.Parse(c.BackupS3Endpoint)
 		if err != nil {
-			return fmt.Errorf("BACKUP_S3_ENDPOINT: %w", err)
+			// Not wrapped: url.Parse puts the whole value it was given into its
+			// error, so %w prints the password the other branches take out.
+			// A value that will not parse has nothing safe left to quote.
+			return fmt.Errorf("BACKUP_S3_ENDPOINT: not a URL")
 		}
 		if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("BACKUP_S3_ENDPOINT: %q is not an http or https URL", redactURL(c.BackupS3Endpoint))
