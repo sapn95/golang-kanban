@@ -124,6 +124,11 @@ func TestCheckRefusesWhatCannotBeWritten(t *testing.T) {
 		{"bytes that are not text", "must be text", func(s *Snapshot) {
 			s.Boards[0].Cards[0].Description = "a\xffb"
 		}},
+		// The schema has CHECK (wip_limit >= 0). Refused by the database on the
+		// CREATE, which with -replace is after the live board has been deleted.
+		{"a negative wip limit", "wip_limit of -1", func(s *Snapshot) {
+			s.Boards[0].Columns[0].WIPLimit = -1
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var snap *Snapshot

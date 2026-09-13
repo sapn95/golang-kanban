@@ -600,23 +600,32 @@ func balanced(s string, open, close byte) (inside, after string, ok bool) {
 	if len(s) == 0 || s[0] != open {
 		return "", s, false
 	}
-	// Bounded, because an unclosed bracket makes this read to the end of the
-	// description and the caller tries again at the next character: 20,000 open
-	// brackets is 200 million comparisons for one card, on every render. A link
-	// whose text runs past this is not a link anybody wrote.
-	if len(s) > maxLinkSpan {
-		s = s[:maxLinkSpan]
+	// How far to look is bounded, because an unclosed bracket makes this read to
+	// the end of the description and the caller tries again at the next
+	// character: 20,000 open brackets is 200 million comparisons for one card,
+	// on every render. A link whose text runs past this is not a link anybody
+	// wrote.
+	//
+	// The bound is a separate slice, and both returns of the rest of the line
+	// come from the whole one. Shortening s itself also shortened what was
+	// handed back as the text after the construct, so a description with a link
+	// in it lost everything from 2048 bytes to the end of that line: 973
+	// characters of a 3000-character paragraph, silently, on every render, with
+	// the card in the database still holding all of it.
+	scan := s
+	if len(scan) > maxLinkSpan {
+		scan = scan[:maxLinkSpan]
 	}
 	depth := 0
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(scan); i++ {
 		switch {
-		case s[i] == '\\' && i+1 < len(s):
+		case scan[i] == '\\' && i+1 < len(scan):
 			i++
-		case s[i] == open:
+		case scan[i] == open:
 			depth++
-		case s[i] == close:
+		case scan[i] == close:
 			if depth--; depth == 0 {
-				return s[1:i], s[i+1:], true
+				return scan[1:i], s[i+1:], true
 			}
 		}
 	}

@@ -245,6 +245,29 @@ func hrefs(html string) []string {
 	return out
 }
 
+// A description longer than the bracket scanner's reach keeps every character
+// of it. The bound on how far to look for a closing bracket was applied by
+// shortening the string itself, and the rest of the line was then taken from
+// the shortened copy, so everything from 2048 bytes to the end of that line was
+// dropped from what the card drew while the database still held all of it.
+func TestALongLineKeepsEverythingAfterALink(t *testing.T) {
+	const tail = 3000
+	in := "[a](/b/x) " + strings.Repeat("y", tail) + " END"
+	out := string(renderMarkdown(in))
+	if n := strings.Count(out, "y"); n != tail {
+		t.Errorf("%d of %d characters survived the link on the same line", n, tail)
+	}
+	if !strings.Contains(out, "END") {
+		t.Error("the end of the line is missing")
+	}
+	// The same when the bracket never closes, which takes the other return.
+	in = "[" + strings.Repeat("z", tail) + " END"
+	out = string(renderMarkdown(in))
+	if n := strings.Count(out, "z"); n != tail {
+		t.Errorf("%d of %d characters survived an unclosed bracket", n, tail)
+	}
+}
+
 var anchorPattern = regexp.MustCompile(`<a href="([^"]*)"[^>]*>`)
 
 // internalHrefs is every destination the renderer drew as staying on this
