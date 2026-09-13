@@ -55,9 +55,13 @@ type AccessVerifier struct {
 	// one. So a cold process served a burst of requests started one outbound
 	// fetch each, and a process whose endpoint was down kept asking for as long
 	// as the requests kept arriving, which is the load that got it refused.
-	// Written before the fetch rather than after it, so the requests that
-	// arrive while one is in flight wait for it instead of starting their own.
 	triedAt time.Time
+	// inflight is closed when the fetch now running finishes, and is nil when
+	// none is. It is what lets a caller that wants a key somebody is already
+	// fetching wait for that answer rather than start a second request or be
+	// refused for a key that is on its way. A channel rather than a mutex
+	// because waiting on it can be given up when the request is cancelled.
+	inflight chan struct{}
 }
 
 // maxKID is the longest key id this will look at. Cloudflare's are a few dozen
@@ -136,21 +140,51 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	// the process ask the team's endpoint for keys as fast as the requests
 	// arrive, with no valid token and before AUTH_REQUIRED refuses anything.
 	v.mu.Lock()
-	recent := v.now().Sub(v.triedAt) < missTTL
-	if !recent {
-		// Claimed here, under the same lock that read it, so one request goes
-		// and the rest of the burst does not.
-		v.triedAt = v.now()
-	}
-	v.mu.Unlock()
-	if recent {
+	if wait := v.inflight; wait != nil {
+		// Somebody is already asking for exactly this. Waiting for their answer
+		// is the whole difference between a cold start costing one request and
+		// costing one per caller; refusing instead would turn the first second
+		// after a restart into a burst of rejections for keys that were about
+		// to arrive.
+		v.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		v.mu.Lock()
+		k, ok = v.keys[kid]
+		v.mu.Unlock()
 		if ok {
 			return k, nil
 		}
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
+	if v.now().Sub(v.triedAt) < missTTL {
+		v.mu.Unlock()
+		if ok {
+			return k, nil
+		}
+		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
+	}
+	// Claimed under the lock that read it, so the hold-off covers the fetch
+	// about to start and not only one that came back. An endpoint serving 500
+	// is then asked once per missTTL rather than once per request, which
+	// matters most when AUTH_REQUIRED is refusing every one of them anyway.
+	done := make(chan struct{})
+	v.inflight, v.triedAt = done, v.now()
+	v.mu.Unlock()
 
 	keys, err := v.fetch(ctx)
+
+	v.mu.Lock()
+	if err == nil {
+		v.keys, v.fetchedAt = keys, v.now()
+	}
+	v.inflight = nil
+	v.mu.Unlock()
+	close(done)
+
 	if err != nil {
 		// A refetch during an outage should not invalidate a key that
 		// verified a moment ago.
@@ -159,11 +193,7 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		}
 		return nil, err
 	}
-
-	v.mu.Lock()
-	v.keys, v.fetchedAt = keys, v.now()
 	k, ok = keys[kid]
-	v.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}

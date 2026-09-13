@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -254,6 +255,48 @@ func TestAFailingEndpointIsNotRetriedPerRequest(t *testing.T) {
 	}
 	if got := hits.Load(); got != 2 {
 		t.Errorf("hits = %d a minute later, want it to have tried again (2)", got)
+	}
+}
+
+// A cold process handed a burst fetches once and answers all of them. The
+// hold-off on its own would have refused everybody but the one that went, which
+// is a worse first second than the one outbound request per caller it replaced.
+func TestABurstOnAColdStartFetchesOnceAndAllOfThemSucceed(t *testing.T) {
+	var hits atomic.Int64
+	s := newSigner(t, "k1")
+	slow := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		// Held open until every caller is queued, so they are all inside the
+		// window this is about rather than arriving one after another.
+		<-slow
+		keys := []map[string]string{s.jwk()}
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": keys})
+	}))
+	t.Cleanup(srv.Close)
+	v := verifierFor(srv)
+
+	const callers = 16
+	errs := make(chan error, callers)
+	var ready sync.WaitGroup
+	ready.Add(callers)
+	for range callers {
+		go func() {
+			ready.Done()
+			_, err := v.Verify(context.Background(), s.token(t, "RS256", nil))
+			errs <- err
+		}()
+	}
+	ready.Wait()
+	time.Sleep(50 * time.Millisecond) // let them reach the fetch
+	close(slow)
+	for range callers {
+		if err := <-errs; err != nil {
+			t.Errorf("a caller in the burst was refused: %v", err)
+		}
+	}
+	if got := hits.Load(); got != 1 {
+		t.Errorf("hits = %d for a burst of %d on a cold verifier, want 1", got, callers)
 	}
 }
 
