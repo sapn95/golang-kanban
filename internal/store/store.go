@@ -139,8 +139,16 @@ type Store interface {
 	// ReorderCards is the authoritative order of one column. A listed card
 	// that lives in another column of the same board is moved in; cards of
 	// the column that are not listed keep their relative order after the
-	// listed ones. ErrNotFound for a column or card outside the board,
-	// ErrInvalid for a duplicate ID.
+	// listed ones. ErrNotFound for a column or card outside the board, or for
+	// an archived one, and ErrInvalid for a duplicate ID.
+	//
+	// Archived is ErrNotFound because an archived card is not on the board: a
+	// drop posts the whole destination list off whatever the browser is still
+	// drawing, so a page that has not been told about an archive names a card
+	// that left. Accepting it moved the archived row into another column, and
+	// restoring it then put it somewhere it had never been, against what
+	// SetCardArchived promises. It is the same answer a drop naming a deleted
+	// card gets, and the board reloads on it.
 	ReorderCards(ctx context.Context, boardID, columnID model.ID, order []model.ID) error
 
 	// ListComments returns a card's comments, oldest first.

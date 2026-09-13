@@ -550,10 +550,18 @@ func hasColumnHeads(r *http.Request) bool {
 		// header that never arrived is a count that stays wrong.
 		return true
 	}
-	if strings.HasSuffix(strings.TrimSuffix(u.Path, "/"), "/archive") {
+	// The archive page is /b/{board}/archive and nothing else. A suffix test
+	// also matched /b/archive, which is a board whose slug is "archive": every
+	// slug is available, so one can exist, and on it every count went stale and
+	// every new card reloaded the page.
+	if parts := strings.Split(strings.Trim(u.Path, "/"), "/"); len(parts) == 3 &&
+		parts[0] == "b" && parts[2] == "archive" {
 		return false
 	}
-	return u.Query().Get("q") == ""
+	// Trimmed, because that is what the board handler decides on: a query of
+	// one space draws the whole board, and reading the query raw called that a
+	// search and left the column counts and the WIP bar at their old numbers.
+	return strings.TrimSpace(u.Query().Get("q")) == ""
 }
 
 // archiveCard takes a card off the board. The card row is removed from the

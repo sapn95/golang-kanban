@@ -402,6 +402,15 @@ html.dark { color-scheme: dark; background-color: #020617; }
   display: none;
 }
 
+/* The same again for a column's "Nothing here yet". It was drawn once, at
+   render time, and a card added afterwards arrives beforeend, so the message
+   stayed underneath it until a reload; a column emptied by a drag or an archive
+   kept a blank space where it should have come back. Deciding it in CSS means
+   the column says the right thing after every swap without a line of script. */
+.no-cards:not(:only-child) {
+  display: none;
+}
+
 /* The search box on a phone. It was the first thing on the page and a card was
    the fourth, so it folds; above 640px the fold is gone and the form is the row
    it always was.
@@ -459,4 +468,12 @@ html.dark { color-scheme: dark; background-color: #020617; }
    positioned over the page rather than laid out in it. */
 .unfold-row[open] {
   width: 100%;
+}
+
+/* Search results carry the same card face as the board, tick box and all, and
+   the multi-select toolbar is only on the board. A box that selects nothing and
+   offers nowhere to act reads as a feature that is broken rather than one that
+   is not there. */
+.search-results .card-select {
+  display: none;
 }

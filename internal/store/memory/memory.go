@@ -671,7 +671,7 @@ func (s *Store) ReorderCards(_ context.Context, boardID, columnID model.ID, orde
 			return store.ErrInvalid
 		}
 		c, ok := s.cards[id]
-		if !ok || c.BoardID != boardID {
+		if !ok || c.BoardID != boardID || c.Archived() {
 			return store.ErrNotFound
 		}
 		listed[id] = true

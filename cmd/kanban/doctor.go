@@ -112,7 +112,11 @@ func (d *doctor) run(ctx context.Context) {
 		// Every check below reads the configuration. Reporting a store that
 		// cannot open because the DSN was never built would bury the one line
 		// that matters.
-		for _, name := range []string{"storage", "schema", "identity", "avatars", "backup"} {
+		// Every name the run below would have produced, so a failed report has
+		// a line for each check a good one has. The list left out "viewers",
+		// which is the one an operator reads to see whether the roster was
+		// looked at, and its absence read as though it had been.
+		for _, name := range []string{"storage", "schema", "identity", "avatars", "viewers", "backup"} {
 			d.add(statusOff, name, "not checked: settle the configuration first")
 		}
 		return
