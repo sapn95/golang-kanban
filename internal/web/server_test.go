@@ -669,6 +669,86 @@ func TestEditFormMovesTheCard(t *testing.T) {
 			t.Errorf("column = %s, want %s: the refused save moved the card anyway", after.ColumnID, before.ColumnID)
 		}
 	})
+
+	t.Run("a label the board no longer has is refused before the move too", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, _ := e.svc.Board(ctx, "demo")
+		target := b.Columns[1].ID
+		before, _ := e.svc.Card(ctx, e.card.ID)
+		gone := b.Labels[0].ID
+
+		// Deleted on the settings page while this form is open, which is how a
+		// form comes to post a label id the board does not have.
+		if err := e.svc.DeleteLabel(ctx, gone); err != nil {
+			t.Fatal(err)
+		}
+
+		body := url.Values{"title": {"moved"}, "column": {string(target)}, "labels": {string(gone)}}
+		req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusNoContent || rec.Code == http.StatusOK {
+			t.Fatalf("status = %d, want the save refused", rec.Code)
+		}
+		after, err := e.svc.Card(ctx, e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.ColumnID != before.ColumnID {
+			t.Errorf("column = %s, want %s: the refused save moved the card anyway", after.ColumnID, before.ColumnID)
+		}
+	})
+}
+
+// The bin on a comment and the handler behind it have to answer the same
+// question. They were asked two: the view compared the caller's address and the
+// handler its author, which are the same string for a person and opposites for
+// a caller that has no address, so a service token saw a bin on comments it may
+// not touch and none on its own.
+func TestTheCommentBinAgreesWithTheHandler(t *testing.T) {
+	e := seeded(t)
+	ctx := context.Background()
+	callers := []identity.User{
+		{Email: "someone@example.com"},
+		{Email: "somebody.else@example.com"},
+		{Service: "deploy-bot"},
+		{Service: "reporting"},
+		{},
+	}
+	// One comment from each, so every caller meets its own and everybody else's.
+	srv := &Server{now: func() time.Time { return today }}
+	var comments []model.Comment
+	for _, u := range callers {
+		c, err := e.svc.AddComment(ctx, e.card.ID, u.Author(), "written by "+u.Display())
+		if err != nil {
+			t.Fatal(err)
+		}
+		comments = append(comments, *c)
+	}
+	for _, u := range callers {
+		for _, c := range comments {
+			drawn := srv.commentView(u, c).Mine
+			// Asked without writing: the handler's rule is this comparison, and
+			// deleting to find out would take the comment away from the next case.
+			allowed := strings.EqualFold(u.Author(), c.Author)
+			if drawn != allowed {
+				t.Errorf("%s: bin drawn = %v on a comment by %q, handler allows = %v",
+					u.Display(), drawn, c.Author, allowed)
+			}
+		}
+	}
+	// And the rule itself: deleting somebody else's is refused, your own is not.
+	mine, theirs := comments[2], comments[3] // deploy-bot's and reporting's
+	bot := callers[2]
+	if _, err := e.svc.DeleteComment(ctx, theirs.ID, bot.Author()); err == nil {
+		t.Error("one service token deleted another's comment")
+	}
+	if _, err := e.svc.DeleteComment(ctx, mine.ID, bot.Author()); err != nil {
+		t.Errorf("a service token could not delete its own comment: %v", err)
+	}
 }
 
 func TestCrossSiteWritesAreRefused(t *testing.T) {

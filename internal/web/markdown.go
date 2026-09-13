@@ -533,21 +533,36 @@ func writeAnchor(b *strings.Builder, href, title string, external bool, text fun
 // javascript: is the one everybody remembers, data: carries a whole document,
 // and vbscript: is still there. http, https and mailto are what a card
 // description wants, and a path is how it links to another board.
+// hasControl reports whether s carries a C0 control or DEL. Written over bytes
+// rather than runes on purpose: every one of them is a single byte in UTF-8,
+// and it is the byte the browser strips.
+func hasControl(s string) bool {
+	for i := range len(s) {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
 func safeURL(dest string) (href string, external, ok bool) {
 	url := strings.TrimSpace(dest)
 	if url == "" {
 		return "", false, false
 	}
-	if strings.ContainsAny(url, " \t\"'<>`\\") {
+	if strings.ContainsAny(url, " \"'<>`\\") || hasControl(url) {
 		// A destination with a space in it is either not a URL or is trying to
 		// be more than one attribute. Angle-bracketed destinations, which is
 		// how CommonMark writes those, are not in this subset.
 		//
-		// A backslash is refused for a different reason: browsers read it as a
-		// slash. `/\host` passes the "starts with / but not //" test below and
-		// then resolves to https://host, so the link leaves the board while
-		// being rendered as one that stays on it, without the rel= an outside
-		// link gets. A URL that genuinely wants one writes %5C.
+		// A backslash and a control character are refused for a different
+		// reason: the browser does not read them the way the test below does.
+		// It reads `\` as `/`, and it throws tabs and newlines away before the
+		// URL is parsed at all. Either way `/\host` and "/\rhost" pass "starts
+		// with / but not //" here and arrive as //host, so the link leaves the
+		// board while being drawn as one that stays on it, without the rel= an
+		// outside link gets. A URL that genuinely wants one of these writes it
+		// percent-encoded.
 		return "", false, false
 	}
 	switch {
