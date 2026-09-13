@@ -1462,6 +1462,50 @@ func testLastColumnStays(t *testing.T, s store.Store) {
 	if _, err := s.GetCard(ctx, c.ID); err != nil {
 		t.Errorf("the card went with the refused delete: %v", err)
 	}
+
+	// The same rule with the deletes arriving together, which is how it was
+	// broken: the count is a read, so on a backend that runs transactions in
+	// parallel they all counted before any of them deleted, all passed, and
+	// deleted different rows, which never conflict. Three requests emptied a
+	// three-column board and took every card with them, and a board with no
+	// columns then fails every snapshot of the whole store.
+	wide := mustBoard(t, s, "last-column-race", "A", "B", "C")
+	for _, col := range wide.Columns {
+		mustCard(t, s, wide, col.ID, "on "+col.Name)
+	}
+	errs := make([]error, len(wide.Columns))
+	var wg sync.WaitGroup
+	for i, col := range wide.Columns {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = s.DeleteColumn(ctx, col.ID, "")
+		}()
+	}
+	wg.Wait()
+	refused := 0
+	for _, err := range errs {
+		if errors.Is(err, store.ErrInvalid) {
+			refused++
+		}
+	}
+	if refused == 0 {
+		t.Errorf("three deletes at once and none was refused: %v", errs)
+	}
+	left, err := s.GetBoardByID(ctx, wide.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left.Columns) == 0 {
+		t.Error("three deletes at once emptied the board; every card on it is gone for good")
+	}
+	cards, err := s.ListCards(ctx, wide.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) == 0 {
+		t.Error("the cards went with the columns")
+	}
 }
 
 // testConcurrentEdits is testSubtaskDone and testPatch with the writes actually

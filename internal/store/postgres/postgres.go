@@ -363,6 +363,19 @@ func (s *Store) DeleteColumn(ctx context.Context, id, moveCardsTo model.ID) erro
 		// with them. Cards are deleted here, not archived, so nothing brings
 		// them back, and a board with no columns then fails every snapshot of
 		// the whole store until somebody notices.
+		//
+		// The count alone did not keep that promise. It is a read, and the
+		// transactions are READ COMMITTED, so two of them count before either
+		// deletes, both see two columns, and they delete different rows and so
+		// never conflict. Three requests emptied a three-column board on every
+		// attempt. The board row is locked first, which gives them something to
+		// conflict on: the second waits for the first to commit and then counts
+		// what is actually left. sqlite and the in-memory store already had
+		// this, one from a single connection taking its write lock at BEGIN and
+		// the other from its mutex; this pool holds five.
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM boards WHERE id = $1 FOR UPDATE`, boardID).Scan(&boardID); err != nil {
+			return err
+		}
 		var left int
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM columns WHERE board_id = $1`, boardID).Scan(&left); err != nil {
 			return err

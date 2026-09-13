@@ -189,6 +189,14 @@ func validate(snap *Snapshot) error {
 			if err := storable(c.Name, "column "+c.ID+" name"); err != nil {
 				return err
 			}
+			// The schema has CHECK (wip_limit >= 0) and the service refuses a
+			// negative one; this did not, so a snapshot carrying one passed the
+			// dry run and was refused by the database on the CREATE. With
+			// -replace the live board has been deleted by then, and the restore
+			// that was meant to put it back cannot.
+			if c.WIPLimit < 0 {
+				return fmt.Errorf("%w: column %s has a wip_limit of %d", ErrInvalid, c.ID, c.WIPLimit)
+			}
 		}
 		for _, c := range b.Cards {
 			if err := claim("card", c.ID); err != nil {
