@@ -615,6 +615,16 @@
           "415": {
             "$ref": "#/components/responses/UnsupportedMediaType"
           },
+          "409": {
+            "description": "A label with that name is already on this board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "default": {
             "$ref": "#/components/responses/Error"
           }
@@ -659,6 +669,16 @@
           },
           "415": {
             "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "409": {
+            "description": "A label with that name is already on this board.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "default": {
             "$ref": "#/components/responses/Error"

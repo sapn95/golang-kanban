@@ -459,8 +459,14 @@ func (d *openAPIDoc) operation(method, path string) (map[string]any, string) {
 }
 
 // responseSchema is the schema the document declares for one answer, and
-// whether it declares a body at all. An exact status wins over the default,
-// which is what carries the error body for every endpoint.
+// whether it declares a body at all.
+//
+// The status has to be written down. Falling back to `default` looked right,
+// since that is what carries the error body for every endpoint, but every
+// operation has one: an answer nobody documented validated against it and
+// passed, which is how both label endpoints came to answer 409 with the
+// document saying they could not. `default` is still used for the status codes
+// that are declared as it, and named by the caller.
 func (d *openAPIDoc) responseSchema(method, path string, status int) (schema map[string]any, hasBody, found bool) {
 	op, _ := d.operation(method, path)
 	if op == nil {
@@ -469,9 +475,7 @@ func (d *openAPIDoc) responseSchema(method, path string, status int) (schema map
 	responses, _ := op["responses"].(map[string]any)
 	entry, ok := responses[fmt.Sprint(status)].(map[string]any)
 	if !ok {
-		if entry, ok = responses["default"].(map[string]any); !ok {
-			return nil, false, false
-		}
+		return nil, false, false
 	}
 	entry = d.resolve(entry)
 	content, ok := entry["content"].(map[string]any)

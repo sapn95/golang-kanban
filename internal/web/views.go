@@ -439,13 +439,15 @@ func dueState(today, due time.Time) string {
 // commentView prepares one comment: who wrote it, how long ago, and whether the
 // person reading it is allowed to take it away.
 //
-// Author, the same thing the handler compares. Against the address alone the
-// button and the handler disagreed for anybody without one: a service token saw
-// a bin on comments it may not touch and none on its own.
+// Author, trimmed, which is exactly what the handler compares: AddComment
+// stores a trimmed author and DeleteComment trims the asker. Against the
+// address alone the button and the handler disagreed for anybody without one,
+// and against an untrimmed author they disagree for an identity provider that
+// pads the claim.
 func (s *Server) commentView(u identity.User, c model.Comment) commentView {
 	return commentView{
 		Comment: c,
-		Mine:    strings.EqualFold(u.Author(), c.Author),
+		Mine:    strings.EqualFold(strings.TrimSpace(u.Author()), c.Author),
 		Ago:     ago(s.now().UTC(), c.CreatedAt),
 		Exact:   c.CreatedAt.Format("2 Jan 2006, 15:04") + " UTC",
 	}

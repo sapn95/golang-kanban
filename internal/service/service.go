@@ -121,7 +121,7 @@ func Slugify(name string) string {
 // dueDateLayout is the one shape a due date is written in, everywhere.
 const dueDateLayout = "2006-01-02"
 
-// parseDueDate reads a due date and refuses the two years that are not dates.
+// ParseDueDate reads a due date and refuses the two years that are not dates.
 //
 // Year 0 parses here and Postgres answers 22008 for it, so the save failed on
 // one backend only, and on that one it failed after the card had already been
@@ -132,7 +132,11 @@ const dueDateLayout = "2006-01-02"
 //
 // The floor is the Unix epoch. A due date is something somebody is waiting for,
 // so a year before computers is a typo whichever way it was meant.
-func parseDueDate(s string) (time.Time, error) {
+//
+// Exported because an import is the other way a card reaches the store, and a
+// snapshot checked by a different rule than the one a form goes through is a
+// snapshot that passes its dry run and fails halfway into the restore.
+func ParseDueDate(s string) (time.Time, error) {
 	d, err := time.Parse(dueDateLayout, s)
 	if err != nil {
 		return time.Time{}, invalid("due_date", "must be YYYY-MM-DD")
@@ -141,6 +145,25 @@ func parseDueDate(s string) (time.Time, error) {
 		return time.Time{}, invalid("due_date", "must be a year between 1970 and 9999")
 	}
 	return d, nil
+}
+
+// CheckStorable refuses text no backend should be asked to keep: Postgres takes
+// neither a NUL nor a byte that is not UTF-8 in a text column and answers 22021,
+// while sqlite and the in-memory store keep both.
+//
+// Exported for the same reason as ParseDueDate: this is the rule an import has
+// to apply too, and applying a different one is how a snapshot came to pass its
+// check and then fail partway into the write.
+func CheckStorable(field, value string) error {
+	// RuneCountInString counts a bad byte as a rune rather than rejecting it,
+	// so a length check does not catch either of these.
+	if !utf8.ValidString(value) {
+		return invalid(field, "must be text")
+	}
+	if strings.ContainsRune(value, 0) {
+		return invalid(field, "must not contain a null character")
+	}
+	return nil
 }
 
 // checkText enforces the rules every text field here has: it must not be empty
@@ -155,20 +178,10 @@ func checkText(field, value string, max int, required bool) error {
 		return invalid(field, fmt.Sprintf("must be at most %d characters", max))
 	}
 	// Refused here rather than by whichever backend happens to be underneath.
-	// Postgres takes neither a NUL nor a byte that is not UTF-8 in a text
-	// column and answers 22021; sqlite and the in-memory store keep both. So
-	// the same card saved on one deployment and refused on another, and on the
-	// one that refused it the refusal arrived after the card had already been
-	// moved, because the move goes first and this is the check it hangs on.
-	// RuneCountInString counts a bad byte as a rune rather than rejecting it,
-	// which is why the length check above does not catch this.
-	if !utf8.ValidString(value) {
-		return invalid(field, "must be text")
-	}
-	if strings.ContainsRune(value, 0) {
-		return invalid(field, "must not contain a null character")
-	}
-	return nil
+	// The same card used to save on one deployment and fail on another, and on
+	// the one that failed it failed after the card had already been moved,
+	// because the move goes first and this is the check it hangs on.
+	return CheckStorable(field, value)
 }
 
 // --- boards -----------------------------------------------------------------
@@ -426,7 +439,7 @@ func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 	}
 	due := time.Time{}
 	if in.DueDate != "" {
-		due, _ = parseDueDate(in.DueDate) // checked above
+		due, _ = ParseDueDate(in.DueDate) // checked above
 	}
 	// What the card already has, so a line can keep its id and nothing can
 	// invent one. On a card being created this is empty, which is right: there
@@ -632,7 +645,7 @@ func checkCardFields(in CardInput) error {
 		return err
 	}
 	if in.DueDate != "" {
-		if _, err := parseDueDate(in.DueDate); err != nil {
+		if _, err := ParseDueDate(in.DueDate); err != nil {
 			return err
 		}
 	}
@@ -710,7 +723,7 @@ func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee stri
 func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*model.Card, error) {
 	date := time.Time{}
 	if due = strings.TrimSpace(due); due != "" {
-		d, err := parseDueDate(due)
+		d, err := ParseDueDate(due)
 		if err != nil {
 			return nil, err
 		}

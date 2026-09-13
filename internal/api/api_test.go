@@ -365,6 +365,14 @@ func TestLabels(t *testing.T) {
 	e.do("PATCH", "/api/v1/boards/demo/labels/"+id, `{"name":"later","color":""}`).want(t, 204)
 	e.do("PATCH", "/api/v1/boards/demo/labels/"+id, `{"name":"later","color":"red"}`).want(t, 400)
 
+	// A board's label names are unique in every backend. Both of these answered
+	// 409 while openapi.json said they could not, and the harness let it pass
+	// because an undeclared status used to validate against `default`.
+	e.do("POST", "/api/v1/boards/demo/labels", `{"name":"later"}`).want(t, 409)
+	second := e.do("POST", "/api/v1/boards/demo/labels", `{"name":"spare"}`).want(t, 201)
+	e.do("PATCH", "/api/v1/boards/demo/labels/"+second.str(t, "id"), `{"name":"later"}`).want(t, 409)
+	e.do("DELETE", "/api/v1/boards/demo/labels/"+second.str(t, "id"), "").want(t, 204)
+
 	other, err := e.svc.CreateBoard(context.Background(), "Other", "other", nil)
 	if err != nil {
 		t.Fatal(err)
