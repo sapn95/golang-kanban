@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,14 @@ func TestTolerance(t *testing.T) {
 		{"release", 1},
 		{"releases", 2},
 		{"regression", 2},
+		// Past maxFuzzyTerm there is no typo to forgive, and the work is the
+		// term times the board: the distance is computed once per word of every
+		// card the literal match missed, so a 64 kB term over fifty cards at
+		// the description cap took 16 seconds and allocated tens of gigabytes.
+		{strings.Repeat("a", maxFuzzyTerm), 2},
+		{strings.Repeat("a", maxFuzzyTerm+1), 0},
+		{strings.Repeat("ä", maxFuzzyTerm), 2},
+		{strings.Repeat("ä", maxFuzzyTerm+1), 0},
 	}
 	for _, tt := range tests {
 		if got := tolerance(tt.term); got != tt.want {

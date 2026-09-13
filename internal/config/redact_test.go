@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -184,6 +186,47 @@ func TestAnEndpointWithAPasswordIsNotPrintedAnywhere(t *testing.T) {
 		if strings.Contains(err.Error(), "SuperSecret123") {
 			t.Errorf("the refusal for %q reads %q", endpoint, err)
 		}
+	}
+}
+
+// The driver parses the DSN lazily, so a password that makes it unparseable
+// comes back as a *url.Error from Ping or from a migration, and url.Error
+// quotes the whole value it was handed. One half of the doctor line redacted
+// its own copy while the other half printed the driver's.
+func TestScrubKeepsTheConnectionStringOutOfADriverError(t *testing.T) {
+	cases := map[string]Config{
+		"a DSN built from the parts": {Storage: StoragePostgres, DBUser: "kanban",
+			DBPass: "hunter2", DBHost: "db", DBPort: "5432", DBName: "kanban"},
+		"a DATABASE_URL": {Storage: StoragePostgres,
+			DatabaseURL: "postgres://kanban:hunter2@db:5432/kanban?sslmode=disable"},
+		// A percent in a password pasted unescaped is the everyday way to get a
+		// DSN the parser refuses, and its message carries pieces of what it
+		// choked on.
+		"one that will not parse": {Storage: StoragePostgres,
+			DatabaseURL: "postgres://kanban:100%secure@db:5432/kanban?sslmode=disable"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := url.Parse(c.DSN())
+			if err == nil {
+				// Parses, so build the error a driver would raise from it.
+				err = fmt.Errorf("dial: %s: connection refused", c.DSN())
+			} else {
+				err = fmt.Errorf("migrate: create schema_migrations: %w", err)
+			}
+			got := c.Scrub(err)
+			for _, leak := range []string{"hunter2", "100%secure", "%se", "secure"} {
+				if strings.Contains(got, leak) {
+					t.Errorf("Scrub = %q, which carries %q", got, leak)
+				}
+			}
+			if got == "" {
+				t.Error("Scrub said nothing at all")
+			}
+		})
+	}
+	if got := (Config{}).Scrub(nil); got != "" {
+		t.Errorf("Scrub(nil) = %q", got)
 	}
 }
 

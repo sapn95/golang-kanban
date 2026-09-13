@@ -143,14 +143,14 @@ func (d *doctor) storage(ctx context.Context) store.Store {
 	start := d.clock()
 	st, err := openStore(d.cfg)
 	if err != nil {
-		d.add(statusFail, "storage", fmt.Sprintf("%s: %v", d.describeStore(), err))
+		d.add(statusFail, "storage", fmt.Sprintf("%s: %s", d.describeStore(), d.cfg.Scrub(err)))
 		return nil
 	}
 	pingCtx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
 	if err := st.Ping(pingCtx); err != nil {
 		_ = st.Close()
-		d.add(statusFail, "storage", fmt.Sprintf("%s: %v", d.describeStore(), err))
+		d.add(statusFail, "storage", fmt.Sprintf("%s: %s", d.describeStore(), d.cfg.Scrub(err)))
 		return nil
 	}
 	took := d.clock().Sub(start).Round(time.Millisecond)

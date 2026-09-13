@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,40 @@ func (c Config) Redacted() Config {
 		}
 	}
 	return c
+}
+
+// Scrub is err's text with this configuration's connection string taken out of
+// it, for the places that print a driver error.
+//
+// lib/pq defers parsing the DSN until first use, so a password with a percent
+// in it surfaces as a *url.Error from Ping or from a migration, and url.Error
+// quotes the whole value it was handed. The doctor line redacted its own half
+// and printed the driver's raw half beside it; the migration log wrote the
+// same string.
+//
+// A DSN that will not parse is not scrubbed but dropped: the parser's message
+// carries fragments of what it choked on, and "invalid URL escape %se" is three
+// characters of the password. What an operator needs from that line is that the
+// connection string is malformed, which this says.
+func (c Config) Scrub(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	dsn := c.DSN()
+	if dsn != "" && redactURL(dsn) == maskSet {
+		return "the connection string does not parse; check DATABASE_URL or the DB_* variables"
+	}
+	for from, to := range map[string]string{
+		dsn:           c.RedactedDSN(),
+		c.DatabaseURL: redactURL(c.DatabaseURL),
+		c.DBPass:      maskSet,
+	} {
+		if from != "" {
+			msg = strings.ReplaceAll(msg, from, to)
+		}
+	}
+	return msg
 }
 
 // RedactedDSN is the connection string with the password taken out: the one
