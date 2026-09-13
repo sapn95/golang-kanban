@@ -1031,11 +1031,31 @@ func TestSetCardLabel(t *testing.T) {
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 1 || got.Labels[0] != bug.ID {
 		t.Errorf("labels = %v, want just the bug label", got.Labels)
 	}
+	// Setting it to what it already is answers with the card as it stands and
+	// writes nothing. The answer has to come from after the write and not from
+	// the read that decided there was nothing to do: another chip landing in
+	// between made that read wrong, and the reply drew the stale face.
+	stamped, _ := k.Card(ctx, c.ID)
+	again, err := k.SetCardLabel(ctx, c.ID, bug.ID, true)
+	if err != nil {
+		t.Fatalf("setting a label that is already on: %v", err)
+	}
+	if len(again.Labels) != 1 || again.Labels[0] != bug.ID {
+		t.Errorf("labels = %v, want the card as it stands", again.Labels)
+	}
+	if !again.UpdatedAt.Equal(stamped.UpdatedAt) {
+		t.Errorf("UpdatedAt moved to %v for a request that changed nothing", again.UpdatedAt)
+	}
+
 	if _, err := k.SetCardLabel(ctx, c.ID, bug.ID, false); err != nil {
 		t.Fatalf("removing: %v", err)
 	}
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
 		t.Errorf("labels = %v after taking it off, want none", got.Labels)
+	}
+	// And taking off one that is not there is the same shape.
+	if off, err := k.SetCardLabel(ctx, c.ID, bug.ID, false); err != nil || len(off.Labels) != 0 {
+		t.Errorf("clearing a label that is already off = %v, %v", off, err)
 	}
 
 	// A label belongs to a board. Without this check a crafted id would hang

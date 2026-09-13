@@ -812,18 +812,17 @@ func (k *Kanban) SetCardLabel(ctx context.Context, id, labelID model.ID, on bool
 	if b.Label(labelID) == nil {
 		return nil, store.ErrNotFound
 	}
-	// No cap on how many: a toggle can only ever add a label the board has, so
-	// the board's own label count is the bound.
-	i := slices.Index(c.Labels, labelID)
-	if (i >= 0) == on {
-		// Already where the caller wants it. Nothing to write and no reason to
-		// move UpdatedAt for a request that changed nothing, which is also what
-		// makes a second delivery of the same request harmless.
-		return c, nil
-	}
 	// One label, not the set this request read. Computing the new set here and
 	// posting it would put back whatever a chip tapped a moment earlier had
 	// just added, which is what tapping two chips in quick succession does.
+	//
+	// Nor is there a check here for the label already being where the caller
+	// wants it. That answer comes from a read taken before the write, so a chip
+	// that landed in between made it wrong, and it was wrong in the direction
+	// that matters: the request returned the card it had read, which is the
+	// stale face, and wrote nothing. The store decides it instead, under the
+	// lock or the transaction it does the write in, and still writes nothing
+	// and leaves UpdatedAt alone when there is nothing to do.
 	at := k.now()
 	if err := k.store.SetCardLabel(ctx, id, labelID, on, at); err != nil {
 		return nil, err
