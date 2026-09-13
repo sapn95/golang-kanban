@@ -87,8 +87,11 @@ func (s *Server) cspViolation(w http.ResponseWriter, r *http.Request) {
 		if _, err := dec.Token(); err != nil { // the opening bracket
 			break
 		}
+		// Counted on entries read, not on entries kept: the two filters below
+		// drop an entry without it costing anything, so a body made entirely of
+		// entries they drop would otherwise be decoded to the last one.
 		var seen int
-		for dec.More() && len(reports) < maxReportsPerRequest {
+		for dec.More() && seen < maxReportsPerRequest {
 			var e reportToEntry
 			if err := dec.Decode(&e); err != nil {
 				break

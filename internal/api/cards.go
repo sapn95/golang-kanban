@@ -121,7 +121,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	// title that is refused answered 400 with the card already somewhere else.
 	// Round five fixed that in internal/web and did not reach here.
 	svcIn := in.toService()
-	if err := s.svc.CheckCardInput(svcIn); err != nil {
+	if err := s.svc.CheckCardInput(r.Context(), id, svcIn); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -310,7 +310,7 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := identity.FromContext(r.Context())
-	c, err := s.svc.AddComment(r.Context(), model.ID(r.PathValue("card")), u.Email, in.Body)
+	c, err := s.svc.AddComment(r.Context(), model.ID(r.PathValue("card")), u.Author(), in.Body)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -318,13 +318,14 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, http.StatusCreated, toComment(*c))
 }
 
-// deleteComment refuses anybody but the author with a 403. Where the
-// deployment has no authentication the author is the empty address and so is
-// the caller, which matches, and a board with no identity has one user by
-// definition.
+// deleteComment refuses anybody but the author with a 403. Author rather than
+// address, so a service token is its own name here instead of the empty string
+// every address-less caller used to share; see identity.User.Author. Where the
+// deployment has no authentication at all both sides are empty, which matches,
+// and a board with no identity has one caller by definition.
 func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
 	u := identity.FromContext(r.Context())
-	if _, err := s.svc.DeleteComment(r.Context(), model.ID(r.PathValue("comment")), u.Email); err != nil {
+	if _, err := s.svc.DeleteComment(r.Context(), model.ID(r.PathValue("comment")), u.Author()); err != nil {
 		s.fail(w, r, err)
 		return
 	}

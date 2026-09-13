@@ -141,6 +141,15 @@
             {{range .Others}}<option value="{{.ID}}">move them to {{.Name}}</option>{{end}}
             <option value="">delete them too</option>
           </select>
+          {{else if .Others}}
+          {{/* This column was empty when the page was drawn, so there is nothing
+               to ask about. It still names somewhere for cards to go: an empty
+               move_to means "delete them too", and a card filed here between the
+               page being drawn and the bin being clicked would be deleted by a
+               form whose wording never mentioned it. Moving no cards and
+               deleting no cards are the same thing, so naming a destination
+               costs nothing and the only case it changes is that one. */}}
+          <input type="hidden" name="move_to" value="{{(index .Others 0).ID}}">
           {{end}}
           <button type="submit"
             class="shrink-0 px-3 py-2 text-sm font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 text-white">

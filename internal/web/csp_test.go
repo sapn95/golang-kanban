@@ -158,3 +158,38 @@ func TestCSPReportStopsDecodingAtTheCap(t *testing.T) {
 			grew, len(b.String()))
 	}
 }
+
+// The same cap, against a body of entries that are dropped rather than kept.
+// Counting what survived the two filters meant a body they drop entirely never
+// reached the cap at all, and every entry in it was decoded.
+func TestCSPReportStopsDecodingEntriesItThrowsAway(t *testing.T) {
+	e := seeded(t)
+	var b strings.Builder
+	b.WriteString("[")
+	const entries = 5000
+	for i := range entries {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		// No effectiveDirective, so nothing here is ever logged.
+		b.WriteString(`{"type":"csp-violation","body":{"blockedURL":"x"}}`)
+	}
+	b.WriteString("]")
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	rr := e.do(http.MethodPost, cspReportPath, strings.NewReader(b.String()))
+	runtime.ReadMemStats(&after)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("answered %d, want 204", rr.Code)
+	}
+	if n := strings.Count(e.log.String(), "content security policy refused something"); n != 0 {
+		t.Errorf("%d violations logged for entries with no directive, want 0", n)
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 8*uint64(len(b.String())) {
+		t.Errorf("%d bytes allocated for a %d byte body; entries it throws away were decoded anyway",
+			grew, len(b.String()))
+	}
+}

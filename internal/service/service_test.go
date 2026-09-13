@@ -333,6 +333,45 @@ func TestWIPLimit(t *testing.T) {
 	}
 }
 
+// TestAColumnOverItsLimitCanStillBeSorted covers the two supported ways a column
+// ends up holding more than its limit. Neither may leave it frozen: a drag posts
+// the whole column, so a rule that counted the listed cards as arrivals refused
+// an order that adds nothing.
+func TestAColumnOverItsLimitCanStillBeSorted(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	todo, doing := b.Columns[0].ID, b.Columns[1].ID
+	var in []model.ID
+	for i := range 4 {
+		c, err := k.CreateCard(ctx, b.ID, doing, CardInput{Title: fmt.Sprintf("d%d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		in = append(in, c.ID)
+	}
+	// Lowering a limit under what the column already holds is allowed.
+	if err := k.UpdateColumn(ctx, doing, "Doing", 2, false); err != nil {
+		t.Fatal(err)
+	}
+	in[0], in[3] = in[3], in[0]
+	if err := k.ReorderCards(ctx, b.ID, doing, in); err != nil {
+		t.Errorf("sorting a column that is over its limit: %v", err)
+	}
+	// Taking one out is a move in the right direction, so it is allowed too.
+	if err := k.ReorderCards(ctx, b.ID, doing, in[1:]); err != nil {
+		t.Errorf("moving a card out of an over-full column: %v", err)
+	}
+	// One more arriving is still refused: that is what the limit is for.
+	outside, err := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "one more"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := k.ReorderCards(ctx, b.ID, doing, append(in[1:], outside.ID)); !errors.Is(err, ErrWIPLimit) {
+		t.Errorf("a card arriving into an over-full column: %v, want ErrWIPLimit", err)
+	}
+}
+
 // failing wraps a store and fails ListCards, to cover error propagation.
 type failing struct {
 	store.Store

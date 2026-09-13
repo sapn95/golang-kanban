@@ -311,7 +311,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	// answered 400 with the card already in the other column. Both writes hang
 	// on this one answer now.
 	in := cardInput(r)
-	if err := s.svc.CheckCardInput(in); err != nil {
+	if err := s.svc.CheckCardInput(r.Context(), id, in); err != nil {
 		s.fail(w, r, err)
 		return
 	}

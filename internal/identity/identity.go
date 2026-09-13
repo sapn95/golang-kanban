@@ -62,6 +62,28 @@ func (u User) Anonymous() bool { return u.Email == "" && u.Service == "" }
 // machine has no address to put there, and "@me" has nobody to mean.
 func (u User) Person() bool { return u.Email != "" }
 
+// Author is what goes on something this caller wrote, and what a later request
+// is compared against to decide whether it may take it back.
+//
+// A machine gets its token's name rather than the empty string an address-less
+// caller would otherwise carry. Two service tokens both writing "" made every
+// comment either of them left deletable by the other, and by anything else
+// reaching a board whose AUTH_REQUIRED is off.
+//
+// It is still empty when nobody is behind the request and there is no token,
+// which is the deployment with no authentication at all. Everybody there is
+// the same caller, so matching them to each other is the only thing left.
+func (u User) Author() string {
+	switch {
+	case u.Email != "":
+		return u.Email
+	case u.Service != "":
+		return "service:" + u.Service
+	default:
+		return ""
+	}
+}
+
 // Display is what to show in the interface: the name the provider gave, else
 // a name read out of the address, else the machine's name, else "anonymous".
 func (u User) Display() string {

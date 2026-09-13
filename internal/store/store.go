@@ -110,6 +110,18 @@ type Store interface {
 	// and when the card has no such subtask; the caller has already read the card
 	// to know which way to flip the line, so the two mean the same thing to it.
 	SetSubtaskDone(ctx context.Context, cardID, subtaskID model.ID, done bool, at time.Time) error
+	// SetCardLabel puts one label on a card or takes it off and stamps the
+	// card's UpdatedAt, leaving the card's other labels alone. CardPatch's
+	// Labels field replaces the whole set, which is what an edit form posts;
+	// a chip on the card face changes one label, and two chips tapped at once
+	// would each write the set they read and drop the other's. The label must
+	// belong to the card's board: ErrNotFound when it does not, when there is
+	// no such card, and when there is no such label.
+	//
+	// Setting a label that is already there, or clearing one that is not, is
+	// not an error and writes nothing, so the same request twice is the same
+	// result.
+	SetCardLabel(ctx context.Context, cardID, labelID model.ID, on bool, at time.Time) error
 	// TouchCard stamps UpdatedAt and leaves the rest of the card alone. A
 	// comment is a touch on the card it belongs to, and reading the card back
 	// to write one field would hand an edit saved in between straight back to
