@@ -525,7 +525,31 @@ func (k *Kanban) CheckCardInput(ctx context.Context, id model.ID, in CardInput) 
 	if err != nil {
 		return err
 	}
-	return checkSubtaskIDs(c, in)
+	if err := checkSubtaskIDs(c, in); err != nil {
+		return err
+	}
+	// The labels are the other thing only the store used to refuse, and a
+	// refusal from there lands after the move for the same reason a subtask one
+	// did. The open edit form draws the board's labels as checkboxes; deleting
+	// one on the settings page is all it takes for that form to post an id that
+	// is gone.
+	b, err := k.store.GetBoardByID(ctx, c.BoardID)
+	if err != nil {
+		return err
+	}
+	return checkLabelIDs(b, in)
+}
+
+// checkLabelIDs refuses a label the card's board does not have. The store
+// refuses it too, from the boundary that can see every board; this is the same
+// answer early enough that nothing has been written yet.
+func checkLabelIDs(b *model.Board, in CardInput) error {
+	for _, id := range in.Labels {
+		if b.Label(id) == nil {
+			return invalid("labels", "no such label on this board")
+		}
+	}
+	return nil
 }
 
 // checkSubtaskIDs holds the two rules that need the card in hand. applyInput

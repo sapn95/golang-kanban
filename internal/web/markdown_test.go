@@ -186,6 +186,20 @@ func TestMarkdownEscapes(t *testing.T) {
 			`<p>[click](/\/evil.example.com)</p>`,
 		},
 		{
+			// The browser throws these away before parsing the URL, so /<CR>/host
+			// arrives as //host. It rendered as an internal link to another host.
+			"a carriage return in a destination is refused",
+			"[click](/\r/evil.example.com)",
+			"<p>[click](/\r/evil.example.com)</p>",
+		},
+		{
+			// A newline never reaches a destination: it is a line break first,
+			// which is why the carriage return above is the one that got through.
+			"a newline breaks the line before it can be a destination",
+			"[click](/\n/evil.example.com)",
+			"<p>[click](/<br>/evil.example.com)</p>",
+		},
+		{
 			"a quote in a destination cannot end the attribute",
 			`[click](https://example.com/" onmouseover="alert(1))`,
 			`<p>[click](https://example.com/&#34; onmouseover=&#34;alert(1))</p>`,

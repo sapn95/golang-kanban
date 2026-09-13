@@ -438,10 +438,14 @@ func dueState(today, due time.Time) string {
 
 // commentView prepares one comment: who wrote it, how long ago, and whether the
 // person reading it is allowed to take it away.
+//
+// Author, the same thing the handler compares. Against the address alone the
+// button and the handler disagreed for anybody without one: a service token saw
+// a bin on comments it may not touch and none on its own.
 func (s *Server) commentView(u identity.User, c model.Comment) commentView {
 	return commentView{
 		Comment: c,
-		Mine:    strings.EqualFold(u.Email, c.Author),
+		Mine:    strings.EqualFold(u.Author(), c.Author),
 		Ago:     ago(s.now().UTC(), c.CreatedAt),
 		Exact:   c.CreatedAt.Format("2 Jan 2006, 15:04") + " UTC",
 	}
