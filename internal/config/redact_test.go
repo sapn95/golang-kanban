@@ -164,15 +164,26 @@ func TestAnEndpointWithAPasswordIsNotPrintedAnywhere(t *testing.T) {
 			t.Errorf("%s = %q in the doctor report", s.Name, s.Value)
 		}
 	}
-	// And the refusal, which is what a wrong endpoint actually produces.
-	full := Config{BackupS3Bucket: "kanban-backups", BackupS3Region: "eu-central-1",
-		AWSAccessKeyID: "AKID", AWSSecretAccessKey: "s", BackupS3Endpoint: raw}
-	err := full.validateBackup()
-	if err == nil {
-		t.Fatal("an endpoint carrying credentials was accepted")
-	}
-	if strings.Contains(err.Error(), "SuperSecret123") {
-		t.Errorf("the refusal reads %q", err)
+	// And every refusal a wrong endpoint can produce. The one that does not
+	// parse is the one that caught this out: url.Parse quotes the whole value
+	// it was given inside its own error, so wrapping it printed the password
+	// the branches that redact had just taken out.
+	for _, endpoint := range []string{
+		raw,                                      // parses, carries credentials
+		raw + "/\x7f",                            // does not parse at all
+		"ftp://user:SuperSecret123@host",         // parses, wrong scheme
+		"https://user:SuperSecret123@host/a?b=1", // parses, has a query
+	} {
+		full := Config{BackupS3Bucket: "kanban-backups", BackupS3Region: "eu-central-1",
+			AWSAccessKeyID: "AKID", AWSSecretAccessKey: "s", BackupS3Endpoint: endpoint}
+		err := full.validateBackup()
+		if err == nil {
+			t.Errorf("%q was accepted", endpoint)
+			continue
+		}
+		if strings.Contains(err.Error(), "SuperSecret123") {
+			t.Errorf("the refusal for %q reads %q", endpoint, err)
+		}
 	}
 }
 
