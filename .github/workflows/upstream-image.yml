@@ -15,11 +15,19 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: A commit, tag or branch of NicolasHaas/golang-kanban.
+        description: >-
+          A branch, a tag, or a full 40-character commit of
+          NicolasHaas/golang-kanban.
         required: true
-        # Upstream main at the merge of PR #4, which is the first build that
-        # refuses a status the board has no lane for.
-        default: 498ba94
+        # Upstream main at the merge of PR #4, the first build that refuses a
+        # status the board has no lane for.
+        #
+        # At full length on purpose. actions/checkout treats a ref as a commit
+        # only when it is all forty characters and otherwise goes looking for a
+        # branch or a tag of that name, so a short one fetches
+        # refs/heads/498ba94* , matches nothing and fails. That is what the
+        # first run of this did.
+        default: 498ba9416dd79f598463c8a989e7562c716db759
 
 permissions:
   contents: read
