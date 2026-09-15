@@ -552,8 +552,8 @@ func (k *Kanban) CreateCard(ctx context.Context, boardID, columnID model.ID, in 
 	return c, nil
 }
 
-// CheckCardInput reports whether an input's own fields would be accepted,
-// without writing anything and without needing the card.
+// CheckCardInput reports whether an input would be accepted, without writing
+// anything.
 //
 // It exists because moving a card and saving its fields are two writes, and the
 // move has to go first: the store's UpdateCard never touches a column, so a move
