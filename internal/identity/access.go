@@ -48,11 +48,11 @@ type AccessVerifier struct {
 
 	mu   sync.Mutex
 	keys map[string]*rsa.PublicKey
-	// fetchedAt is when keys last came back from the endpoint. It answers two
-	// questions: whether the set is still fresh, and whether an unknown key id
-	// is worth another fetch. The second is what keeps an invented id from
-	// making an outbound request, and it does so for every invented id at once
-	// rather than one at a time.
+	// fetchedAt is when keys last came back from the endpoint, which answers
+	// whether the set is still fresh. It used to answer whether an unknown key
+	// id was worth another fetch as well, and could not: it does not move when
+	// a fetch fails and has not moved at all before the first one. triedAt,
+	// below, is what holds an invented id off now.
 	fetchedAt time.Time
 	// triedAt is when a fetch was last started, whether or not it came back.
 	// fetchedAt cannot answer "is another fetch worth it" on its own: it does

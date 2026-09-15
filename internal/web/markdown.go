@@ -526,13 +526,6 @@ func writeAnchor(b *strings.Builder, href, title string, external bool, text fun
 	b.WriteString("</a>")
 }
 
-// safeURL decides whether a destination may become an href, and returns it
-// escaped for the attribute.
-//
-// An allow list, because the interesting schemes are the ones nobody thinks of:
-// javascript: is the one everybody remembers, data: carries a whole document,
-// and vbscript: is still there. http, https and mailto are what a card
-// description wants, and a path is how it links to another board.
 // hasControl reports whether s carries a C0 control or DEL. Written over bytes
 // rather than runes on purpose: every one of them is a single byte in UTF-8,
 // and it is the byte the browser strips.
@@ -545,6 +538,13 @@ func hasControl(s string) bool {
 	return false
 }
 
+// safeURL decides whether a destination may become an href, and returns it
+// escaped for the attribute.
+//
+// An allow list, because the interesting schemes are the ones nobody thinks of:
+// javascript: is the one everybody remembers, data: carries a whole document,
+// and vbscript: is still there. http, https and mailto are what a card
+// description wants, and a path is how it links to another board.
 func safeURL(dest string) (href string, external, ok bool) {
 	url := strings.TrimSpace(dest)
 	if url == "" {
