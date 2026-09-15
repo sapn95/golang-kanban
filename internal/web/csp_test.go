@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"runtime"
 	"strings"
@@ -156,5 +157,46 @@ func TestCSPReportStopsDecodingAtTheCap(t *testing.T) {
 	if grew := after.TotalAlloc - before.TotalAlloc; grew > 8*uint64(len(b.String())) {
 		t.Errorf("%d bytes allocated for a %d byte body; the array was decoded whole",
 			grew, len(b.String()))
+	}
+}
+
+// The same cap, against a body of entries that are dropped rather than kept.
+// Counting what survived the two filters meant a body they drop entirely never
+// reached the cap at all, and every entry in it was decoded.
+func TestCSPReportStopsDecodingEntriesItThrowsAway(t *testing.T) {
+	e := seeded(t)
+	var b strings.Builder
+	b.WriteString("[")
+	const entries = 5000
+	for i := range entries {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		// No effectiveDirective, so nothing here is ever logged.
+		b.WriteString(`{"type":"csp-violation","body":{"blockedURL":"x"}}`)
+	}
+	b.WriteString("]")
+
+	rr := e.do(http.MethodPost, cspReportPath, strings.NewReader(b.String()))
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("answered %d, want 204", rr.Code)
+	}
+	if n := strings.Count(e.log.String(), "content security policy refused something"); n != 0 {
+		t.Errorf("%d violations logged for entries with no directive, want 0", n)
+	}
+	// Asserted on what the handler says it did, not on how much it allocated.
+	// An allocation budget generous enough not to be flaky was four times
+	// larger than the difference between decoding twenty entries and decoding
+	// five thousand, so this test passed with the loop it was written for still
+	// counting survivors. The handler only warns while dec.More() is true, and
+	// that is true exactly when it stopped early; with the old loop it read to
+	// the end of the array and said nothing at all.
+	log := e.log.String()
+	if !strings.Contains(log, "more entries than a browser sends") {
+		t.Errorf("no warning, so every one of the %d entries was decoded:\n%s", entries, log)
+	}
+	if want := fmt.Sprintf("read=%d", maxReportsPerRequest); !strings.Contains(log, want) {
+		t.Errorf("log does not say %q, so the cap counted something other than entries read:\n%s", want, log)
 	}
 }

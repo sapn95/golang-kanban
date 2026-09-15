@@ -118,9 +118,58 @@ func Slugify(name string) string {
 	return s
 }
 
-// checkText enforces the two rules every text field here has: it must not be
-// empty when it is required, and it must not be longer than the column holding
-// it. Checked before the store, so the message names the field.
+// dueDateLayout is the one shape a due date is written in, everywhere.
+const dueDateLayout = "2006-01-02"
+
+// ParseDueDate reads a due date and refuses the two years that are not dates.
+//
+// Year 0 parses here and Postgres answers 22008 for it, so the save failed on
+// one backend only, and on that one it failed after the card had already been
+// moved. Year 1 is worse in the other direction: 0001-01-01 is exactly
+// time.Time{}, which is how a card says it has no due date, so it was accepted
+// and then silently thrown away on every backend, and setting it on a card that
+// had no date did not even count as a change.
+//
+// The floor is the Unix epoch. A due date is something somebody is waiting for,
+// so a year before computers is a typo whichever way it was meant.
+//
+// Exported because an import is the other way a card reaches the store, and a
+// snapshot checked by a different rule than the one a form goes through is a
+// snapshot that passes its dry run and fails halfway into the restore.
+func ParseDueDate(s string) (time.Time, error) {
+	d, err := time.Parse(dueDateLayout, s)
+	if err != nil {
+		return time.Time{}, invalid("due_date", "must be YYYY-MM-DD")
+	}
+	if y := d.Year(); y < 1970 || y > 9999 {
+		return time.Time{}, invalid("due_date", "must be a year between 1970 and 9999")
+	}
+	return d, nil
+}
+
+// CheckStorable refuses text no backend should be asked to keep: Postgres takes
+// neither a NUL nor a byte that is not UTF-8 in a text column and answers 22021,
+// while sqlite and the in-memory store keep both.
+//
+// Exported for the same reason as ParseDueDate: this is the rule an import has
+// to apply too, and applying a different one is how a snapshot came to pass its
+// check and then fail partway into the write.
+func CheckStorable(field, value string) error {
+	// RuneCountInString counts a bad byte as a rune rather than rejecting it,
+	// so a length check does not catch either of these.
+	if !utf8.ValidString(value) {
+		return invalid(field, "must be text")
+	}
+	if strings.ContainsRune(value, 0) {
+		return invalid(field, "must not contain a null character")
+	}
+	return nil
+}
+
+// checkText enforces the rules every text field here has: it must not be empty
+// when it is required, it must not be longer than the column holding it, and it
+// must be something every backend can store. Checked before the store, so the
+// message names the field.
 func checkText(field, value string, max int, required bool) error {
 	if required && strings.TrimSpace(value) == "" {
 		return invalid(field, "must not be empty")
@@ -128,7 +177,11 @@ func checkText(field, value string, max int, required bool) error {
 	if utf8.RuneCountInString(value) > max {
 		return invalid(field, fmt.Sprintf("must be at most %d characters", max))
 	}
-	return nil
+	// Refused here rather than by whichever backend happens to be underneath.
+	// The same card used to save on one deployment and fail on another, and on
+	// the one that failed it failed after the card had already been moved,
+	// because the move goes first and this is the check it hangs on.
+	return CheckStorable(field, value)
 }
 
 // --- boards -----------------------------------------------------------------
@@ -386,7 +439,7 @@ func (k *Kanban) applyInput(c *model.Card, in CardInput) error {
 	}
 	due := time.Time{}
 	if in.DueDate != "" {
-		due, _ = time.Parse("2006-01-02", in.DueDate) // checked above
+		due, _ = ParseDueDate(in.DueDate) // checked above
 	}
 	// What the card already has, so a line can keep its id and nothing can
 	// invent one. On a card being created this is empty, which is right: there
@@ -441,7 +494,16 @@ func (k *Kanban) Card(ctx context.Context, id model.ID) (*model.Card, error) {
 	return k.store.GetCard(ctx, id)
 }
 
-// wipRoom reports whether column can hold `adding` more cards.
+// wipRoom reports whether column can hold `adding` more cards. The ids in
+// ignore are the ones the caller is placing, so they are counted through
+// `adding` rather than from where they are now.
+//
+// A column can already hold more than its limit: lowering a limit under what is
+// there is allowed, and so is restoring an archived card into a full column.
+// The rule is therefore that a move may not make a column worse, not that a
+// column must be within its limit. Refusing the second would leave an over-full
+// column frozen, unable even to have its own cards reordered, since a drag posts
+// the whole list and every card in it would read as an arrival.
 func (k *Kanban) wipRoom(ctx context.Context, board *model.Board, columnID model.ID, adding int, ignore map[model.ID]bool) error {
 	col := board.Column(columnID)
 	if col == nil {
@@ -454,13 +516,17 @@ func (k *Kanban) wipRoom(ctx context.Context, board *model.Board, columnID model
 	if err != nil {
 		return err
 	}
-	n := adding
+	was, n := 0, adding
 	for _, c := range cards {
-		if c.ColumnID == columnID && !ignore[c.ID] {
+		if c.ColumnID != columnID {
+			continue
+		}
+		was++
+		if !ignore[c.ID] {
 			n++
 		}
 	}
-	if n > col.WIPLimit {
+	if n > col.WIPLimit && n > was {
 		return ErrWIPLimit
 	}
 	return nil
@@ -486,8 +552,8 @@ func (k *Kanban) CreateCard(ctx context.Context, boardID, columnID model.ID, in 
 	return c, nil
 }
 
-// CheckCardInput reports whether an input's own fields would be accepted,
-// without writing anything and without needing the card.
+// CheckCardInput reports whether an input would be accepted, without writing
+// anything.
 //
 // It exists because moving a card and saving its fields are two writes, and the
 // move has to go first: the store's UpdateCard never touches a column, so a move
@@ -498,10 +564,70 @@ func (k *Kanban) CreateCard(ctx context.Context, boardID, columnID model.ID, in 
 // is refused answered 400 with the card already somewhere else. Checking first
 // makes both writes conditional on the same answer.
 //
-// What it cannot check is the one thing that needs the card: whether a subtask
-// id is one the card already has. That is still decided in applyInput, where
-// the card is in hand.
-func (k *Kanban) CheckCardInput(in CardInput) error { return checkCardFields(in) }
+// The card is read for the one check that needs it: a subtask id has to be one
+// the card already carries. Leaving that to applyInput meant two inputs got
+// through this check and were refused after the move: an id the card does not
+// have, and two lines sharing one. Both are what a stale edit form posts when
+// somebody else has deleted a checklist line in the meantime, which is exactly
+// when the card must not be left somewhere new.
+func (k *Kanban) CheckCardInput(ctx context.Context, id model.ID, in CardInput) error {
+	if err := checkCardFields(in); err != nil {
+		return err
+	}
+	c, err := k.store.GetCard(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := checkSubtaskIDs(c, in); err != nil {
+		return err
+	}
+	// The labels are the other thing only the store used to refuse, and a
+	// refusal from there lands after the move for the same reason a subtask one
+	// did. The open edit form draws the board's labels as checkboxes; deleting
+	// one on the settings page is all it takes for that form to post an id that
+	// is gone.
+	b, err := k.store.GetBoardByID(ctx, c.BoardID)
+	if err != nil {
+		return err
+	}
+	return checkLabelIDs(b, in)
+}
+
+// checkLabelIDs refuses a label the card's board does not have. The store
+// refuses it too, from the boundary that can see every board; this is the same
+// answer early enough that nothing has been written yet.
+func checkLabelIDs(b *model.Board, in CardInput) error {
+	for _, id := range in.Labels {
+		if b.Label(id) == nil {
+			return invalid("labels", "no such label on this board")
+		}
+	}
+	return nil
+}
+
+// checkSubtaskIDs holds the two rules that need the card in hand. applyInput
+// runs them again as it builds the list, because it is also the path a create
+// takes and the only one a caller that skipped CheckCardInput goes through.
+func checkSubtaskIDs(c *model.Card, in CardInput) error {
+	had := map[model.ID]bool{}
+	for _, st := range c.Subtasks {
+		had[st.ID] = true
+	}
+	seen := map[model.ID]bool{}
+	for _, st := range in.Subtasks {
+		if strings.TrimSpace(st.Title) == "" || st.ID == "" {
+			continue
+		}
+		if !had[st.ID] {
+			return invalid("subtask", "id is not one of this card's")
+		}
+		if seen[st.ID] {
+			return invalid("subtask", "two subtasks share an id")
+		}
+		seen[st.ID] = true
+	}
+	return nil
+}
 
 // checkCardFields validates everything about an input that does not depend on
 // the card it is going onto.
@@ -519,8 +645,8 @@ func checkCardFields(in CardInput) error {
 		return err
 	}
 	if in.DueDate != "" {
-		if _, err := time.Parse("2006-01-02", in.DueDate); err != nil {
-			return invalid("due_date", "must be YYYY-MM-DD")
+		if _, err := ParseDueDate(in.DueDate); err != nil {
+			return err
 		}
 	}
 	for _, st := range in.Subtasks {
@@ -597,9 +723,9 @@ func (k *Kanban) SetCardAssignee(ctx context.Context, id model.ID, assignee stri
 func (k *Kanban) SetCardDueDate(ctx context.Context, id model.ID, due string) (*model.Card, error) {
 	date := time.Time{}
 	if due = strings.TrimSpace(due); due != "" {
-		d, err := time.Parse("2006-01-02", due)
+		d, err := ParseDueDate(due)
 		if err != nil {
-			return nil, invalid("due_date", "must be YYYY-MM-DD")
+			return nil, err
 		}
 		date = d
 	}
@@ -686,26 +812,24 @@ func (k *Kanban) SetCardLabel(ctx context.Context, id, labelID model.ID, on bool
 	if b.Label(labelID) == nil {
 		return nil, store.ErrNotFound
 	}
-	// No cap on how many: a toggle can only ever add a label the board has, so
-	// the board's own label count is the bound.
-	i := slices.Index(c.Labels, labelID)
-	switch {
-	case i >= 0 && !on:
-		c.Labels = slices.Delete(c.Labels, i, i+1)
-	case i < 0 && on:
-		c.Labels = append(c.Labels, labelID)
-	default:
-		// Already where the caller wants it. Nothing to write and no reason to
-		// move UpdatedAt for a request that changed nothing, which is also what
-		// makes a second delivery of the same request harmless.
-		return c, nil
-	}
+	// One label, not the set this request read. Computing the new set here and
+	// posting it would put back whatever a chip tapped a moment earlier had
+	// just added, which is what tapping two chips in quick succession does.
+	//
+	// Nor is there a check here for the label already being where the caller
+	// wants it. That answer comes from a read taken before the write, so a chip
+	// that landed in between made it wrong, and it was wrong in the direction
+	// that matters: the request returned the card it had read, which is the
+	// stale face, and wrote nothing. The store decides it instead, under the
+	// lock or the transaction it does the write in, and still writes nothing
+	// and leaves UpdatedAt alone when there is nothing to do.
 	at := k.now()
-	if err := k.store.PatchCard(ctx, id, store.CardPatch{Labels: &c.Labels}, at); err != nil {
+	if err := k.store.SetCardLabel(ctx, id, labelID, on, at); err != nil {
 		return nil, err
 	}
-	c.UpdatedAt = at
-	return c, nil
+	// Read back rather than patched in memory: another chip may have landed in
+	// between, and the card face this returns is what the board will show.
+	return k.store.GetCard(ctx, id)
 }
 
 // People collects the addresses that already appear on a board, so a quick
@@ -879,10 +1003,15 @@ func (k *Kanban) AddComment(ctx context.Context, cardID model.ID, author, body s
 // DeleteComment removes a comment, if asker wrote it. It returns the comment
 // it removed, so the caller knows which card the thread belonged to.
 //
-// Two empty addresses count as a match. That is not a hole: it can only happen
-// where the deployment has no authentication at all, and there the board has
-// exactly one user by definition. Where Cloudflare Access is in front, every
-// comment carries an address and this compares two real ones.
+// Two empty authors count as a match, so what the caller passes has to name
+// whoever it can. identity.User.Author does that: a person is their address and
+// a service token is its name, and only a request with neither is empty. That
+// is the deployment with no authentication at all, where the board has one
+// caller by definition.
+//
+// It used to be handed the address alone, which is empty for a machine as well:
+// one service token could take back every comment another had left, and so
+// could any request at all on a board whose AUTH_REQUIRED is off.
 func (k *Kanban) DeleteComment(ctx context.Context, id model.ID, asker string) (*model.Comment, error) {
 	c, err := k.store.GetComment(ctx, id)
 	if err != nil {

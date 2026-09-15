@@ -171,10 +171,14 @@ func (s *S3) endpoint(key string, query url.Values) (*url.URL, error) {
 	}
 	u, err := url.Parse(base)
 	if err != nil {
-		return nil, fmt.Errorf("endpoint %q: %w", base, err)
+		// Neither the value nor the parser's error, which quotes it whole. An
+		// endpoint is a URL somebody writes by hand, so it is the one that
+		// arrives with its credentials in it, and this error reaches the log
+		// line a failed backup writes.
+		return nil, fmt.Errorf("endpoint: not a URL")
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("endpoint %q: no host", base)
+		return nil, fmt.Errorf("endpoint %q: no host", u.Redacted())
 	}
 	// An endpoint may carry a path of its own, as a gateway that puts the whole
 	// of S3 under one prefix does. Dropping it would sign a request for a

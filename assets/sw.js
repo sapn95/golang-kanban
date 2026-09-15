@@ -14,7 +14,19 @@ const SHELL = 'kanban-shell-__ASSET_VERSION__';
 const OFFLINE = '/offline';
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.add(OFFLINE)).then(() => self.skipWaiting()));
+  // Fetched before the cache is opened. caches.open creates the cache whether
+  // or not what goes in it arrives, and an install that fails is discarded
+  // along with the worker that would have cleaned up after it, so a board
+  // whose offline page answered 403 left an empty cache behind on every
+  // attempt.
+  e.waitUntil(
+    fetch(OFFLINE)
+      .then((res) => {
+        if (!res.ok) { throw new Error('offline page: ' + res.status); }
+        return caches.open(SHELL).then((c) => c.put(OFFLINE, res));
+      })
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (e) => {

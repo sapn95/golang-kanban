@@ -40,15 +40,37 @@ type AccessVerifier struct {
 	// every six weeks and keeps the old key valid for seven days, so this
 	// only has to be short enough to pick up a rotation well inside a week.
 	KeyTTL time.Duration
+	// FetchTimeout bounds one call to the certs endpoint. Zero means
+	// defaultFetchTimeout. It is a field rather than a constant because it is
+	// applied to the context and not to the client, so a caller that supplies
+	// its own HTTP client cannot set it any other way.
+	FetchTimeout time.Duration
 
 	mu   sync.Mutex
 	keys map[string]*rsa.PublicKey
-	// fetchedAt is when keys last came back from the endpoint. It answers two
-	// questions: whether the set is still fresh, and whether an unknown key id
-	// is worth another fetch. The second is what keeps an invented id from
-	// making an outbound request, and it does so for every invented id at once
-	// rather than one at a time.
+	// fetchedAt is when keys last came back from the endpoint, which answers
+	// whether the set is still fresh. It used to answer whether an unknown key
+	// id was worth another fetch as well, and could not: it does not move when
+	// a fetch fails and has not moved at all before the first one. triedAt,
+	// below, is what holds an invented id off now.
 	fetchedAt time.Time
+	// triedAt is when a fetch was last started, whether or not it came back.
+	// fetchedAt cannot answer "is another fetch worth it" on its own: it does
+	// not move when a fetch fails, and it has not moved at all before the first
+	// one. So a cold process served a burst of requests started one outbound
+	// fetch each, and a process whose endpoint was down kept asking for as long
+	// as the requests kept arriving, which is the load that got it refused.
+	triedAt time.Time
+	// inflight is closed when the fetch now running finishes, and is nil when
+	// none is. It is what lets a caller that wants a key somebody is already
+	// fetching wait for that answer rather than start a second request or be
+	// refused for a key that is on its way. A channel rather than a mutex
+	// because waiting on it can be given up when the request is cancelled.
+	inflight chan struct{}
+	// lastErr is what the last fetch came back with, so a caller that waited
+	// for somebody else's is told why it got nothing rather than being handed
+	// the "no such key id" a caller who did fetch would never have seen.
+	lastErr error
 }
 
 // maxKID is the longest key id this will look at. Cloudflare's are a few dozen
@@ -73,13 +95,27 @@ func (v *AccessVerifier) now() time.Time {
 	return time.Now()
 }
 
+// defaultFetchTimeout bounds one call to the certs endpoint. It is applied to
+// the context rather than left to the client, because a caller may supply its
+// own and one without a Timeout would hold every waiter on the in-flight
+// channel for as long as the endpoint kept the connection open.
+const defaultFetchTimeout = 10 * time.Second
+
+// fetchTimeout is how long one call to the certs endpoint may take.
+func (v *AccessVerifier) fetchTimeout() time.Duration {
+	if v.FetchTimeout > 0 {
+		return v.FetchTimeout
+	}
+	return defaultFetchTimeout
+}
+
 // client fetches the signing keys, defaulting to one with a timeout so a slow
 // key set cannot hold a request open.
 func (v *AccessVerifier) client() *http.Client {
 	if v.HTTP != nil {
 		return v.HTTP
 	}
-	return &http.Client{Timeout: 10 * time.Second}
+	return &http.Client{Timeout: defaultFetchTimeout}
 }
 
 // ttl is how long a fetched key set is kept. Long enough that a busy board is
@@ -127,16 +163,90 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 	// the process ask the team's endpoint for keys as fast as the requests
 	// arrive, with no valid token and before AUTH_REQUIRED refuses anything.
 	v.mu.Lock()
-	recent := v.now().Sub(v.fetchedAt) < missTTL
-	v.mu.Unlock()
-	if recent {
+	if wait := v.inflight; wait != nil {
+		// Somebody is already asking for exactly this. Waiting for their answer
+		// is the whole difference between a cold start costing one request and
+		// costing one per caller; refusing instead would turn the first second
+		// after a restart into a burst of rejections for keys that were about
+		// to arrive.
+		v.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		v.mu.Lock()
+		k, ok = v.keys[kid]
+		failed := v.lastErr
+		v.mu.Unlock()
 		if ok {
 			return k, nil
 		}
+		if failed != nil {
+			// The fetch this waited for did not come back. Saying so beats
+			// naming the key id, which reads as a rotation rather than as the
+			// endpoint being down.
+			return nil, failed
+		}
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}
+	if v.now().Sub(v.triedAt) < missTTL {
+		// Read again rather than trusting what the first read above said: a
+		// fetch somebody else started can have finished in between, and it is
+		// the one that set triedAt. Answering from the older copy would refuse
+		// a key that is sitting in the map by the time the question is asked.
+		k, ok = v.keys[kid]
+		failed := v.lastErr
+		v.mu.Unlock()
+		if ok {
+			return k, nil
+		}
+		if failed != nil {
+			// The same reason the waiters above are told this. The hold-off is
+			// thirty seconds and the in-flight window is a fraction of one, so
+			// during an outage nearly every refusal comes out of this branch:
+			// answering with the key id here put "signing key not found" in
+			// every log line of it, which reads as a rotation.
+			return nil, failed
+		}
+		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
+	}
+	// Claimed under the lock that read it, so the hold-off covers the fetch
+	// about to start and not only one that came back. An endpoint serving 500
+	// is then asked once per missTTL rather than once per request, which
+	// matters most when AUTH_REQUIRED is refusing every one of them anyway.
+	done := make(chan struct{})
+	v.inflight, v.triedAt = done, v.now()
+	v.mu.Unlock()
 
-	keys, err := v.fetch(ctx)
+	// Detached from this caller's request. The key set belongs to the process
+	// and everybody waiting on `done` is waiting for it, so one client hanging
+	// up must not take it from them. It also must not spend the hold-off: the
+	// claim above is already made, and a cancellation returns instantly without
+	// the endpoint having been asked, which on a cold process meant thirty
+	// seconds of refusing everybody after a single aborted request.
+	//
+	// Detaching takes the deadline with the cancellation, so one is put back
+	// here rather than left to the HTTP client: a caller may supply its own
+	// client, and one without a Timeout would leave inflight set and every
+	// waiter on that channel blocked for as long as the endpoint held the
+	// connection open.
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), v.fetchTimeout())
+	keys, err := v.fetch(fetchCtx)
+	cancel()
+
+	v.mu.Lock()
+	if err == nil {
+		v.keys, v.fetchedAt = keys, v.now()
+	}
+	// Kept for the waiters. Without it they hear "signing key not found", which
+	// reads as a rotation this build has not picked up rather than as the
+	// endpoint being unreachable, and that is what goes in the log.
+	v.lastErr = err
+	v.inflight = nil
+	v.mu.Unlock()
+	close(done)
+
 	if err != nil {
 		// A refetch during an outage should not invalidate a key that
 		// verified a moment ago.
@@ -145,11 +255,7 @@ func (v *AccessVerifier) key(ctx context.Context, kid string) (*rsa.PublicKey, e
 		}
 		return nil, err
 	}
-
-	v.mu.Lock()
-	v.keys, v.fetchedAt = keys, v.now()
 	k, ok = keys[kid]
-	v.mu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("%w: kid %q", ErrNoKey, kid)
 	}

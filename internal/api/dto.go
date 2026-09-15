@@ -110,7 +110,8 @@ type subtaskBody struct {
 type commentBody struct {
 	ID     string `json:"id"`
 	CardID string `json:"card_id"`
-	// Author is the address the identity layer supplied, empty where the
+	// Author is who the identity layer said wrote it: an address for a person,
+	// "service:" and the token's name for a machine, and empty only where the
 	// deployment has no authentication at all.
 	Author    string    `json:"author"`
 	Body      string    `json:"body"`

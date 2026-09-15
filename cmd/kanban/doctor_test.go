@@ -47,6 +47,9 @@ func TestDoctorMemory(t *testing.T) {
 	wants(t, out, "ok", "schema")
 	wants(t, out, "warn", "identity")
 	wants(t, out, "--", "avatars")
+	// The roster check, asserted here as well as in the skipped list, so the
+	// row cannot go missing from a good report either.
+	wants(t, out, "--", "viewers")
 	wants(t, out, "--", "backup")
 	if !strings.Contains(out, "nothing failed, 2 worth a look") {
 		t.Errorf("summary missing:\n%s", out)
@@ -76,12 +79,15 @@ func TestDoctorBadConfiguration(t *testing.T) {
 		t.Errorf("the reason is missing:\n%s", out)
 	}
 	// The rest is skipped rather than reported as broken, so the one line that
-	// matters is not buried under five consequences of it.
-	for _, name := range []string{"storage", "schema", "identity", "avatars", "backup"} {
+	// matters is not buried under the consequences of it. Every check a good
+	// report has appears here too: a name missing from this list reads as a
+	// check that was made, and "viewers" was missing from it.
+	skipped := []string{"storage", "schema", "identity", "avatars", "viewers", "backup"}
+	for _, name := range skipped {
 		wants(t, out, "--", name)
 	}
-	if strings.Count(out, "not checked: settle the configuration first") != 5 {
-		t.Errorf("want five skipped checks:\n%s", out)
+	if n := strings.Count(out, "not checked: settle the configuration first"); n != len(skipped) {
+		t.Errorf("%d skipped checks, want %d:\n%s", n, len(skipped), out)
 	}
 }
 

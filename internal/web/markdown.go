@@ -526,6 +526,18 @@ func writeAnchor(b *strings.Builder, href, title string, external bool, text fun
 	b.WriteString("</a>")
 }
 
+// hasControl reports whether s carries a C0 control or DEL. Written over bytes
+// rather than runes on purpose: every one of them is a single byte in UTF-8,
+// and it is the byte the browser strips.
+func hasControl(s string) bool {
+	for i := range len(s) {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
 // safeURL decides whether a destination may become an href, and returns it
 // escaped for the attribute.
 //
@@ -538,10 +550,19 @@ func safeURL(dest string) (href string, external, ok bool) {
 	if url == "" {
 		return "", false, false
 	}
-	if strings.ContainsAny(url, " \t\"'<>`") {
+	if strings.ContainsAny(url, " \"'<>`\\") || hasControl(url) {
 		// A destination with a space in it is either not a URL or is trying to
 		// be more than one attribute. Angle-bracketed destinations, which is
 		// how CommonMark writes those, are not in this subset.
+		//
+		// A backslash and a control character are refused for a different
+		// reason: the browser does not read them the way the test below does.
+		// It reads `\` as `/`, and it throws tabs and newlines away before the
+		// URL is parsed at all. Either way `/\host` and "/\rhost" pass "starts
+		// with / but not //" here and arrive as //host, so the link leaves the
+		// board while being drawn as one that stays on it, without the rel= an
+		// outside link gets. A URL that genuinely wants one of these writes it
+		// percent-encoded.
 		return "", false, false
 	}
 	switch {
@@ -579,23 +600,32 @@ func balanced(s string, open, close byte) (inside, after string, ok bool) {
 	if len(s) == 0 || s[0] != open {
 		return "", s, false
 	}
-	// Bounded, because an unclosed bracket makes this read to the end of the
-	// description and the caller tries again at the next character: 20,000 open
-	// brackets is 200 million comparisons for one card, on every render. A link
-	// whose text runs past this is not a link anybody wrote.
-	if len(s) > maxLinkSpan {
-		s = s[:maxLinkSpan]
+	// How far to look is bounded, because an unclosed bracket makes this read to
+	// the end of the description and the caller tries again at the next
+	// character: 20,000 open brackets is 200 million comparisons for one card,
+	// on every render. A link whose text runs past this is not a link anybody
+	// wrote.
+	//
+	// The bound is a separate slice, and both returns of the rest of the line
+	// come from the whole one. Shortening s itself also shortened what was
+	// handed back as the text after the construct, so a description with a link
+	// in it lost everything from 2048 bytes to the end of that line: 973
+	// characters of a 3000-character paragraph, silently, on every render, with
+	// the card in the database still holding all of it.
+	scan := s
+	if len(scan) > maxLinkSpan {
+		scan = scan[:maxLinkSpan]
 	}
 	depth := 0
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(scan); i++ {
 		switch {
-		case s[i] == '\\' && i+1 < len(s):
+		case scan[i] == '\\' && i+1 < len(scan):
 			i++
-		case s[i] == open:
+		case scan[i] == open:
 			depth++
-		case s[i] == close:
+		case scan[i] == close:
 			if depth--; depth == 0 {
-				return s[1:i], s[i+1:], true
+				return scan[1:i], s[i+1:], true
 			}
 		}
 	}

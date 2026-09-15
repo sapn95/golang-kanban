@@ -85,6 +85,50 @@ func TestCheckRefusesWhatCannotBeWritten(t *testing.T) {
 			s.Boards[0].Cards[0].Labels = []string{"l-2"}
 		}},
 		{"a due date that is not a date", `due_date "tomorrow"`, func(s *Snapshot) { s.Boards[0].Cards[0].DueDate = "tomorrow" }},
+
+		// These reached the store one write at a time, so the dry run was green
+		// and the restore stopped partway with boards already in the database.
+		// A board's label names are unique in every backend.
+		{"two labels with one name", "two labels called", func(s *Snapshot) {
+			s.Boards[0].Labels = append(s.Boards[0].Labels, Label{ID: "l-8", Name: s.Boards[0].Labels[0].Name})
+		}},
+		// Postgres has no year 0 and answers 22008; year 1 is the zero time,
+		// which is how a card says it has no due date at all.
+		{"a due date in year 0", "want YYYY-MM-DD in 1970-9999", func(s *Snapshot) {
+			s.Boards[0].Cards[0].DueDate = "0000-01-01"
+		}},
+		{"a due date in year 1", "want YYYY-MM-DD in 1970-9999", func(s *Snapshot) {
+			s.Boards[0].Cards[0].DueDate = "0001-01-01"
+		}},
+		// Postgres takes neither in a text column and answers 22021. sqlite and
+		// the in-memory store kept both until the service started refusing them,
+		// so a snapshot exported from one of those still carries them.
+		{"a null in a card title", "title must not contain a null character", func(s *Snapshot) {
+			s.Boards[0].Cards[0].Title = "a\x00b"
+		}},
+		{"a null in a board name", "name must not contain a null character", func(s *Snapshot) {
+			s.Boards[0].Name = "a\x00b"
+		}},
+		{"a null in a column name", "name must not contain a null character", func(s *Snapshot) {
+			s.Boards[0].Columns[0].Name = "a\x00b"
+		}},
+		{"a null in a label name", "name must not contain a null character", func(s *Snapshot) {
+			s.Boards[0].Labels[0].Name = "a\x00b"
+		}},
+		{"a null in a subtask title", "title must not contain a null character", func(s *Snapshot) {
+			s.Boards[0].Cards[0].Subtasks[0].Title = "a\x00b"
+		}},
+		{"a null in a comment", "body must not contain a null character", func(s *Snapshot) {
+			s.Boards[0].Cards[0].Comments[0].Body = "a\x00b"
+		}},
+		{"bytes that are not text", "must be text", func(s *Snapshot) {
+			s.Boards[0].Cards[0].Description = "a\xffb"
+		}},
+		// The schema has CHECK (wip_limit >= 0). Refused by the database on the
+		// CREATE, which with -replace is after the live board has been deleted.
+		{"a negative wip limit", "wip_limit of -1", func(s *Snapshot) {
+			s.Boards[0].Columns[0].WIPLimit = -1
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var snap *Snapshot

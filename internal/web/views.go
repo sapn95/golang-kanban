@@ -364,10 +364,10 @@ type settingsPage struct {
 func (s *Server) cardView(u identity.User, b *model.Board, clock model.Clock, c model.Card, comments int, people []string) cardView {
 	v := cardView{Viewer: u, Card: c, BoardSlug: b.Slug, BoardLabels: b.Labels, Columns: b.Columns, CommentCount: comments, People: people}
 	now := s.now().UTC()
-	if state, left := clock.CardState(c, b.Column(c.ColumnID), now); state != model.SLAOff {
+	if state, left, due := clock.CardState(c, b.Column(c.ColumnID), now); state != model.SLAOff {
 		v.SLAState = state
 		v.SLALeft = slaLeft(left)
-		v.SLADue = clock.Deadline(c.UpdatedAt).In(clock.Location()).Format("2 Jan 2006, 15:04 MST")
+		v.SLADue = due.In(clock.Location()).Format("2 Jan 2006, 15:04 MST")
 	}
 	for _, id := range c.Labels {
 		if l := b.Label(id); l != nil {
@@ -438,10 +438,16 @@ func dueState(today, due time.Time) string {
 
 // commentView prepares one comment: who wrote it, how long ago, and whether the
 // person reading it is allowed to take it away.
+//
+// Author, trimmed, which is exactly what the handler compares: AddComment
+// stores a trimmed author and DeleteComment trims the asker. Against the
+// address alone the button and the handler disagreed for anybody without one,
+// and against an untrimmed author they disagree for an identity provider that
+// pads the claim.
 func (s *Server) commentView(u identity.User, c model.Comment) commentView {
 	return commentView{
 		Comment: c,
-		Mine:    strings.EqualFold(u.Email, c.Author),
+		Mine:    strings.EqualFold(strings.TrimSpace(u.Author()), c.Author),
 		Ago:     ago(s.now().UTC(), c.CreatedAt),
 		Exact:   c.CreatedAt.Format("2 Jan 2006, 15:04") + " UTC",
 	}

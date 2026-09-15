@@ -248,7 +248,7 @@ func TestClockCardState(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			state, left := tt.sla.Clock().CardState(tt.card, tt.col, now)
+			state, left, _ := tt.sla.Clock().CardState(tt.card, tt.col, now)
 			if state != tt.want || left != tt.wantD {
 				t.Errorf("CardState = %q, %v, want %q, %v", state, left, tt.want, tt.wantD)
 			}
@@ -304,6 +304,58 @@ func TestClockDeadlineOnAVeryShortOfficeDay(t *testing.T) {
 	if deadline.Year() < 2050 {
 		t.Errorf("Deadline = %s, too early for 2000 hours at a quarter of an hour a day",
 			deadline.Format(time.RFC3339))
+	}
+}
+
+// An office day short enough to make the walk the expensive part of drawing the
+// board. A one-minute Monday spends every one of maxSteps, which measured at
+// 336 ms for a single card; the board asks twice per card, so twenty cards took
+// thirteen seconds and ninety passed the write timeout. Anybody who can see the
+// board can post this.
+//
+// The walk stops at the horizon instead, which bounds it by calendar days and
+// so does not grow as the office day shrinks. Asserted on the answer rather
+// than on a stopwatch, because what makes it fast is that it cannot walk past
+// this date and a loaded machine must not decide whether that is true.
+func TestClockDeadlineStopsAtTheHorizon(t *testing.T) {
+	for _, minutes := range []int{1, 5, 15} {
+		desk := SLA{ResponseHours: MaxResponseHours, Days: Day(time.Monday),
+			Start: 0, End: minutes, Zone: "Europe/Zurich"}
+		c := desk.Clock()
+		from := time.Date(2026, time.September, 14, 0, 0, 0, 0, c.Location())
+		deadline := c.Deadline(from)
+		if latest := from.Add(maxHorizon); deadline.After(latest.AddDate(0, 0, 7)) {
+			t.Errorf("a %d-minute office day walked to %s, past the horizon at %s",
+				minutes, deadline.Format(time.RFC3339), latest.Format(time.RFC3339))
+		}
+		// And it does not stop early either: a promise this size on a schedule
+		// this thin is decades out, so the walk has to have gone a long way.
+		if deadline.Year() < 2060 {
+			t.Errorf("a %d-minute office day stopped at %s, sooner than the horizon",
+				minutes, deadline.Format(time.RFC3339))
+		}
+	}
+	// Between takes the same stop, for a card whose timestamp came from an
+	// import rather than from somebody touching it.
+	//
+	// Measured against what the walk returns without the horizon, not against
+	// MaxResponseHours. Five centuries of one-minute Mondays is 26 089 minutes,
+	// which is 435 hours: well inside maxSteps, so the walk ends on its own at
+	// b and the old threshold of 2000 hours was four times larger than anything
+	// it could ever produce. That assertion held with the horizon deleted, so
+	// it guarded nothing. Forty years of Mondays is 2088 of them, so the
+	// horizon has to cut this to roughly 35 hours.
+	desk := SLA{ResponseHours: MaxResponseHours, Days: Day(time.Monday),
+		Start: 0, End: 1, Zone: "Europe/Zurich"}
+	c := desk.Clock()
+	from := time.Date(1990, time.January, 1, 0, 0, 0, 0, c.Location())
+	got := c.Between(from, from.AddDate(500, 0, 0))
+	if want := 60 * time.Hour; got > want {
+		t.Errorf("Between over five centuries = %v, want at most %v: the horizon did not stop it", got, want)
+	}
+	// And it did walk: a stop that returned nothing would pass the line above.
+	if got < 20*time.Hour {
+		t.Errorf("Between over five centuries = %v, want the office time inside the horizon", got)
 	}
 }
 

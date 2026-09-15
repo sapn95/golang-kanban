@@ -4,9 +4,11 @@
 
    The globs are the whole answer to "which classes exist". Every file that can
    put a class on an element has to be listed, and today that is the templates
-   and app.js, which builds a subtask row and toggles colour classes on the WIP
-   badge. No Go file writes a class name, and a test in internal/web asserts
-   that stays true. */
+   and app.js. app.js builds no markup any more; it is listed because it adds
+   and removes classes on elements the templates drew, which is enough for
+   Tailwind to need to know about them. No Go file writes a class name, and
+   assets/tailwind_test.go asserts that stays true, by walking the module and
+   flagging any file that writes a class and is not listed here. */
 module.exports = {
   content: [
     './internal/web/templates/**/*.html',

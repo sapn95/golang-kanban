@@ -291,6 +291,28 @@ func (c Clock) Enabled() bool { return c.SLA.Enabled() }
 // the office time of the years it walked rather than walking all of them.
 const maxSteps = MaxResponseHours * 60
 
+// maxHorizon is how far ahead a walk will go before it stops and answers with
+// where it got to.
+//
+// maxSteps alone is not a bound anybody would want to wait for. It counts
+// office days, and it is sized for the shortest office day the form accepts,
+// so a one-minute Monday spends all 120 000 of them: 336 ms to place one card,
+// two of those per card on every board render, thirteen seconds for twenty
+// cards and past the write timeout at ninety. One settings form, posted by
+// anybody who can see the board.
+//
+// A horizon bounds the walk by calendar days instead, which is the thing that
+// does not grow when the office day shrinks. Forty years holds more office days
+// than the longest promise the model takes can spend on any schedule a desk
+// keeps, so those still get their exact answer; the short-office-day cases that
+// do reach it are the ones walking towards a date decades out, where the day
+// the walk stops on says what the true one would.
+//
+// A minimum office-day length would not do instead: a quarter of an hour is a
+// legal office day and has its own test, and five minutes is as reasonable a
+// thing to type and still costs 24 000 steps.
+const maxHorizon = 40 * 366 * 24 * time.Hour
+
 // window is the office hours of t's own calendar day, whether or not that day
 // is an office day. The end is exclusive.
 func (c Clock) window(t time.Time) (start, end time.Time) {
@@ -338,7 +360,11 @@ func (c Clock) Deadline(from time.Time) time.Time {
 	}
 	left := c.SLA.Window()
 	t := c.next(from)
+	horizon := from.Add(maxHorizon)
 	for range maxSteps {
+		if t.After(horizon) {
+			return t
+		}
 		_, end := c.window(t)
 		room := end.Sub(t)
 		if room >= left {
@@ -364,8 +390,12 @@ func (c Clock) Between(a, b time.Time) time.Duration {
 	}
 	var total time.Duration
 	t := c.next(a)
+	// The same stop as Deadline's. b is usually now and a is usually recent, so
+	// this rarely bites; a card restored from a backup taken by another tool,
+	// or one whose timestamp was set through the API, is what reaches it.
+	horizon := a.Add(maxHorizon)
 	for range maxSteps {
-		if !t.Before(b) {
+		if !t.Before(b) || t.After(horizon) {
 			return total
 		}
 		_, end := c.window(t)
@@ -396,25 +426,32 @@ const (
 // promise gives an hour's notice.
 const soonPart = 4
 
-// CardState grades one card against the promise, and says how much office time
-// is left of it; the duration is negative once the promise has gone by.
+// CardState grades one card against the promise, says how much office time is
+// left of it, and hands back the deadline it worked that out from; the duration
+// is negative once the promise has gone by.
 //
-// SLAOff, and a zero duration, when nobody is waiting: no promise on the board,
-// a card that has left it, or a column that stops the clock. That last one is
-// what keeps a Done column from turning red, and it is also why this takes the
-// column rather than only the card.
-func (c Clock) CardState(card Card, col *Column, now time.Time) (string, time.Duration) {
+// The deadline is returned rather than left to the caller to ask for again
+// because working one out is the expensive thing this package does: it walks
+// the calendar an office day at a time, and the card face wants both the grade
+// and the date. Asking twice doubled the cost of drawing every board.
+//
+// SLAOff, a zero duration and a zero time when nobody is waiting: no promise on
+// the board, a card that has left it, or a column that stops the clock. That
+// last one is what keeps a Done column from turning red, and it is also why
+// this takes the column rather than only the card.
+func (c Clock) CardState(card Card, col *Column, now time.Time) (string, time.Duration, time.Time) {
 	if !c.Enabled() || card.Archived() || (col != nil && col.StopsClock) {
-		return SLAOff, 0
+		return SLAOff, 0, time.Time{}
 	}
-	left := c.Left(card.UpdatedAt, now)
+	deadline := c.Deadline(card.UpdatedAt)
+	left := c.leftOf(deadline, now)
 	switch {
 	case left <= 0:
-		return SLABreached, left
+		return SLABreached, left, deadline
 	case left <= c.SLA.Window()/soonPart:
-		return SLASoon, left
+		return SLASoon, left, deadline
 	default:
-		return SLAOK, left
+		return SLAOK, left, deadline
 	}
 }
 
@@ -426,7 +463,12 @@ func (c Clock) CardState(card Card, col *Column, now time.Time) (string, time.Du
 // three days late, and telling a desk it is three days late for a weekend it
 // was never open is how a badge stops being read.
 func (c Clock) Left(from, now time.Time) time.Duration {
-	deadline := c.Deadline(from)
+	return c.leftOf(c.Deadline(from), now)
+}
+
+// leftOf is Left once the deadline is already in hand, which is how CardState
+// avoids working the same one out twice.
+func (c Clock) leftOf(deadline, now time.Time) time.Duration {
 	if deadline.IsZero() {
 		return 0
 	}

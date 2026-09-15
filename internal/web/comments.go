@@ -15,7 +15,7 @@ import (
 func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 	u := identity.FromContext(r.Context())
 	cardID := model.ID(r.PathValue("id"))
-	c, err := s.svc.AddComment(r.Context(), cardID, u.Email, r.FormValue("body"))
+	c, err := s.svc.AddComment(r.Context(), cardID, u.Author(), r.FormValue("body"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -33,7 +33,7 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 // comment with is the empty string.
 func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
 	u := identity.FromContext(r.Context())
-	c, err := s.svc.DeleteComment(r.Context(), model.ID(r.PathValue("id")), u.Email)
+	c, err := s.svc.DeleteComment(r.Context(), model.ID(r.PathValue("id")), u.Author())
 	if err != nil {
 		s.fail(w, r, err)
 		return

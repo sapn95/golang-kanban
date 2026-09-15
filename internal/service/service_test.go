@@ -333,6 +333,98 @@ func TestWIPLimit(t *testing.T) {
 	}
 }
 
+// What the check accepts, the save has to accept. The handlers move the card
+// first and then save it, so an input that gets past the check and is refused
+// by the store leaves the card in the new column with the old content and
+// answers 500. These are the ones that did.
+func TestTheCheckRefusesWhatAStoreWould(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	c, err := k.CreateCard(ctx, b.ID, b.Columns[0].ID, CardInput{Title: "seed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Postgres takes neither of these in a text column and answers 22021;
+	// sqlite and the in-memory store keep both, so the board behaved one way
+	// on a laptop and another on the deployment.
+	refused := map[string]struct {
+		in    CardInput
+		field string
+	}{
+		"a null in the title":       {CardInput{Title: "a\x00b"}, "title"},
+		"a null in the description": {CardInput{Title: "ok", Description: "a\x00b"}, "description"},
+		"a null in the assignee":    {CardInput{Title: "ok", Assignee: "a\x00b@example.com"}, "assignee"},
+		"bytes that are not text":   {CardInput{Title: "a\xffb"}, "title"},
+		"the same in a description": {CardInput{Title: "ok", Description: "a\xffb"}, "description"},
+		// Year 0 is a date Postgres has no year for (22008). Year 1 is exactly
+		// time.Time{}, which is how a card says it has no due date, so it was
+		// accepted everywhere and then silently discarded.
+		"a due date in year 0": {CardInput{Title: "ok", DueDate: "0000-01-01"}, "due_date"},
+		"a due date in year 1": {CardInput{Title: "ok", DueDate: "0001-01-01"}, "due_date"},
+	}
+	for name, tt := range refused {
+		t.Run(name, func(t *testing.T) {
+			if err := k.CheckCardInput(ctx, c.ID, tt.in); !isValidation(err, tt.field) {
+				t.Errorf("CheckCardInput = %v, want a validation error on %s", err, tt.field)
+			}
+			if _, err := k.UpdateCard(ctx, c.ID, tt.in); !isValidation(err, tt.field) {
+				t.Errorf("UpdateCard = %v, want the same refusal", err)
+			}
+		})
+	}
+	// And the edges either side of the date rule still go through.
+	for _, due := range []string{"1970-01-01", "2027-03-04", "9999-12-31"} {
+		if err := k.CheckCardInput(ctx, c.ID, CardInput{Title: "ok", DueDate: due}); err != nil {
+			t.Errorf("due date %s was refused: %v", due, err)
+		}
+	}
+	// The quick edit on the card face parses the same way, so it cannot store
+	// what the form cannot.
+	if _, err := k.SetCardDueDate(ctx, c.ID, "0001-01-01"); !isValidation(err, "due_date") {
+		t.Errorf("SetCardDueDate(0001-01-01) = %v, want it refused", err)
+	}
+}
+
+// TestAColumnOverItsLimitCanStillBeSorted covers the two supported ways a column
+// ends up holding more than its limit. Neither may leave it frozen: a drag posts
+// the whole column, so a rule that counted the listed cards as arrivals refused
+// an order that adds nothing.
+func TestAColumnOverItsLimitCanStillBeSorted(t *testing.T) {
+	k := newSvc(t)
+	ctx := context.Background()
+	b, _ := k.CreateBoard(ctx, "B", "", nil)
+	todo, doing := b.Columns[0].ID, b.Columns[1].ID
+	var in []model.ID
+	for i := range 4 {
+		c, err := k.CreateCard(ctx, b.ID, doing, CardInput{Title: fmt.Sprintf("d%d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		in = append(in, c.ID)
+	}
+	// Lowering a limit under what the column already holds is allowed.
+	if err := k.UpdateColumn(ctx, doing, "Doing", 2, false); err != nil {
+		t.Fatal(err)
+	}
+	in[0], in[3] = in[3], in[0]
+	if err := k.ReorderCards(ctx, b.ID, doing, in); err != nil {
+		t.Errorf("sorting a column that is over its limit: %v", err)
+	}
+	// Taking one out is a move in the right direction, so it is allowed too.
+	if err := k.ReorderCards(ctx, b.ID, doing, in[1:]); err != nil {
+		t.Errorf("moving a card out of an over-full column: %v", err)
+	}
+	// One more arriving is still refused: that is what the limit is for.
+	outside, err := k.CreateCard(ctx, b.ID, todo, CardInput{Title: "one more"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := k.ReorderCards(ctx, b.ID, doing, append(in[1:], outside.ID)); !errors.Is(err, ErrWIPLimit) {
+		t.Errorf("a card arriving into an over-full column: %v, want ErrWIPLimit", err)
+	}
+}
+
 // failing wraps a store and fails ListCards, to cover error propagation.
 type failing struct {
 	store.Store
@@ -939,11 +1031,31 @@ func TestSetCardLabel(t *testing.T) {
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 1 || got.Labels[0] != bug.ID {
 		t.Errorf("labels = %v, want just the bug label", got.Labels)
 	}
+	// Setting it to what it already is answers with the card as it stands and
+	// writes nothing. The answer has to come from after the write and not from
+	// the read that decided there was nothing to do: another chip landing in
+	// between made that read wrong, and the reply drew the stale face.
+	stamped, _ := k.Card(ctx, c.ID)
+	again, err := k.SetCardLabel(ctx, c.ID, bug.ID, true)
+	if err != nil {
+		t.Fatalf("setting a label that is already on: %v", err)
+	}
+	if len(again.Labels) != 1 || again.Labels[0] != bug.ID {
+		t.Errorf("labels = %v, want the card as it stands", again.Labels)
+	}
+	if !again.UpdatedAt.Equal(stamped.UpdatedAt) {
+		t.Errorf("UpdatedAt moved to %v for a request that changed nothing", again.UpdatedAt)
+	}
+
 	if _, err := k.SetCardLabel(ctx, c.ID, bug.ID, false); err != nil {
 		t.Fatalf("removing: %v", err)
 	}
 	if got, _ := k.Card(ctx, c.ID); len(got.Labels) != 0 {
 		t.Errorf("labels = %v after taking it off, want none", got.Labels)
+	}
+	// And taking off one that is not there is the same shape.
+	if off, err := k.SetCardLabel(ctx, c.ID, bug.ID, false); err != nil || len(off.Labels) != 0 {
+		t.Errorf("clearing a label that is already off = %v, %v", off, err)
 	}
 
 	// A label belongs to a board. Without this check a crafted id would hang

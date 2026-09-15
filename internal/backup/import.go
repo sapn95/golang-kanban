@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"kanban/internal/model"
+	"kanban/internal/service"
 	"kanban/internal/store"
 )
 
@@ -158,7 +159,14 @@ func validate(snap *Snapshot) error {
 			}
 			columns[c.ID] = true
 		}
+		if err := storable(b.Slug, "board "+b.ID+" slug"); err != nil {
+			return err
+		}
+		if err := storable(b.Name, "board "+b.Slug+" name"); err != nil {
+			return err
+		}
 		labels := map[string]bool{}
+		names := map[string]bool{}
 		for _, l := range b.Labels {
 			if err := claim("label", l.ID); err != nil {
 				return err
@@ -166,7 +174,29 @@ func validate(snap *Snapshot) error {
 			if l.Name == "" {
 				return fmt.Errorf("%w: label %s of board %s has no name", ErrInvalid, l.ID, b.Slug)
 			}
+			// A board's label names are unique in every backend, so two the same
+			// is a conflict several writes into the import rather than here.
+			if names[l.Name] {
+				return fmt.Errorf("%w: board %s has two labels called %q", ErrInvalid, b.Slug, l.Name)
+			}
+			names[l.Name] = true
+			if err := storable(l.Name, "label "+l.ID+" name"); err != nil {
+				return err
+			}
 			labels[l.ID] = true
+		}
+		for _, c := range b.Columns {
+			if err := storable(c.Name, "column "+c.ID+" name"); err != nil {
+				return err
+			}
+			// The schema has CHECK (wip_limit >= 0) and the service refuses a
+			// negative one; this did not, so a snapshot carrying one passed the
+			// dry run and was refused by the database on the CREATE. With
+			// -replace the live board has been deleted by then, and the restore
+			// that was meant to put it back cannot.
+			if c.WIPLimit < 0 {
+				return fmt.Errorf("%w: column %s has a wip_limit of %d", ErrInvalid, c.ID, c.WIPLimit)
+			}
 		}
 		for _, c := range b.Cards {
 			if err := claim("card", c.ID); err != nil {
@@ -183,12 +213,29 @@ func validate(snap *Snapshot) error {
 				}
 			}
 			if c.DueDate != "" {
-				if _, err := time.Parse(dateOnly, c.DueDate); err != nil {
-					return fmt.Errorf("%w: card %s has due_date %q, want YYYY-MM-DD", ErrInvalid, c.ID, c.DueDate)
+				// The rule a form goes through, so a card that could not have
+				// been typed cannot be restored either. Year 0 is a date
+				// Postgres has no year for and year 1 is how a card says it has
+				// none, and both used to be written several hundred rows in.
+				if _, err := service.ParseDueDate(c.DueDate); err != nil {
+					return fmt.Errorf("%w: card %s has due_date %q, want YYYY-MM-DD in 1970-9999",
+						ErrInvalid, c.ID, c.DueDate)
 				}
+			}
+			if err := storable(c.Title, "card "+c.ID+" title"); err != nil {
+				return err
+			}
+			if err := storable(c.Description, "card "+c.ID+" description"); err != nil {
+				return err
+			}
+			if err := storable(c.Assignee, "card "+c.ID+" assignee"); err != nil {
+				return err
 			}
 			for _, st := range c.Subtasks {
 				if err := claim("subtask", st.ID); err != nil {
+					return err
+				}
+				if err := storable(st.Title, "subtask "+st.ID+" title"); err != nil {
 					return err
 				}
 			}
@@ -196,8 +243,29 @@ func validate(snap *Snapshot) error {
 				if err := claim("comment", m.ID); err != nil {
 					return err
 				}
+				if err := storable(m.Body, "comment "+m.ID+" body"); err != nil {
+					return err
+				}
+				if err := storable(m.Author, "comment "+m.ID+" author"); err != nil {
+					return err
+				}
 			}
 		}
+	}
+	return nil
+}
+
+// storable wraps the service's rule so a failure here names the thing in the
+// file rather than a form field. Postgres refuses a NUL and a byte that is not
+// UTF-8 in a text column, and it refuses them one write at a time, halfway into
+// a restore that has already put boards in the database.
+func storable(value, what string) error {
+	if err := service.CheckStorable("value", value); err != nil {
+		var ve *service.ValidationError
+		if errors.As(err, &ve) {
+			return fmt.Errorf("%w: %s %s", ErrInvalid, what, ve.Message)
+		}
+		return fmt.Errorf("%w: %s: %v", ErrInvalid, what, err)
 	}
 	return nil
 }

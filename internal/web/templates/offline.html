@@ -1,7 +1,14 @@
 {{define "content"}}
 <!-- What the service worker answers a navigation with when the server cannot be
-     reached. Nothing on it is loaded from anywhere: an installed board with no
-     network has to be able to draw this page out of the cache alone. -->
+     reached. Its own markup pulls nothing in: no image, no script of its own,
+     no form. The layout around it still asks for the stylesheets and the two
+     vendored scripts, which come out of the browser's own cache when they are
+     in it and are simply missing when they are not, so the worst this page
+     draws is unstyled text that still says what happened.
+
+     It names nobody. The worker keeps it in Cache Storage, which is per origin
+     and not per person, and answers every failed navigation with it; see the
+     offline handler for what that cost when it carried the viewer. -->
 <div class="mx-auto max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-none p-8 text-center">
   <i class="bi bi-wifi-off text-4xl text-slate-300 dark:text-slate-600"></i>
   <h2 class="mt-4 text-lg font-semibold text-slate-800 dark:text-slate-100">No connection</h2>

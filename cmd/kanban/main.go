@@ -109,14 +109,14 @@ func run(ctx context.Context, args []string, getenv config.Lookup, stdout, stder
 
 	st, err := openStore(cfg)
 	if err != nil {
-		log.Error("open store", "storage", cfg.Storage, "err", err)
+		log.Error("open store", "storage", cfg.Storage, "err", cfg.Scrub(err))
 		return 1
 	}
 	defer func() { _ = st.Close() }()
 
 	if cmd == "migrate" || cfg.AutoMigrate {
 		if err := st.Migrate(ctx); err != nil {
-			log.Error("migrate", "storage", cfg.Storage, "err", err)
+			log.Error("migrate", "storage", cfg.Storage, "err", cfg.Scrub(err))
 			return 1
 		}
 		log.Info("schema up to date", "storage", cfg.Storage)

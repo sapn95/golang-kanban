@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -70,16 +72,47 @@ func TestEveryEnvTagIsRead(t *testing.T) {
 
 // TestSecretsAreTagged catches the credential that gets added without a tag,
 // which is the mistake that puts a password in a doctor report.
+//
+// The list is the name of the thing, not the name of the field. Matching
+// "Pass", "Secret", "Token" and "URL" read like a rule and was a coincidence:
+// BackupS3Endpoint held a MinIO URL with its credentials in it and matched none
+// of the four, and DatabaseURL was caught only because somebody spelled it
+// "URL" rather than "DSN". Anything that can carry userinfo belongs here, and a
+// field added below has to be named in one list or the other.
 func TestSecretsAreTagged(t *testing.T) {
+	// Fields that hold, or can hold, a credential. Each must carry a tag.
+	// AWSAccessKeyID is deliberately not here: it names a key rather than
+	// opening one, the way a username does, and a doctor report that hides it
+	// cannot answer which credentials the process picked up.
+	wantTagged := map[string]bool{
+		"DBPass": true, "DatabaseURL": true, "AWSSecretAccessKey": true,
+		"AWSSessionToken": true, "BackupS3Endpoint": true,
+	}
 	rt := reflect.TypeOf(Config{})
+	seen := map[string]bool{}
 	for i := range rt.NumField() {
 		field := rt.Field(i)
-		looksSecret := strings.Contains(field.Name, "Pass") ||
+		seen[field.Name] = true
+		tagged := field.Tag.Get("secret") != ""
+		switch {
+		case wantTagged[field.Name] && !tagged:
+			t.Errorf("%s holds a credential and has no `secret` tag", field.Name)
+		case !wantTagged[field.Name] && tagged:
+			// Not a failure of safety, but the list above is what a reader
+			// goes by, so it has to stay true.
+			t.Errorf("%s is tagged secret and is not in the list in this test", field.Name)
+		}
+		// The heuristic stays as a second net, for the field named after a
+		// credential that nobody thought to add above.
+		if !tagged && (strings.Contains(field.Name, "Pass") ||
 			strings.Contains(field.Name, "Secret") ||
-			strings.Contains(field.Name, "Token") ||
-			strings.Contains(field.Name, "URL")
-		if looksSecret && field.Tag.Get("secret") == "" {
-			t.Errorf("%s carries a credential and has no `secret` tag", field.Name)
+			strings.Contains(field.Name, "Token")) {
+			t.Errorf("%s is named like a credential and has no `secret` tag", field.Name)
+		}
+	}
+	for name := range wantTagged {
+		if !seen[name] {
+			t.Errorf("this test names %s, which Config no longer has", name)
 		}
 	}
 }
@@ -111,6 +144,89 @@ func TestRedacted(t *testing.T) {
 	}
 	if c.DBPass != "hunter2" {
 		t.Error("Redacted changed the receiver")
+	}
+}
+
+// A MinIO endpoint is a URL somebody writes by hand, so it is the one that
+// arrives with its credentials in it. The report listed it whole, and so did
+// the refusal that names it, which is the message an operator pastes into an
+// issue when the endpoint is wrong.
+func TestAnEndpointWithAPasswordIsNotPrintedAnywhere(t *testing.T) {
+	const raw = "https://minioadmin:SuperSecret123@minio.internal:9000"
+	c := Config{BackupS3Endpoint: raw}
+	got := c.Redacted()
+	if strings.Contains(got.BackupS3Endpoint, "SuperSecret123") {
+		t.Errorf("BACKUP_S3_ENDPOINT = %q", got.BackupS3Endpoint)
+	}
+	if !strings.Contains(got.BackupS3Endpoint, "minio.internal:9000") {
+		t.Errorf("BACKUP_S3_ENDPOINT = %q, want the address kept", got.BackupS3Endpoint)
+	}
+	for _, s := range c.Settings() {
+		if strings.Contains(s.Value, "SuperSecret123") {
+			t.Errorf("%s = %q in the doctor report", s.Name, s.Value)
+		}
+	}
+	// And every refusal a wrong endpoint can produce. The one that does not
+	// parse is the one that caught this out: url.Parse quotes the whole value
+	// it was given inside its own error, so wrapping it printed the password
+	// the branches that redact had just taken out.
+	for _, endpoint := range []string{
+		raw,                                      // parses, carries credentials
+		raw + "/\x7f",                            // does not parse at all
+		"ftp://user:SuperSecret123@host",         // parses, wrong scheme
+		"https://user:SuperSecret123@host/a?b=1", // parses, has a query
+	} {
+		full := Config{BackupS3Bucket: "kanban-backups", BackupS3Region: "eu-central-1",
+			AWSAccessKeyID: "AKID", AWSSecretAccessKey: "s", BackupS3Endpoint: endpoint}
+		err := full.validateBackup()
+		if err == nil {
+			t.Errorf("%q was accepted", endpoint)
+			continue
+		}
+		if strings.Contains(err.Error(), "SuperSecret123") {
+			t.Errorf("the refusal for %q reads %q", endpoint, err)
+		}
+	}
+}
+
+// The driver parses the DSN lazily, so a password that makes it unparseable
+// comes back as a *url.Error from Ping or from a migration, and url.Error
+// quotes the whole value it was handed. One half of the doctor line redacted
+// its own copy while the other half printed the driver's.
+func TestScrubKeepsTheConnectionStringOutOfADriverError(t *testing.T) {
+	cases := map[string]Config{
+		"a DSN built from the parts": {Storage: StoragePostgres, DBUser: "kanban",
+			DBPass: "hunter2", DBHost: "db", DBPort: "5432", DBName: "kanban"},
+		"a DATABASE_URL": {Storage: StoragePostgres,
+			DatabaseURL: "postgres://kanban:hunter2@db:5432/kanban?sslmode=disable"},
+		// A percent in a password pasted unescaped is the everyday way to get a
+		// DSN the parser refuses, and its message carries pieces of what it
+		// choked on.
+		"one that will not parse": {Storage: StoragePostgres,
+			DatabaseURL: "postgres://kanban:100%secure@db:5432/kanban?sslmode=disable"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := url.Parse(c.DSN())
+			if err == nil {
+				// Parses, so build the error a driver would raise from it.
+				err = fmt.Errorf("dial: %s: connection refused", c.DSN())
+			} else {
+				err = fmt.Errorf("migrate: create schema_migrations: %w", err)
+			}
+			got := c.Scrub(err)
+			for _, leak := range []string{"hunter2", "100%secure", "%se", "secure"} {
+				if strings.Contains(got, leak) {
+					t.Errorf("Scrub = %q, which carries %q", got, leak)
+				}
+			}
+			if got == "" {
+				t.Error("Scrub said nothing at all")
+			}
+		})
+	}
+	if got := (Config{}).Scrub(nil); got != "" {
+		t.Errorf("Scrub(nil) = %q", got)
 	}
 }
 

@@ -146,6 +146,45 @@ func TestBoardPage(t *testing.T) {
 	want(t, e.do(http.MethodGet, "/b/missing", nil), http.StatusNotFound)
 }
 
+// Every column carries "Nothing here yet", including the ones that hold cards,
+// and CSS hides it wherever it is not the only thing in the column. Drawn once
+// at render time it was wrong after the first swap: a card arrives beforeend,
+// so the message sat underneath it until a reload, and a column emptied by a
+// drag or an archive kept a blank space where the message should have returned.
+func TestEveryColumnCarriesTheEmptyMessage(t *testing.T) {
+	e := seeded(t)
+	body := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	b, _ := e.svc.Board(context.Background(), "demo")
+	if n := strings.Count(body, `class="no-cards`); n != len(b.Columns) {
+		t.Errorf("%d empty messages for %d columns; CSS cannot decide what is not there", n, len(b.Columns))
+	}
+	// And the rule that hides it has to be in the stylesheet the page loads.
+	css := e.do(http.MethodGet, "/assets/app.css", nil)
+	if !strings.Contains(css.Body.String(), ".no-cards:not(:only-child)") {
+		t.Error("app.css does not hide the message when the column holds something")
+	}
+}
+
+// The tick box on a card is for the board's multi-select toolbar, which the
+// search results page does not draw: app.js returns early without it, so the
+// boxes there ticked nothing and offered nowhere to act.
+func TestSearchResultsDoNotOfferSelection(t *testing.T) {
+	e := seeded(t)
+	board := e.do(http.MethodGet, "/b/demo", nil).Body.String()
+	if !strings.Contains(board, "selectionBar") || !strings.Contains(board, "card-select") {
+		t.Fatal("the board draws no toolbar or no tick boxes")
+	}
+	results := e.do(http.MethodGet, "/b/demo?q=First", nil)
+	want(t, results, http.StatusOK, "First card", "search-results")
+	if strings.Contains(results.Body.String(), "selectionBar") {
+		t.Error("the results page draws the toolbar after all; then the boxes should stay")
+	}
+	css := e.do(http.MethodGet, "/assets/app.css", nil)
+	if !strings.Contains(css.Body.String(), ".search-results .card-select") {
+		t.Error("app.css does not hide the tick boxes on the results page")
+	}
+}
+
 func TestCreateCard(t *testing.T) {
 	e := seeded(t)
 	col := e.board.Columns[1].ID
@@ -631,6 +670,123 @@ func TestEditFormMovesTheCard(t *testing.T) {
 			t.Errorf("title = %q, want %q: the fields were written despite the refused move", after.Title, before.Title)
 		}
 	})
+
+	t.Run("a stale checklist line is refused before the move, not after it", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, _ := e.svc.Board(ctx, "demo")
+		target := b.Columns[1].ID
+		before, _ := e.svc.Card(ctx, e.card.ID)
+		gone := before.Subtasks[0].ID
+
+		// Somebody else deletes that line while this form is open.
+		if _, err := e.svc.UpdateCard(ctx, e.card.ID, service.CardInput{Title: before.Title}); err != nil {
+			t.Fatal(err)
+		}
+
+		// The form still carries the id, and picks another column. Only the
+		// card can say the id is stale, so a check that never read the card
+		// let this through and refused it after the move had committed.
+		body := url.Values{
+			"title":    {"moved"},
+			"column":   {string(target)},
+			"subtasks": {string(gone) + "|0|still here"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 for a subtask id the card does not have", rec.Code)
+		}
+		after, err := e.svc.Card(ctx, e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.ColumnID != before.ColumnID {
+			t.Errorf("column = %s, want %s: the refused save moved the card anyway", after.ColumnID, before.ColumnID)
+		}
+	})
+
+	t.Run("a label the board no longer has is refused before the move too", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		b, _ := e.svc.Board(ctx, "demo")
+		target := b.Columns[1].ID
+		before, _ := e.svc.Card(ctx, e.card.ID)
+		gone := b.Labels[0].ID
+
+		// Deleted on the settings page while this form is open, which is how a
+		// form comes to post a label id the board does not have.
+		if err := e.svc.DeleteLabel(ctx, gone); err != nil {
+			t.Fatal(err)
+		}
+
+		body := url.Values{"title": {"moved"}, "column": {string(target)}, "labels": {string(gone)}}
+		req := httptest.NewRequest(http.MethodPost, "/cards/"+string(e.card.ID), strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code == http.StatusNoContent || rec.Code == http.StatusOK {
+			t.Fatalf("status = %d, want the save refused", rec.Code)
+		}
+		after, err := e.svc.Card(ctx, e.card.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.ColumnID != before.ColumnID {
+			t.Errorf("column = %s, want %s: the refused save moved the card anyway", after.ColumnID, before.ColumnID)
+		}
+	})
+}
+
+// The bin on a comment and the handler behind it have to answer the same
+// question. They were asked two: the view compared the caller's address and the
+// handler its author, which are the same string for a person and opposites for
+// a caller that has no address, so a service token saw a bin on comments it may
+// not touch and none on its own.
+//
+// The handler is the oracle, not a third copy of its rule written out here.
+// That copy left out the TrimSpace both real sides apply, so the one caller it
+// could have disagreed on was the padded one, and the table had none: the test
+// agreed with itself and held nothing about the trimming half of the fix. Each
+// probe writes its own comment, because the handler's answer is a delete.
+func TestTheCommentBinAgreesWithTheHandler(t *testing.T) {
+	e := seeded(t)
+	ctx := context.Background()
+	callers := []identity.User{
+		{Email: "someone@example.com"},
+		{Email: "somebody.else@example.com"},
+		{Service: "deploy-bot"},
+		{Service: "reporting"},
+		// An identity provider that pads its claim. AddComment stores the
+		// author trimmed, so only a view that trims too draws the right bin.
+		{Email: "  padded@example.com  "},
+		{},
+	}
+	srv := &Server{now: func() time.Time { return today }}
+	for _, writer := range callers {
+		for _, reader := range callers {
+			c, err := e.svc.AddComment(ctx, e.card.ID, writer.Author(), "probe")
+			if err != nil {
+				t.Fatal(err)
+			}
+			drawn := srv.commentView(reader, *c).Mine
+			_, err = e.svc.DeleteComment(ctx, c.ID, reader.Author())
+			allowed := err == nil
+			if drawn != allowed {
+				t.Errorf("written by %q, read by %q: bin drawn = %v, handler allowed = %v",
+					writer.Author(), reader.Author(), drawn, allowed)
+			}
+			if !allowed {
+				if _, err := e.svc.DeleteComment(ctx, c.ID, writer.Author()); err != nil {
+					t.Fatalf("tidying up the probe: %v", err)
+				}
+			}
+		}
+	}
 }
 
 func TestCrossSiteWritesAreRefused(t *testing.T) {
@@ -1575,6 +1731,44 @@ func TestColumnsThroughTheWeb(t *testing.T) {
 		want(t, post(e, "/b/demo/columns/"+string(todo.ID)+"/delete", form("move_to", "")), http.StatusSeeOther)
 		if _, err := e.svc.Card(context.Background(), e.card.ID); err == nil {
 			t.Error("the card survived a delete with nowhere to move it")
+		}
+	})
+
+	t.Run("a column that filled up after the page was drawn keeps its cards", func(t *testing.T) {
+		e := seeded(t)
+		ctx := context.Background()
+		// The settings page asks where the cards go only when the column has
+		// some, so a form drawn over an empty column carries no answer, and no
+		// answer used to mean "delete them too". It now names a destination,
+		// which moves nothing while the column really is empty.
+		empty := e.board.Columns[1]
+		page := e.do(http.MethodGet, "/b/demo/settings", nil)
+		want(t, page, http.StatusOK)
+		var moveTo string
+		for _, line := range strings.Split(page.Body.String(), "\n") {
+			if strings.Contains(line, `name="move_to"`) && strings.Contains(line, `type="hidden"`) {
+				_, rest, _ := strings.Cut(line, `value="`)
+				moveTo, _, _ = strings.Cut(rest, `"`)
+				break
+			}
+		}
+		if moveTo == "" {
+			t.Fatal("the form over an empty column names nowhere for its cards to go")
+		}
+
+		// Somebody files a card into it before the bin is clicked.
+		late, err := e.svc.CreateCard(ctx, e.board.ID, empty.ID, service.CardInput{Title: "filed just now"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want(t, post(e, "/b/demo/columns/"+string(empty.ID)+"/delete", form("move_to", moveTo)),
+			http.StatusSeeOther)
+		card, err := e.svc.Card(ctx, late.ID)
+		if err != nil {
+			t.Fatalf("the card filed after the page was drawn went with the column: %v", err)
+		}
+		if card.ColumnID == empty.ID {
+			t.Error("the card is still in the column that was deleted")
 		}
 	})
 
@@ -2720,6 +2914,28 @@ func TestTheBoardCanBeInstalled(t *testing.T) {
 
 	t.Run("the offline page", func(t *testing.T) {
 		want(t, e.do(http.MethodGet, "/offline", nil), http.StatusOK, "No connection", "Try again")
+	})
+
+	// The worker keeps this page in Cache Storage and answers every failed
+	// navigation with it. That store is per origin, not per person, and
+	// no-store does not reach it, so whatever the page carries when it is
+	// installed is handed to whoever opens the board on that browser next.
+	t.Run("the offline page names nobody", func(t *testing.T) {
+		e := seeded(t, WithViewers([]identity.User{
+			{Email: "ada@example.invalid", Name: "Ada Lovelace"},
+			{Email: "grace@example.invalid"},
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/offline", nil)
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req.WithContext(identity.NewContext(req.Context(),
+			identity.User{Email: "ada@example.invalid", Name: "Ada Lovelace"})))
+		body := rec.Body.String()
+		for _, leak := range []string{"ada@example.invalid", "grace@example.invalid",
+			"Ada Lovelace", "Who can see this board"} {
+			if strings.Contains(body, leak) {
+				t.Errorf("the cached offline page carries %q", leak)
+			}
+		}
 	})
 
 	t.Run("every page says where the manifest is", func(t *testing.T) {
