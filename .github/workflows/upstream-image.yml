@@ -1,0 +1,64 @@
+# Build upstream's code for the architecture the Pi actually runs.
+#
+# NicolasHaas/golang-kanban publishes ghcr.io/nicolashaas/golang-kanban, and
+# that package is linux/amd64 only. The node is an arm64 Raspberry Pi, so the
+# published image cannot start there at all.
+#
+# This builds the same source for both architectures and publishes it under
+# this account, from a workflow rather than from somebody's laptop: an image
+# nobody can rebuild from a repository is the thing the deployment notes in
+# homelab-gitops moved away from. Nothing of this repository's own code goes
+# into it — the checkout below is upstream's, by commit.
+name: upstream image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: A commit, tag or branch of NicolasHaas/golang-kanban.
+        required: true
+        # Upstream main at the merge of PR #4, which is the first build that
+        # refuses a status the board has no lane for.
+        default: 498ba94
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out upstream, not this repository
+        uses: actions/checkout@v5
+        with:
+          repository: NicolasHaas/golang-kanban
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      # The tag carries the commit rather than a name that moves. A tag that
+      # moves makes every release's pod template identical, so ArgoCD has
+      # nothing to roll and nobody can read off which build is running.
+      - name: Name it after the commit it was built from
+        id: name
+        run: echo "tag=sha-$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          # A package of its own, so nothing here can be mistaken for a build of
+          # this repository's code.
+          tags: ghcr.io/${{ github.repository_owner }}/golang-kanban-upstream:${{ steps.name.outputs.tag }}
